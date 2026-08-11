@@ -100,4 +100,26 @@ describe("generateCdpJwt", () => {
       }),
     ).rejects.toThrow(/Could not parse Coinbase CDP private key/);
   });
+
+  it("includes safe, non-secret structural diagnostics on a parse failure -- never the key material itself", async () => {
+    try {
+      await generateCdpJwt({
+        keyName: "k",
+        privateKeyPem: "not-a-real-key",
+        method: "GET",
+        host: "api.coinbase.com",
+        path: "/api/v3/brokerage/accounts",
+      });
+      expect.unreachable("expected generateCdpJwt to throw");
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).toContain('"length":14');
+      expect(message).toContain('"lineCount":1');
+      expect(message).toContain('"startsWithBeginMarker":false');
+      expect(message).toContain('"endsWithDashMarker":false');
+      expect(message).toContain('"containsEndMarker":false');
+      expect(message).toContain('"containsLiteralEscapedNewline":false');
+      expect(message).not.toContain("not-a-real-key");
+    }
+  });
 });

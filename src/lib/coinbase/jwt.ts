@@ -43,13 +43,34 @@ export interface CdpJwtParams {
   path: string;
 }
 
+/**
+ * Facts about a PEM string that are safe to surface in an error message or
+ * UI -- every field here is a count or boolean, never a substring of the
+ * key itself, so this can never leak key material even though it's derived
+ * from a secret. Exists because "could not parse" alone isn't enough to
+ * self-diagnose a bad paste (truncated copy, stray escaping, wrong field)
+ * without either seeing the value or guessing blind.
+ */
+function describePemShape(raw: string): Record<string, number | boolean> {
+  const trimmed = raw.trim();
+  return {
+    length: raw.length,
+    lineCount: raw.split("\n").length,
+    startsWithBeginMarker: trimmed.startsWith("-----BEGIN"),
+    endsWithDashMarker: trimmed.endsWith("-----"),
+    containsEndMarker: trimmed.includes("-----END"),
+    containsLiteralEscapedNewline: raw.includes("\\n"),
+  };
+}
+
 function loadSigningKey(privateKeyPem: string): { key: KeyObject; alg: "ES256" | "EdDSA" } {
   let key: KeyObject;
   try {
     key = createPrivateKey(privateKeyPem);
   } catch (cause) {
     throw new Error(
-      "Could not parse Coinbase CDP private key. Expected a PEM-encoded Ed25519 (PKCS8) or ECDSA P-256 (SEC1) private key.",
+      "Could not parse Coinbase CDP private key. Expected a PEM-encoded Ed25519 (PKCS8) or ECDSA P-256 (SEC1) private key. " +
+        `Structural diagnostics (never includes key material): ${JSON.stringify(describePemShape(privateKeyPem))}.`,
       { cause },
     );
   }

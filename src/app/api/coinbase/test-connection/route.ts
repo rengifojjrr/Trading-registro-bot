@@ -59,11 +59,13 @@ export async function GET() {
     }
 
     if (error instanceof Error && error.message.includes("Could not parse Coinbase CDP private key")) {
+      // error.message here is built by describePemShape() (lib/coinbase/jwt.ts)
+      // from counts/booleans only -- safe to forward as-is, never contains
+      // key material even though it's derived from the secret.
       return NextResponse.json(
         {
           connected: false,
-          message:
-            "La clave privada de Coinbase no tiene un formato PEM válido. Revisa que COINBASE_CDP_PRIVATE_KEY se haya pegado completa, incluyendo las líneas -----BEGIN...----- y -----END...-----.",
+          message: `La clave privada de Coinbase no tiene un formato PEM válido. ${error.message}`,
         },
         { status: 200 },
       );
