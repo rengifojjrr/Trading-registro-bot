@@ -8,6 +8,7 @@ import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart } from "@/components/trades/trade-chart";
 import { TradeComments } from "@/components/trades/trade-comments";
+import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
@@ -56,6 +57,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     { data: strategies },
     { data: tradeTags },
     { data: tradeComments },
+    { data: tradeScreenshotRows },
     chartData,
   ] = await Promise.all([
     supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
@@ -72,10 +74,35 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       .select("id, body, created_at")
       .eq("trade_id", trade.id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("trade_screenshots")
+      .select("id, storage_path, caption, phase")
+      .eq("trade_id", trade.id)
+      .order("uploaded_at", { ascending: false }),
     wantsChart
       ? fetchTradeCandles({ productId: trade.product_id, openedAt: chartOpenedAt, closedAt: chartClosedAt })
       : Promise.resolve(null),
   ]);
+
+  // Signed URLs, not public ones -- the trade-screenshots bucket is private
+  // (see supabase/migrations/20260811121100_storage.sql). One batched call
+  // rather than N individual createSignedUrl calls.
+  const screenshotRows = tradeScreenshotRows ?? [];
+  const { data: signedScreenshotUrls } =
+    screenshotRows.length > 0
+      ? await supabase.storage
+          .from("trade-screenshots")
+          .createSignedUrls(
+            screenshotRows.map((s) => s.storage_path),
+            3600,
+          )
+      : { data: [] };
+  const screenshotUrlByPath = new Map((signedScreenshotUrls ?? []).map((s) => [s.path, s.signedUrl]));
+  const screenshots: TradeScreenshotRow[] = screenshotRows.flatMap((s) => {
+    const url = s.storage_path ? screenshotUrlByPath.get(s.storage_path) : undefined;
+    if (!url) return [];
+    return [{ id: s.id, url, caption: s.caption, phase: s.phase, storagePath: s.storage_path }];
+  });
 
   const isLiveOpenPosition =
     trade.status === "OPEN" && trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
@@ -183,6 +210,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         strategies={strategies ?? []}
         currentSetupGrade={currentSetupGrade}
       />
+
+      <TradeScreenshots tradeId={trade.id} screenshots={screenshots} />
 
       <TradeComments tradeId={trade.id} comments={tradeComments ?? []} timezone={timezone} />
     </>

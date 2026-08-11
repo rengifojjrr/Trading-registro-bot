@@ -228,3 +228,113 @@ export async function deleteComment(tradeId: string, commentId: string, _formDat
 
   revalidatePath(`/trades/${tradeId}`);
 }
+
+const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
+const SCREENSHOT_MIME_EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+const SCREENSHOT_PHASES = ["BEFORE", "AFTER", "OTHER"] as const;
+
+const uploadScreenshotSchema = z.object({
+  tradeId: z.string().uuid(),
+  caption: z.preprocess((v) => (v === "" ? undefined : v), z.string().max(500).optional()),
+  phase: z.preprocess((v) => (v === "" || v === undefined ? "OTHER" : v), z.enum(SCREENSHOT_PHASES)),
+});
+
+export type ScreenshotFormState = { error: string | null; success: boolean };
+
+/**
+ * Uploads directly to the private `trade-screenshots` Storage bucket (RLS
+ * on storage.objects requires the {user_id}/... path prefix -- see
+ * supabase/migrations/20260811121100_storage.sql) then records the
+ * trade_screenshots row pointing at it. If the row insert fails after a
+ * successful upload, the just-uploaded object is removed rather than left
+ * as an orphan no UI could ever show or delete again.
+ */
+export async function uploadTradeScreenshot(
+  _prevState: ScreenshotFormState,
+  formData: FormData,
+): Promise<ScreenshotFormState> {
+  const user = await requireUser();
+
+  const parsed = uploadScreenshotSchema.safeParse({
+    tradeId: formData.get("tradeId"),
+    caption: formData.get("caption"),
+    phase: formData.get("phase"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Selecciona una imagen.", success: false };
+  }
+  if (file.size > MAX_SCREENSHOT_BYTES) {
+    return { error: "La imagen no puede superar 5 MB.", success: false };
+  }
+  const extension = SCREENSHOT_MIME_EXTENSIONS[file.type];
+  if (!extension) {
+    return { error: "Formato no soportado -- usa PNG, JPG o WEBP.", success: false };
+  }
+
+  const supabase = await createClient();
+
+  const { data: trade } = await supabase
+    .from("trades")
+    .select("id")
+    .eq("id", parsed.data.tradeId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!trade) {
+    return { error: "Operación no encontrada.", success: false };
+  }
+
+  const storagePath = `${user.id}/${parsed.data.tradeId}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from("trade-screenshots")
+    .upload(storagePath, file, { contentType: file.type });
+  if (uploadError) {
+    return { error: "No se pudo subir la imagen.", success: false };
+  }
+
+  const { error: insertError } = await supabase.from("trade_screenshots").insert({
+    user_id: user.id,
+    trade_id: parsed.data.tradeId,
+    storage_path: storagePath,
+    caption: parsed.data.caption ?? null,
+    phase: parsed.data.phase,
+  });
+  if (insertError) {
+    await supabase.storage.from("trade-screenshots").remove([storagePath]);
+    return { error: "No se pudo guardar la captura.", success: false };
+  }
+
+  revalidatePath(`/trades/${parsed.data.tradeId}`);
+  return { error: null, success: true };
+}
+
+export async function deleteTradeScreenshot(
+  tradeId: string,
+  screenshotId: string,
+  storagePath: string,
+  _formData: FormData,
+): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("trade_screenshots")
+    .delete()
+    .eq("id", screenshotId)
+    .eq("trade_id", tradeId)
+    .eq("user_id", user.id);
+
+  if (!error) {
+    await supabase.storage.from("trade-screenshots").remove([storagePath]);
+  }
+
+  revalidatePath(`/trades/${tradeId}`);
+}
