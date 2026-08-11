@@ -26,7 +26,7 @@ const serverEnvSchema = z.object({
   // together once Coinbase sync (Phase 2+) is wired up; Phase 1 never reads
   // them.
   COINBASE_CDP_API_KEY_NAME: z.string().min(1).optional(),
-  COINBASE_CDP_PRIVATE_KEY: z.string().min(1).optional(),
+  COINBASE_CDP_PRIVATE_KEY: z.string().min(1).transform(normalizePemKey).optional(),
   COINBASE_PRODUCT_VENUE: z.enum(["FCM", "INTX"]).default("FCM"),
   COINBASE_PRODUCT_ID: z.string().min(1).optional(),
 
@@ -39,6 +39,24 @@ const serverEnvSchema = z.object({
   // script) can trigger a sync -- see docs/COINBASE_INTEGRATION.md.
   CRON_SECRET: z.string().min(16).optional(),
 });
+
+/**
+ * Vercel (like most hosting UIs) stores an env var value verbatim. If the
+ * private key was copied from the JSON file Coinbase's CDP portal offers,
+ * its line breaks are the two literal characters `\` + `n`, not a real
+ * newline -- pasting that straight into Vercel keeps it that way, unlike
+ * `.env.local` locally, where dotenv itself already unescapes `\n` inside a
+ * quoted value. Normalizing here means the key parses the same regardless
+ * of how it was pasted, instead of failing deep inside jose/node:crypto
+ * with a confusing error.
+ */
+export function normalizePemKey(raw: string): string {
+  let value = raw.trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1).trim();
+  }
+  return value.replace(/\\n/g, "\n");
+}
 
 let cachedPublicEnv: z.infer<typeof publicEnvSchema> | undefined;
 let cachedServerEnv: z.infer<typeof serverEnvSchema> | undefined;
