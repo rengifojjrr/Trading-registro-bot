@@ -1,6 +1,7 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { TestCoinbaseConnection } from "@/components/settings/test-coinbase-connection";
 import { serverEnv } from "@/lib/env";
 
 function StatusRow({ label, configured }: { label: string; configured: boolean }) {
@@ -39,8 +40,9 @@ export function ConnectionStatus() {
           desarrollo) y reinicia la aplicación -- ver README.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2">
+      <CardContent className="flex flex-col gap-3">
         <StatusRow label="Coinbase Advanced (solo lectura)" configured={coinbaseConfigured} />
+        {coinbaseConfigured ? <TestCoinbaseConnection /> : null}
         <StatusRow label="Notion" configured={notionConfigured} />
       </CardContent>
     </Card>
