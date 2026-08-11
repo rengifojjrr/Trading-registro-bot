@@ -65,6 +65,11 @@ export class CoinbaseRestClient {
         path: fullPath,
       });
 
+      // Never cacheable at the fetch level: the Authorization header carries
+      // a fresh nonce + timestamp on every call (required for CDP's replay
+      // protection), so Next.js's fetch cache -- which keys on headers too
+      // -- would never actually get a hit here even if asked to try. Any
+      // caching for this client has to happen above this layer.
       const response = await fetch(url, {
         method,
         headers: {

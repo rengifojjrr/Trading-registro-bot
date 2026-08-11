@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/layout/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-history-table";
+import { TradeChart } from "@/components/trades/trade-chart";
 import { TradeSummary } from "@/components/trades/trade-summary";
-import { formatDate } from "@/lib/format";
 import { requireUser } from "@/lib/auth/require-user";
+import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
+import { formatDate } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 import { JournalForm } from "./journal-form";
@@ -28,7 +31,12 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
   const timezone = settings?.timezone || "UTC";
 
-  const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }, { data: tradeTags }] =
+  // A Notion-imported/demo trade's product_id is synthetic (e.g.
+  // "MBT-EXTERNAL", "BIT-DEMO-CDE") and was never a real Coinbase product,
+  // so there's no real chart to fetch for it -- see fetch-trade-candles.ts.
+  const wantsChart = trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
+
+  const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }, { data: tradeTags }, chartData] =
     await Promise.all([
       supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
       supabase
@@ -39,7 +47,23 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
       supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
       supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
+      wantsChart
+        ? fetchTradeCandles({
+            productId: trade.product_id,
+            openedAt: new Date(trade.opened_at),
+            closedAt: trade.closed_at ? new Date(trade.closed_at) : new Date(),
+          })
+        : Promise.resolve(null),
     ]);
+
+  const entryMarker =
+    chartData && trade.entry_wap
+      ? { time: Math.floor(new Date(trade.opened_at).getTime() / 1000), price: Number(trade.entry_wap) }
+      : null;
+  const exitMarker =
+    chartData && trade.exit_wap && trade.closed_at
+      ? { time: Math.floor(new Date(trade.closed_at).getTime() / 1000), price: Number(trade.exit_wap) }
+      : null;
 
   const tagIds = (tradeTags ?? []).map((t) => t.tag_id);
   const { data: tags } =
@@ -77,6 +101,22 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       />
 
       <TradeSummary trade={trade} accountName={account?.name ?? "--"} timezone={timezone} />
+
+      {chartData && entryMarker ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Gráfico de la operación</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TradeChart
+              candles={chartData.candles}
+              granularityLabel={chartData.granularityLabel}
+              entry={entryMarker}
+              exit={exitMarker}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <FillHistoryTable fills={fillRows} timezone={timezone} />
 

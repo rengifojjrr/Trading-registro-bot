@@ -1,8 +1,10 @@
 import { CoinbaseRestClient, type CoinbaseClientConfig } from "../client";
-import type { MarketDataPort, PositionsPort } from "../ports";
+import type { ChartDataPort, MarketDataPort, PositionsPort } from "../ports";
 import type {
+  CoinbaseCandle,
   CoinbaseFill,
   CoinbaseFuturesPosition,
+  CoinbaseGetCandlesParams,
   CoinbaseListFillsParams,
   CoinbaseOrder,
   CoinbaseProduct,
@@ -19,7 +21,7 @@ import type {
  * field mapping below traces to a confirmed field in
  * docs/COINBASE_INTEGRATION.md; nothing here was guessed.
  */
-export class CfmAdapter implements MarketDataPort, PositionsPort {
+export class CfmAdapter implements MarketDataPort, PositionsPort, ChartDataPort {
   readonly venue = "FCM" as const;
   private readonly client: CoinbaseRestClient;
 
@@ -73,5 +75,18 @@ export class CfmAdapter implements MarketDataPort, PositionsPort {
       "/cfm/positions",
     );
     return response.positions;
+  }
+
+  async getCandles(productId: string, params: CoinbaseGetCandlesParams): Promise<CoinbaseCandle[]> {
+    const response = await this.client.get<{ candles: CoinbaseCandle[] }>(
+      `/products/${encodeURIComponent(productId)}/candles`,
+      {
+        start: params.start,
+        end: params.end,
+        granularity: params.granularity,
+        limit: params.limit,
+      },
+    );
+    return response.candles;
   }
 }

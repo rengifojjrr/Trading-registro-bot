@@ -139,3 +139,33 @@ export interface CoinbaseFuturesPosition {
   unrealized_pnl?: string;
   daily_realized_pnl?: string;
 }
+
+// Confirmed against docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/products/get-product-candles
+// on 2026-08-11: max 350 candles per request, every candle field is a string.
+export type CoinbaseCandleGranularity =
+  | "ONE_MINUTE"
+  | "FIVE_MINUTE"
+  | "FIFTEEN_MINUTE"
+  | "THIRTY_MINUTE"
+  | "ONE_HOUR"
+  | "TWO_HOUR"
+  | "FOUR_HOUR"
+  | "SIX_HOUR"
+  | "ONE_DAY";
+
+/** GET /products/{product_id}/candles -- one entry in `candles[]`. */
+export interface CoinbaseCandle {
+  start: string; // unix timestamp, seconds, as a string
+  low: string;
+  high: string;
+  open: string;
+  close: string;
+  volume: string;
+}
+
+export interface CoinbaseGetCandlesParams {
+  start: string; // unix timestamp, seconds
+  end: string; // unix timestamp, seconds
+  granularity: CoinbaseCandleGranularity;
+  limit?: number; // max 350
+}
