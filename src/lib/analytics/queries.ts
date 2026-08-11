@@ -99,6 +99,42 @@ export async function fetchTradesForTable(filters: TradeFilters = {}): Promise<T
   return (data ?? []) as unknown as TradeTableRow[];
 }
 
+const OPEN_POSITION_COLUMNS =
+  "id, product_id, direction, opened_at, entry_wap, max_size, total_entry_qty, total_exit_qty, contract_multiplier, entry_commissions";
+
+export type OpenPositionRow = Pick<
+  TradeRow,
+  | "id"
+  | "product_id"
+  | "direction"
+  | "opened_at"
+  | "entry_wap"
+  | "max_size"
+  | "total_entry_qty"
+  | "total_exit_qty"
+  | "contract_multiplier"
+  | "entry_commissions"
+>;
+
+/**
+ * Currently-open Coinbase-synced positions, for the dashboard's live
+ * panel -- deliberately ignores the dashboard's own date-range/account
+ * filters (TradeFilters), since "what's open right now" is a status fact,
+ * not a historical view someone would want to filter by month.
+ */
+export async function fetchOpenLivePositions(): Promise<OpenPositionRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("trades")
+    .select(OPEN_POSITION_COLUMNS)
+    .eq("status", "OPEN")
+    .eq("source", "COINBASE_SYNC")
+    .not("entry_wap", "is", null)
+    .order("opened_at", { ascending: false });
+  if (error) throw new Error(`fetchOpenLivePositions: ${error.message}`);
+  return (data ?? []) as unknown as OpenPositionRow[];
+}
+
 export async function fetchAccounts() {
   const supabase = await createClient();
   const { data, error } = await supabase

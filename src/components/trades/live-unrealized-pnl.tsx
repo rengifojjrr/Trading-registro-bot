@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { formatMoney, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { calculateUnrealizedPnl } from "@/lib/pnl/unrealized";
 import { cn } from "@/lib/utils";
-
-const POLL_INTERVAL_MS = 15_000;
 
 /**
  * Live mark-to-market widget for an OPEN trade -- only ever rendered by the
@@ -32,35 +30,7 @@ export function LiveUnrealizedPnl({
   contractSize: string;
   entryCommissions: string;
 }) {
-  const [price, setPrice] = useState<number | null>(null);
-  const [status, setStatus] = useState<"loading" | "ok" | "unavailable">("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const res = await fetch(`/api/coinbase/current-price?productId=${encodeURIComponent(productId)}`);
-        const data = (await res.json()) as { price: number | null };
-        if (cancelled) return;
-        if (data.price === null) {
-          setStatus("unavailable");
-        } else {
-          setPrice(data.price);
-          setStatus("ok");
-        }
-      } catch {
-        if (!cancelled) setStatus("unavailable");
-      }
-    }
-
-    poll();
-    const id = setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [productId]);
+  const { price, status } = useCurrentPrice(productId);
 
   if (status === "unavailable") return null;
 
