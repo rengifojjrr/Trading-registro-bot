@@ -1,18 +1,45 @@
-import { ListOrdered } from "lucide-react";
+import { ListOrdered, SearchX } from "lucide-react";
 
+import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { createClient } from "@/lib/supabase/server";
+import { TradesTable } from "@/components/trades/trades-table";
+import { parseTradeFilters } from "@/lib/analytics/filter-params";
+import { fetchAccounts, fetchTradesForTable } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
+import { createClient } from "@/lib/supabase/server";
 
-export default async function TradesPage() {
+export default async function TradesPage(props: PageProps<"/trades">) {
   const user = await requireUser();
   const supabase = await createClient();
+  const searchParams = await props.searchParams;
 
-  const { count: tradeCount } = await supabase
-    .from("trades")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id);
+  const [{ count: totalTradeCount }, { data: settings }, accounts] = await Promise.all([
+    supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    fetchAccounts(),
+  ]);
+
+  if (!totalTradeCount) {
+    return (
+      <>
+        <PageHeader
+          title="Operaciones"
+          description="Todas tus operaciones reconstruidas a partir de los fills de Coinbase."
+        />
+        <EmptyState
+          icon={ListOrdered}
+          title="Todavía no hay operaciones reconstruidas"
+          description="Conecta Coinbase Advanced o importa un histórico en CSV para que el motor de reconstrucción genere tus primeras operaciones. Esta tabla se llena solo con datos reales -- no muestra ejemplos."
+        />
+      </>
+    );
+  }
+
+  const timezone = settings?.timezone || "UTC";
+  const filters = parseTradeFilters(searchParams, timezone);
+  const rows = await fetchTradesForTable(filters);
+  const accountsById = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
 
   return (
     <>
@@ -20,16 +47,16 @@ export default async function TradesPage() {
         title="Operaciones"
         description="Todas tus operaciones reconstruidas a partir de los fills de Coinbase."
       />
-
-      <EmptyState
-        icon={ListOrdered}
-        title={
-          tradeCount
-            ? "La tabla avanzada de operaciones se conecta en la Fase 4"
-            : "Todavía no hay operaciones reconstruidas"
-        }
-        description="Esta sección mostrará una tabla ordenable, filtrable y exportable, con ficha completa por operación (entradas, salidas, comisiones, capturas y notas) una vez conectado el motor de reconstrucción."
-      />
+      <FilterBar accounts={accounts} />
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="Ningún trade coincide con estos filtros"
+          description="Ajusta o limpia los filtros para ver tus operaciones."
+        />
+      ) : (
+        <TradesTable rows={rows} accountsById={accountsById} timezone={timezone} />
+      )}
     </>
   );
 }

@@ -88,7 +88,7 @@ export interface Database {
           id: string;
           user_id: string;
           portfolio_id: string;
-          venue: "FCM" | "INTX";
+          venue: "FCM" | "INTX" | "EXTERNAL";
           name: string;
           currency: string;
           is_demo: boolean;
@@ -100,7 +100,7 @@ export interface Database {
           id?: string;
           user_id: string;
           portfolio_id: string;
-          venue: "FCM" | "INTX";
+          venue: "FCM" | "INTX" | "EXTERNAL";
           name: string;
           currency?: string;
           is_demo?: boolean;
@@ -111,7 +111,7 @@ export interface Database {
       products: Table<
         {
           product_id: string;
-          venue: "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE";
+          venue: "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE" | "EXTERNAL";
           product_type: "SPOT" | "FUTURE" | "EQUITY" | "OPTION_GROUP" | "FUTURE_GROUP";
           base_currency_id: string | null;
           quote_currency_id: string | null;
@@ -130,7 +130,7 @@ export interface Database {
         },
         {
           product_id: string;
-          venue: "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE";
+          venue: "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE" | "EXTERNAL";
           product_type: "SPOT" | "FUTURE" | "EQUITY" | "OPTION_GROUP" | "FUTURE_GROUP";
           base_currency_id?: string | null;
           quote_currency_id?: string | null;
@@ -400,7 +400,7 @@ export interface Database {
           session_computed: SessionLabel | null;
           session_override: SessionLabel | null;
           session_effective: SessionLabel | null;
-          source: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED";
+          source: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
           created_at: string;
           updated_at: string;
         },
@@ -432,7 +432,7 @@ export interface Database {
           is_manually_adjusted?: boolean;
           session_computed?: SessionLabel | null;
           session_override?: SessionLabel | null;
-          source?: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED";
+          source?: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
         }
       >;
 
@@ -756,6 +756,29 @@ export interface Database {
           last_synced_hash?: string | null;
           status?: "SYNCED" | "PENDING" | "ERROR";
           error_message?: string | null;
+        }
+      >;
+
+      notion_import_links: Table<
+        {
+          id: string;
+          user_id: string;
+          trade_id: string;
+          notion_page_id: string;
+          notion_database_id: string;
+          raw_properties: Json;
+          imported_at: string;
+          last_synced_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          trade_id: string;
+          notion_page_id: string;
+          notion_database_id: string;
+          raw_properties: Json;
+          imported_at?: string;
+          last_synced_at?: string;
         }
       >;
 

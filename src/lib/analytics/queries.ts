@@ -1,0 +1,110 @@
+import "server-only";
+
+import { createClient } from "@/lib/supabase/server";
+import type { Database, SessionLabel } from "@/types/database";
+
+export interface TradeFilters {
+  accountId?: string;
+  productId?: string;
+  direction?: "LONG" | "SHORT";
+  status?: "OPEN" | "CLOSED";
+  dateFrom?: string; // ISO, filters on opened_at
+  dateTo?: string; // ISO, filters on opened_at
+  session?: SessionLabel;
+}
+
+type TradeRow = Database["public"]["Tables"]["trades"]["Row"];
+
+/**
+ * Exactly the columns TABLE_COLUMNS selects -- kept as an explicit Pick
+ * (not the full TradeRow) so referencing a column this query never fetched
+ * (e.g. contract_multiplier, session_computed) is a type error instead of a
+ * silent `undefined` at runtime.
+ */
+export type TradeTableRow = Pick<
+  TradeRow,
+  | "id"
+  | "product_id"
+  | "account_id"
+  | "direction"
+  | "status"
+  | "opened_at"
+  | "closed_at"
+  | "duration_seconds"
+  | "max_size"
+  | "total_entry_qty"
+  | "total_exit_qty"
+  | "entry_wap"
+  | "exit_wap"
+  | "notional_value"
+  | "total_commissions"
+  | "gross_pnl"
+  | "net_pnl"
+  | "return_pct"
+  | "entries_count"
+  | "exits_count"
+  | "session_effective"
+  | "source"
+  | "is_manually_adjusted"
+>;
+
+const STATS_COLUMNS = "id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions";
+
+const TABLE_COLUMNS =
+  "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted";
+
+function applyFilters<T>(query: T, filters: TradeFilters): T {
+  // Supabase's query builder is fluent (each call returns `this`), so this
+  // cast-free chain works despite the generic -- the alternative
+  // (threading a wider union type through every .eq/.gte call) hurts
+  // readability for no real safety gain here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = query as any;
+  if (filters.accountId) q = q.eq("account_id", filters.accountId);
+  if (filters.productId) q = q.eq("product_id", filters.productId);
+  if (filters.direction) q = q.eq("direction", filters.direction);
+  if (filters.status) q = q.eq("status", filters.status);
+  if (filters.dateFrom) q = q.gte("opened_at", filters.dateFrom);
+  if (filters.dateTo) q = q.lte("opened_at", filters.dateTo);
+  if (filters.session) q = q.eq("session_effective", filters.session);
+  return q as T;
+}
+
+/** Minimal columns for lib/analytics/stats.ts -- every dashboard metric and chart goes through this same query shape, filtered or not. */
+export async function fetchTradesForStats(filters: TradeFilters = {}) {
+  const supabase = await createClient();
+  let query = supabase.from("trades").select(STATS_COLUMNS);
+  query = applyFilters(query, filters);
+  const { data, error } = await query.order("opened_at", { ascending: true });
+  if (error) throw new Error(`fetchTradesForStats: ${error.message}`);
+
+  return (data ?? []).map((t) => ({
+    id: t.id,
+    status: t.status,
+    openedAt: t.opened_at,
+    closedAt: t.closed_at,
+    netPnl: t.net_pnl,
+    grossPnl: t.gross_pnl,
+    totalCommissions: t.total_commissions,
+  }));
+}
+
+/** Richer columns for the trades table. */
+export async function fetchTradesForTable(filters: TradeFilters = {}): Promise<TradeTableRow[]> {
+  const supabase = await createClient();
+  let query = supabase.from("trades").select(TABLE_COLUMNS);
+  query = applyFilters(query, filters);
+  const { data, error } = await query.order("opened_at", { ascending: false });
+  if (error) throw new Error(`fetchTradesForTable: ${error.message}`);
+  return (data ?? []) as unknown as TradeTableRow[];
+}
+
+export async function fetchAccounts() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("id, name, venue, is_demo, is_active")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`fetchAccounts: ${error.message}`);
+  return data ?? [];
+}
