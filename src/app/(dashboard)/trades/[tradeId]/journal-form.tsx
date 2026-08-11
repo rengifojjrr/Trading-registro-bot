@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
 
 import { saveJournalEntry, type JournalFormState } from "./actions";
@@ -18,14 +19,47 @@ type JournalEntryRow = Database["public"]["Tables"]["journal_entries"]["Row"];
 
 const initialState: JournalFormState = { error: null, success: false };
 
+// Mirrors the option lists actually configured on the original Notion
+// "Emociones"/"Errores" multi-select properties (see docs/NOTION_IMPORT.md)
+// so this form uses the same vocabulary the historical data was written in.
+const EMOTION_OPTIONS = ["Calma", "Ansiedad", "Confianza", "Miedo", "Euforia", "Frustración", "FOMO"];
+const MISTAKE_OPTIONS = [
+  "Overtrading",
+  "Entrada temprana",
+  "Falta de plan",
+  "Gestión de riesgo",
+  "Entrada tardía",
+  "Salida temprana",
+  "No respetar stop",
+  "Sobre apalancamiento",
+  "Dirección incorrecta",
+  "No leer el mercado",
+  "Liquidado",
+  "Martingala",
+  "FOMO",
+  "Dormido",
+  "ninguno",
+];
+const SETUP_GRADES = ["A+", "A", "B", "C"];
+
+function splitList(v: string | null): string[] {
+  if (!v) return [];
+  return v
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function JournalForm({
   tradeId,
   journalEntry,
   strategies,
+  currentSetupGrade,
 }: {
   tradeId: string;
   journalEntry: JournalEntryRow | null;
   strategies: { id: string; name: string }[];
+  currentSetupGrade: string | null;
 }) {
   const [state, formAction, pending] = useActionState(saveJournalEntry, initialState);
 
@@ -33,6 +67,14 @@ export function JournalForm({
     if (state.success) toast.success("Diario guardado.");
     if (state.error) toast.error(state.error);
   }, [state]);
+
+  // Any value already on the trade that isn't one of the known options
+  // (e.g. free text typed before this form had checkboxes) stays selectable
+  // instead of silently disappearing from the form.
+  const emotionValues = journalEntry?.emotional_state ?? null;
+  const mistakeValues = journalEntry?.mistake_tag ?? null;
+  const emotionOptions = useMemo(() => mergeOptions(EMOTION_OPTIONS, emotionValues), [emotionValues]);
+  const mistakeOptions = useMemo(() => mergeOptions(MISTAKE_OPTIONS, mistakeValues), [mistakeValues]);
 
   return (
     <Card>
@@ -47,7 +89,7 @@ export function JournalForm({
           <input type="hidden" name="tradeId" value={tradeId} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Estrategia / setup" htmlFor="strategy_id">
+            <Field label="Estrategia" htmlFor="strategy_id">
               <Select name="strategy_id" defaultValue={journalEntry?.strategy_id ?? "NONE"}>
                 <SelectTrigger id="strategy_id">
                   <SelectValue />
@@ -57,6 +99,22 @@ export function JournalForm({
                   {strategies.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Setup" htmlFor="setup_grade">
+              <Select name="setup_grade" defaultValue={currentSetupGrade ?? "NONE"}>
+                <SelectTrigger id="setup_grade">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Sin calificar</SelectItem>
+                  {SETUP_GRADES.map((grade) => (
+                    <SelectItem key={grade} value={grade}>
+                      {grade}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -146,15 +204,11 @@ export function JournalForm({
                 defaultValue={journalEntry?.entry_quality ?? ""}
               />
             </Field>
-
-            <Field label="Estado emocional" htmlFor="emotional_state">
-              <Input id="emotional_state" name="emotional_state" defaultValue={journalEntry?.emotional_state ?? ""} />
-            </Field>
-
-            <Field label="Error cometido" htmlFor="mistake_tag">
-              <Input id="mistake_tag" name="mistake_tag" defaultValue={journalEntry?.mistake_tag ?? ""} />
-            </Field>
           </div>
+
+          <CheckboxGroupField label="Emociones" name="emotional_state" options={emotionOptions} defaultValues={splitList(emotionValues)} />
+
+          <CheckboxGroupField label="Errores" name="mistake_tag" options={mistakeOptions} defaultValues={splitList(mistakeValues)} />
 
           <Field label="Lección aprendida" htmlFor="lesson_learned">
             <Textarea id="lesson_learned" name="lesson_learned" rows={2} defaultValue={journalEntry?.lesson_learned ?? ""} />
@@ -175,11 +229,70 @@ export function JournalForm({
   );
 }
 
+function mergeOptions(known: string[], storedValue: string | null): string[] {
+  const stored = splitList(storedValue);
+  const extra = stored.filter((v) => !known.includes(v));
+  return extra.length > 0 ? [...known, ...extra] : known;
+}
+
 function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
+    </div>
+  );
+}
+
+function CheckboxGroupField({
+  label,
+  name,
+  options,
+  defaultValues,
+}: {
+  label: string;
+  name: string;
+  options: string[];
+  defaultValues: string[];
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultValues));
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const checked = selected.has(option);
+          return (
+            <label
+              key={option}
+              className={cn(
+                "cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors select-none",
+                checked
+                  ? "border-transparent bg-primary text-primary-foreground"
+                  : "border-border bg-secondary text-secondary-foreground hover:bg-accent",
+              )}
+            >
+              <input
+                type="checkbox"
+                name={name}
+                value={option}
+                checked={checked}
+                onChange={() =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(option)) next.delete(option);
+                    else next.add(option);
+                    return next;
+                  })
+                }
+                className="sr-only"
+              />
+              {option}
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }

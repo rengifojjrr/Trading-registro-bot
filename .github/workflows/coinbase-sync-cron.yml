@@ -1,0 +1,38 @@
+name: Coinbase + Notion sync cron
+
+# Vercel's Hobby/Free tier only runs vercel.json crons once a day (see
+# vercel.json, used only for the nightly /api/cron/reconcile), so the ~5 min
+# Coinbase poll and the Notion outbound queue drain are driven from here
+# instead. GitHub Actions schedules are best-effort and can slip a few
+# minutes under load -- fine for this use case, never assume exact timing.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger-cron-routes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Coinbase poll sync (/api/cron/sync)
+        run: |
+          status=$(curl -s -o /tmp/sync.log -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/sync")
+          cat /tmp/sync.log
+          if [ "$status" -ge 300 ]; then
+            echo "::error::/api/cron/sync returned HTTP $status"
+            exit 1
+          fi
+
+      - name: Notion outbound queue drain (/api/cron/notion-sync)
+        if: always()
+        run: |
+          status=$(curl -s -o /tmp/notion.log -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/notion-sync")
+          cat /tmp/notion.log
+          if [ "$status" -ge 300 ]; then
+            echo "::error::/api/cron/notion-sync returned HTTP $status"
+            exit 1
+          fi

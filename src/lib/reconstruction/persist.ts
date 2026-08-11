@@ -23,6 +23,8 @@ export interface PersistReconstructionResult {
   unsupportedOverrideIds: string[];
   /** opening_fill_id of trades that existed before but no longer appear in the recomputed set -- flagged, never silently deleted. See docs/RECONCILIATION_RULES.md #4. */
   orphanedOpeningFillIds: string[];
+  /** trades.id of every trade created or updated this run -- callers use this to enqueue the Notion outbound mirror without re-deriving it. */
+  touchedTradeIds: string[];
 }
 
 /**
@@ -98,6 +100,7 @@ export async function persistReconstruction(
   let tradesCreated = 0;
   let tradesUpdated = 0;
   let tradesClosed = 0;
+  const touchedTradeIds: string[] = [];
 
   for (const trade of trades) {
     const pnl = calculatePnl({
@@ -161,6 +164,7 @@ export async function persistReconstruction(
     }
 
     if (trade.status === "CLOSED") tradesClosed += 1;
+    touchedTradeIds.push(tradeId);
 
     // Full replace of this trade's fill allocations -- cheap, derived data.
     await supabase.from("trade_fills").delete().eq("trade_id", tradeId);
@@ -186,5 +190,6 @@ export async function persistReconstruction(
     unclassifiedFillIds,
     unsupportedOverrideIds,
     orphanedOpeningFillIds,
+    touchedTradeIds,
   };
 }

@@ -4,6 +4,7 @@ import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
 import { IntxAdapter } from "@/lib/coinbase/venues/intx";
 import type { MarketDataPort } from "@/lib/coinbase/ports";
 import { serverEnv } from "@/lib/env";
+import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -138,13 +139,17 @@ export async function runNightlyReconciliation(accountId: string) {
         .maybeSingle();
 
       if (product?.contract_size) {
-        await persistReconstruction({
+        const result = await persistReconstruction({
           userId: account.user_id,
           accountId,
           productId,
           contractSize: product.contract_size,
           algorithmVersion: RECONSTRUCTION_ALGORITHM_VERSION,
         });
+
+        await Promise.all(
+          result.touchedTradeIds.map((tradeId) => enqueueNotionSync(account.user_id, tradeId)),
+        );
       }
     }
 

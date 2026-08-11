@@ -5,6 +5,7 @@ import { IntxAdapter } from "@/lib/coinbase/venues/intx";
 import type { MarketDataPort } from "@/lib/coinbase/ports";
 import type { CoinbaseFill, CoinbaseProduct } from "@/lib/coinbase/types";
 import { serverEnv } from "@/lib/env";
+import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -121,6 +122,10 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
       contractSize: product.contractSize,
       algorithmVersion: RECONSTRUCTION_ALGORITHM_VERSION,
     });
+
+    await Promise.all(
+      result.touchedTradeIds.map((tradeId) => enqueueNotionSync(account.user_id, tradeId)),
+    );
 
     if (result.unclassifiedFillIds.length > 0) {
       await raiseNotification({

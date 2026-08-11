@@ -102,7 +102,9 @@ Para revocar sin reemplazar (por ejemplo, si sospechas que la clave se filtró):
 1. Crea una integración interna en [notion.so/my-integrations](https://www.notion.so/my-integrations) y copia el token.
 2. Comparte la base de datos de Notion destino con esa integración.
 3. Configura `NOTION_API_TOKEN` y `NOTION_DATABASE_ID` como variables de entorno del servidor.
-4. Activa el interruptor correspondiente en Configuración dentro de la app.
+4. Activa el interruptor "Activar espejo en Notion" en Configuración dentro de la app.
+
+A partir de ahí, cada operación (sincronizada desde Coinbase o editada en el diario) se refleja automáticamente en esa base de datos de Notion -- ver `docs/NOTION_OUTBOUND_SYNC.md` para el diseño completo (cola con reintentos, cómo evita duplicar páginas para operaciones que ya vinieron de un import de Notion, qué campos se escriben). Requiere que el workflow de GitHub Actions de la sección "Programar la sincronización" esté configurado, igual que la sincronización de Coinbase.
 
 Un fallo de Notion nunca bloquea la sincronización de Coinbase -- son procesos desacoplados por diseño (ver `docs/ARCHITECTURE.md`).
 
@@ -113,9 +115,31 @@ Un fallo de Notion nunca bloquea la sincronización de Coinbase -- son procesos 
 
 ## Desplegar
 
-Pensado para desplegarse en Vercel (Next.js 16 + Turbopack), pero no depende de Vercel específicamente salvo por el mecanismo de cron sugerido por defecto (`app/api/cron/*` + Vercel Cron, con `pg_cron` de Supabase documentado como alternativa -- ver `docs/ARCHITECTURE.md`, a construir en fases posteriores).
+Pensado para desplegarse en Vercel (Next.js 16 + Turbopack), pero no depende de Vercel específicamente salvo por el mecanismo de cron sugerido por defecto (`app/api/cron/*`, con `pg_cron` de Supabase documentado como alternativa -- ver `docs/ARCHITECTURE.md`).
 
 Variables de entorno a configurar en el proveedor de hosting: todas las de `.env.example` salvo los comentarios. Nunca subas `.env.local` al repositorio -- está en `.gitignore`.
+
+## Programar la sincronización (cron)
+
+Hay tres rutas protegidas por `CRON_SECRET` (`Authorization: Bearer <CRON_SECRET>`, ver `src/lib/sync/verify-cron-request.ts`):
+
+| Ruta | Qué hace | Cadencia deseada |
+|---|---|---|
+| `/api/cron/sync` | Poll de fills nuevos en Coinbase + reconstrucción de trades | ~5 min |
+| `/api/cron/notion-sync` | Drena la cola del espejo de Notion (`docs/NOTION_OUTBOUND_SYNC.md`) | ~5 min |
+| `/api/cron/reconcile` | Conciliación nocturna contra Coinbase | 1 vez al día |
+
+**El plan gratuito de Vercel limita los Cron Jobs nativos a 2 como máximo, cada uno ejecutable solo una vez al día** -- insuficiente para las dos rutas de ~5 min. Por eso este repo separa el mecanismo:
+
+- `vercel.json` declara únicamente `/api/cron/reconcile` (una vez al día, encaja en el límite del plan gratuito). Si tu plan de Vercel sí permite crons más frecuentes, puedes mover las otras dos rutas ahí también y retirar el workflow de abajo.
+- `.github/workflows/coinbase-sync-cron.yml` llama a `/api/cron/sync` y `/api/cron/notion-sync` cada 5 minutos vía `curl`, usando GitHub Actions como programador externo gratuito.
+
+Para activar el workflow, en el repositorio de GitHub ve a **Settings -> Secrets and variables -> Actions** y crea:
+
+- `CRON_SECRET`: el mismo valor que configuraste como variable de entorno en Vercel.
+- `APP_URL`: la URL pública de tu despliegue, sin `/` final (p. ej. `https://tu-app.vercel.app`).
+
+GitHub Actions no garantiza el minuto exacto de un cron programado (puede atrasarse unos minutos bajo carga) -- suficiente para este caso de uso, pero no lo trates como un temporizador preciso. También puedes disparar el workflow manualmente desde la pestaña Actions (`workflow_dispatch`) para probarlo sin esperar al próximo ciclo.
 
 ## Estructura del proyecto
 

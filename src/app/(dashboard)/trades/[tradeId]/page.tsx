@@ -28,16 +28,27 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
   const timezone = settings?.timezone || "UTC";
 
-  const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }] = await Promise.all([
-    supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
-    supabase
-      .from("trade_fills")
-      .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no")
-      .eq("trade_id", trade.id)
-      .order("sequence_no", { ascending: true }),
-    supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
-    supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
-  ]);
+  const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }, { data: tradeTags }] =
+    await Promise.all([
+      supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
+      supabase
+        .from("trade_fills")
+        .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no")
+        .eq("trade_id", trade.id)
+        .order("sequence_no", { ascending: true }),
+      supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
+      supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
+      supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
+    ]);
+
+  const tagIds = (tradeTags ?? []).map((t) => t.tag_id);
+  const { data: tags } =
+    tagIds.length > 0 ? await supabase.from("tags").select("id, name").in("id", tagIds) : { data: [] };
+
+  const SETUP_TAG_PREFIX = "Setup: ";
+  const currentSetupGrade =
+    (tags ?? []).map((t) => t.name).find((name) => name.startsWith(SETUP_TAG_PREFIX))?.slice(SETUP_TAG_PREFIX.length) ??
+    null;
 
   const rawFillIds = (tradeFills ?? []).map((f) => f.raw_fill_id);
   const { data: rawFills } =
@@ -69,7 +80,12 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
       <FillHistoryTable fills={fillRows} timezone={timezone} />
 
-      <JournalForm tradeId={trade.id} journalEntry={journalEntry ?? null} strategies={strategies ?? []} />
+      <JournalForm
+        tradeId={trade.id}
+        journalEntry={journalEntry ?? null}
+        strategies={strategies ?? []}
+        currentSetupGrade={currentSetupGrade}
+      />
     </>
   );
 }

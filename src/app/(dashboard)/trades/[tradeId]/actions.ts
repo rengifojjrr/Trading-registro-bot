@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { enqueueNotionSync } from "@/lib/notion/sync";
 import { createClient } from "@/lib/supabase/server";
 
 const optionalText = (max: number) =>
@@ -15,9 +16,21 @@ const optionalNumber = () =>
 const optionalRating = () =>
   z.preprocess((v) => (v === "" || v === null ? undefined : v), z.coerce.number().int().min(1).max(5).optional());
 
+// Checkbox groups (Emociones/Errores) submit one FormData entry per checked
+// box under the same field name -- stored comma-joined, same convention the
+// Notion import used (see docs/NOTION_IMPORT.md), so both sources read back
+// identically.
+const checkboxList = (maxLen: number) => z.array(z.string().max(maxLen)).max(20);
+
+const SETUP_GRADES = ["A+", "A", "B", "C"] as const;
+
 const schema = z.object({
   tradeId: z.string().uuid(),
   strategy_id: z.preprocess((v) => (v === "" || v === "NONE" ? undefined : v), z.string().uuid().optional()),
+  setup_grade: z.preprocess(
+    (v) => (v === "" || v === "NONE" ? undefined : v),
+    z.enum(SETUP_GRADES).optional(),
+  ),
   htf_bias: optionalText(200),
   sr_proximity: optionalText(200),
   planned_direction: z.preprocess((v) => (v === "" ? "NONE" : v), z.enum(["LONG", "SHORT", "NONE"])),
@@ -27,8 +40,8 @@ const schema = z.object({
   result_r: optionalNumber(),
   plan_adherence: optionalRating(),
   entry_quality: optionalRating(),
-  emotional_state: optionalText(200),
-  mistake_tag: optionalText(200),
+  emotional_state: checkboxList(200),
+  mistake_tag: checkboxList(200),
   lesson_learned: optionalText(2000),
   notes: optionalText(5000),
 });
@@ -50,6 +63,7 @@ export async function saveJournalEntry(
   const parsed = schema.safeParse({
     tradeId: formData.get("tradeId"),
     strategy_id: formData.get("strategy_id"),
+    setup_grade: formData.get("setup_grade"),
     htf_bias: formData.get("htf_bias"),
     sr_proximity: formData.get("sr_proximity"),
     planned_direction: formData.get("planned_direction"),
@@ -59,8 +73,8 @@ export async function saveJournalEntry(
     result_r: formData.get("result_r"),
     plan_adherence: formData.get("plan_adherence"),
     entry_quality: formData.get("entry_quality"),
-    emotional_state: formData.get("emotional_state"),
-    mistake_tag: formData.get("mistake_tag"),
+    emotional_state: formData.getAll("emotional_state"),
+    mistake_tag: formData.getAll("mistake_tag"),
     lesson_learned: formData.get("lesson_learned"),
     notes: formData.get("notes"),
   });
@@ -98,8 +112,8 @@ export async function saveJournalEntry(
       result_r: fields.result_r ?? null,
       plan_adherence: fields.plan_adherence ?? null,
       entry_quality: fields.entry_quality ?? null,
-      emotional_state: fields.emotional_state ?? null,
-      mistake_tag: fields.mistake_tag ?? null,
+      emotional_state: fields.emotional_state.length > 0 ? fields.emotional_state.join(", ") : null,
+      mistake_tag: fields.mistake_tag.length > 0 ? fields.mistake_tag.join(", ") : null,
       lesson_learned: fields.lesson_learned ?? null,
       notes: fields.notes ?? null,
     },
@@ -110,6 +124,50 @@ export async function saveJournalEntry(
     return { error: "No se pudo guardar el diario.", success: false };
   }
 
+  await syncSetupTag(supabase, user.id, tradeId, fields.setup_grade ?? null);
+  await enqueueNotionSync(user.id, tradeId);
+
   revalidatePath(`/trades/${tradeId}`);
   return { error: null, success: true };
+}
+
+const SETUP_TAG_PREFIX = "Setup: ";
+
+/**
+ * Setup grade is stored as a tag ("Setup: A+", ...) rather than a column --
+ * it reuses the same tags/trade_tags mechanism the Notion import already
+ * populated (see docs/NOTION_IMPORT.md), so a trade never ends up with two
+ * different homes for the same concept depending on where it came from.
+ * Replaces whichever "Setup: X" tag this trade currently has, if any.
+ */
+async function syncSetupTag(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  tradeId: string,
+  grade: (typeof SETUP_GRADES)[number] | null,
+): Promise<void> {
+  const { data: existingSetupTags } = await supabase
+    .from("tags")
+    .select("id")
+    .eq("user_id", userId)
+    .like("name", `${SETUP_TAG_PREFIX}%`);
+
+  const existingIds = (existingSetupTags ?? []).map((t) => t.id);
+  if (existingIds.length > 0) {
+    await supabase.from("trade_tags").delete().eq("trade_id", tradeId).in("tag_id", existingIds);
+  }
+
+  if (!grade) return;
+
+  const { data: tag } = await supabase
+    .from("tags")
+    .upsert({ user_id: userId, name: `${SETUP_TAG_PREFIX}${grade}` }, { onConflict: "user_id,name" })
+    .select("id")
+    .single();
+  if (!tag) return;
+
+  await supabase.from("trade_tags").upsert(
+    { user_id: userId, trade_id: tradeId, tag_id: tag.id },
+    { onConflict: "trade_id,tag_id" },
+  );
 }
