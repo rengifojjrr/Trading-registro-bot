@@ -872,9 +872,14 @@ export interface Database {
           last_seen_at?: string;
           is_read?: boolean;
           resolved_at?: string | null;
-        },
-        // Client-side updates are limited by convention to is_read/resolved_at.
-        { is_read?: boolean; resolved_at?: string | null }
+        }
+        // No restricted Update override here: the service-role client
+        // (lib/notifications/create.ts) legitimately updates
+        // occurrence_count/last_seen_at/message on a dedup match, while the
+        // RLS-scoped client is separately expected (by convention, not by
+        // a TypeScript-level restriction that RLS itself doesn't enforce
+        // either -- see supabase/migrations 20260811120900_system.sql) to
+        // only ever send is_read/resolved_at.
       >;
 
       csv_imports: Table<

@@ -1,3 +1,4 @@
+import { CoinbaseRestClient, type CoinbaseClientConfig } from "../client";
 import type { MarketDataPort, PositionsPort } from "../ports";
 import type {
   CoinbaseFill,
@@ -11,42 +12,66 @@ import type {
  * Coinbase Financial Markets (CFM): CFTC-regulated US futures, the
  * recommended default venue (see docs/COINBASE_INTEGRATION.md -- INTX is
  * being retired 2026-09-09). Implements MarketDataPort against
- * /orders/historical/fills, /orders/historical/batch, /products/{id}, plus
- * the CFM-only PositionsPort via /cfm/positions.
+ * /orders/historical/fills, /products/{id}, plus the CFM-only
+ * PositionsPort via /cfm/positions.
  *
- * Deliberately unimplemented in Phase 1: the project plan explicitly keeps
- * "adapter interfaces, no live calls" separate from "Phase 2: real Coinbase
- * importer". This class exists now so the MarketDataPort/PositionsPort
- * interfaces are proven to typecheck against a real venue, not just the
- * mock adapter -- but every method throws until Phase 2 wires in
- * lib/coinbase/client.ts (the authenticated HTTP client) and real
- * credentials have passed the reconstruction-engine test suite.
+ * UNVERIFIED AGAINST LIVE COINBASE -- see client.ts's file comment. Every
+ * field mapping below traces to a confirmed field in
+ * docs/COINBASE_INTEGRATION.md; nothing here was guessed.
  */
 export class CfmAdapter implements MarketDataPort, PositionsPort {
   readonly venue = "FCM" as const;
+  private readonly client: CoinbaseRestClient;
 
-  listFills(_params: CoinbaseListFillsParams): Promise<CoinbaseFill[]> {
-    throw new NotImplementedUntilPhase2("CfmAdapter.listFills");
+  constructor(config: CoinbaseClientConfig) {
+    this.client = new CoinbaseRestClient(config);
   }
 
-  listOrders(_orderIds: string[]): Promise<CoinbaseOrder[]> {
-    throw new NotImplementedUntilPhase2("CfmAdapter.listOrders");
+  async listFills(params: CoinbaseListFillsParams): Promise<CoinbaseFill[]> {
+    const fills: CoinbaseFill[] = [];
+    for await (const page of this.client.paginate<CoinbaseFill>(
+      "/orders/historical/fills",
+      "fills",
+      {
+        product_ids: params.product_ids,
+        order_ids: params.order_ids,
+        product_types: params.product_types,
+        start_sequence_timestamp: params.start_sequence_timestamp,
+        end_sequence_timestamp: params.end_sequence_timestamp,
+        limit: params.limit ?? 100,
+      },
+    )) {
+      fills.push(...page);
+    }
+    return fills;
   }
 
-  getProduct(_productId: string): Promise<CoinbaseProduct> {
-    throw new NotImplementedUntilPhase2("CfmAdapter.getProduct");
+  async listOrders(orderIds: string[]): Promise<CoinbaseOrder[]> {
+    // GET /orders/historical/batch's exact filter-by-order_ids query
+    // parameter was not confirmed during research (see
+    // docs/COINBASE_INTEGRATION.md), so this fetches orders individually
+    // via the confirmed single-order endpoint instead of guessing a batch
+    // param name. Fine for the sync engine's actual usage (looking up the
+    // handful of orders behind a batch of new fills), not meant for bulk
+    // order history backfill.
+    const orders: CoinbaseOrder[] = [];
+    for (const orderId of orderIds) {
+      const response = await this.client.get<{ order: CoinbaseOrder }>(
+        `/orders/historical/${encodeURIComponent(orderId)}`,
+      );
+      orders.push(response.order);
+    }
+    return orders;
   }
 
-  listOpenPositions(): Promise<CoinbaseFuturesPosition[]> {
-    throw new NotImplementedUntilPhase2("CfmAdapter.listOpenPositions");
+  async getProduct(productId: string): Promise<CoinbaseProduct> {
+    return this.client.get<CoinbaseProduct>(`/products/${encodeURIComponent(productId)}`);
   }
-}
 
-class NotImplementedUntilPhase2 extends Error {
-  constructor(method: string) {
-    super(
-      `${method} is not implemented yet. Live Coinbase sync is built in Phase 2, after the reconstruction engine's test suite passes -- see docs/COINBASE_INTEGRATION.md.`,
+  async listOpenPositions(): Promise<CoinbaseFuturesPosition[]> {
+    const response = await this.client.get<{ positions: CoinbaseFuturesPosition[] }>(
+      "/cfm/positions",
     );
-    this.name = "NotImplementedUntilPhase2";
+    return response.positions;
   }
 }
