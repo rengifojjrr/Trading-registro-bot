@@ -3,6 +3,8 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, SessionLabel, TradeSource } from "@/types/database";
 
+import type { TradeForStats } from "./stats";
+
 export interface TradeFilters {
   accountId?: string;
   productId?: string;
@@ -139,6 +141,51 @@ export async function fetchOpenLivePositions(): Promise<OpenPositionRow[]> {
     .order("opened_at", { ascending: false });
   if (error) throw new Error(`fetchOpenLivePositions: ${error.message}`);
   return (data ?? []) as unknown as OpenPositionRow[];
+}
+
+export interface TradeWithStrategy extends TradeForStats {
+  strategyId: string | null;
+}
+
+/**
+ * Same filtered trade set as fetchTradesForStats, each tagged with its
+ * journal strategy_id (null if the trade has no journal entry or no
+ * strategy assigned) -- for lib/analytics/strategy-report.ts to group by.
+ * Two queries plus an in-JS join, rather than a single PostgREST embedded
+ * select: this project's hand-maintained types/database.ts always declares
+ * an empty Relationships tuple per table (see that file's own top comment),
+ * so supabase-js has nothing to infer an embedded journal_entries(...)
+ * select's shape from here. Mirrors the same two-query-plus-Map pattern
+ * already used for trade_fills/raw_fills on the trade detail page.
+ */
+export async function fetchTradesForStrategyReport(filters: TradeFilters = {}): Promise<TradeWithStrategy[]> {
+  const supabase = await createClient();
+  let query = supabase.from("trades").select(STATS_COLUMNS);
+  query = applyFilters(query, filters);
+  const { data: trades, error } = await query.order("opened_at", { ascending: true });
+  if (error) throw new Error(`fetchTradesForStrategyReport: ${error.message}`);
+
+  const tradeIds = (trades ?? []).map((t) => t.id);
+  const strategyByTradeId = new Map<string, string | null>();
+  if (tradeIds.length > 0) {
+    const { data: entries, error: entriesError } = await supabase
+      .from("journal_entries")
+      .select("trade_id, strategy_id")
+      .in("trade_id", tradeIds);
+    if (entriesError) throw new Error(`fetchTradesForStrategyReport: ${entriesError.message}`);
+    for (const e of entries ?? []) strategyByTradeId.set(e.trade_id, e.strategy_id);
+  }
+
+  return (trades ?? []).map((t) => ({
+    id: t.id,
+    status: t.status,
+    openedAt: t.opened_at,
+    closedAt: t.closed_at,
+    netPnl: t.net_pnl,
+    grossPnl: t.gross_pnl,
+    totalCommissions: t.total_commissions,
+    strategyId: strategyByTradeId.get(t.id) ?? null,
+  }));
 }
 
 /**
