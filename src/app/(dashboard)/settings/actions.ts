@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
 import { createClient } from "@/lib/supabase/server";
 
 const schema = z.object({
@@ -60,4 +61,33 @@ export async function updateSettings(
 
   revalidatePath("/settings");
   return { error: null, success: true };
+}
+
+/**
+ * Toggles whether one field is included in the Notion outbound mirror (see
+ * lib/notion/sync.ts's loadTradeContext, which already reads
+ * notion_field_mappings.enabled into buildNotionProperties' disabledFields).
+ * Called directly from the client (components/settings/notion-field-mappings.tsx)
+ * rather than through a <form action> -- there's one independent toggle per
+ * field, not a single form to submit.
+ */
+export async function setNotionFieldMappingEnabled(internalField: string, enabled: boolean): Promise<void> {
+  const user = await requireUser();
+
+  const mapping = NOTION_FIELD_MAPPINGS.find((m) => m.internalField === internalField);
+  if (!mapping) return; // unknown field -- ignore rather than write junk
+
+  const supabase = await createClient();
+  await supabase.from("notion_field_mappings").upsert(
+    {
+      user_id: user.id,
+      internal_field: mapping.internalField,
+      notion_property_name: mapping.notionPropertyName,
+      notion_property_type: mapping.notionPropertyType,
+      enabled,
+    },
+    { onConflict: "user_id,internal_field" },
+  );
+
+  revalidatePath("/settings");
 }

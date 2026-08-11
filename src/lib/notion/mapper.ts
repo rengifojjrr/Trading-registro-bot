@@ -1,4 +1,14 @@
-import "server-only";
+/**
+ * No `import "server-only"` here on purpose (same reasoning as
+ * lib/coinbase/jwt.ts): this module is pure data transformation -- trade/
+ * journal rows in, a Notion properties object out. It never reads
+ * process.env, calls the network, or touches a secret, so it has no
+ * secret-leakage boundary of its own; that guard belongs at the call site
+ * that actually holds Notion credentials (lib/notion/sync.ts, which already
+ * carries it). Keeping this file guard-free lets it be unit tested
+ * directly with Vitest (mapper.test.ts), which doesn't run inside Next.js's
+ * RSC bundling step where `server-only` enforces its check.
+ */
 
 import type { CreatePageParameters } from "@notionhq/client";
 import { Decimal } from "decimal.js";
@@ -19,6 +29,70 @@ export interface MapperInput {
   /** internal_field names the user has explicitly disabled via notion_field_mappings. Everything else is written. */
   disabledFields: Set<string>;
 }
+
+export interface NotionFieldMapping {
+  internalField: string;
+  notionPropertyName: string;
+  notionPropertyType: string;
+  label: string;
+}
+
+/**
+ * One entry per internal_field this mapper's `set()` calls below actually
+ * write (everything except "title" -- a Notion page always needs its title
+ * property, so that one is never user-toggleable). This is the single
+ * source of truth for the Settings > Notion field-mappings UI (see
+ * components/settings/notion-field-mappings.tsx): it lists which Notion
+ * property each field targets and lets the user disable individual fields
+ * via notion_field_mappings.enabled, which buildNotionProperties already
+ * respects through `disabledFields`.
+ *
+ * Deliberately NOT used to drive the property names inside
+ * buildNotionProperties itself -- those stay hardcoded literals so this
+ * display-only manifest can never desync the actual, already-working sync
+ * payload if the two drift apart. mapper.test.ts cross-checks that every
+ * name here matches a real key buildNotionProperties produces.
+ */
+export const NOTION_FIELD_MAPPINGS: NotionFieldMapping[] = [
+  { internalField: "opened_at", notionPropertyName: "Fecha", notionPropertyType: "date", label: "Fecha de apertura" },
+  { internalField: "product_id", notionPropertyName: "Ticker", notionPropertyType: "multi_select", label: "Producto" },
+  { internalField: "direction", notionPropertyName: "Dirección", notionPropertyType: "select", label: "Dirección" },
+  { internalField: "entry_wap", notionPropertyName: "Entrada", notionPropertyType: "number", label: "Precio de entrada" },
+  { internalField: "exit_wap", notionPropertyName: "Salida", notionPropertyType: "number", label: "Precio de salida" },
+  { internalField: "max_size", notionPropertyName: "Tamaño", notionPropertyType: "number", label: "Tamaño" },
+  {
+    internalField: "total_commissions",
+    notionPropertyName: "Comisiones",
+    notionPropertyType: "number",
+    label: "Comisiones",
+  },
+  { internalField: "net_pnl", notionPropertyName: "PnL", notionPropertyType: "number", label: "P&L neto" },
+  { internalField: "account_id", notionPropertyName: "Cuenta", notionPropertyType: "select", label: "Cuenta" },
+  { internalField: "product_type", notionPropertyName: "Mercado", notionPropertyType: "select", label: "Mercado" },
+  { internalField: "status", notionPropertyName: "Resultado", notionPropertyType: "status", label: "Resultado" },
+  { internalField: "result_r", notionPropertyName: "R múltiplo", notionPropertyType: "number", label: "Resultado en R" },
+  {
+    internalField: "stop_loss_price",
+    notionPropertyName: "Stop Loss",
+    notionPropertyType: "number",
+    label: "Stop loss planeado",
+  },
+  {
+    internalField: "take_profit_price",
+    notionPropertyName: "Take Profit",
+    notionPropertyType: "number",
+    label: "Take profit planeado",
+  },
+  {
+    internalField: "emotional_state",
+    notionPropertyName: "Emociones",
+    notionPropertyType: "multi_select",
+    label: "Emociones",
+  },
+  { internalField: "mistake_tag", notionPropertyName: "Errores", notionPropertyType: "multi_select", label: "Errores" },
+  { internalField: "htf_bias", notionPropertyName: "trend ", notionPropertyType: "multi_select", label: "Sesgo HTF" },
+  { internalField: "notes", notionPropertyName: "Notas", notionPropertyType: "rich_text", label: "Notas" },
+];
 
 /**
  * Builds the Notion "properties" payload for creating/updating a page in
