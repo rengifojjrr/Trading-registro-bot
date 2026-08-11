@@ -171,3 +171,60 @@ async function syncSetupTag(
     { onConflict: "trade_id,tag_id" },
   );
 }
+
+const commentSchema = z.object({
+  tradeId: z.string().uuid(),
+  body: z.string().trim().min(1, "El comentario no puede estar vacío.").max(2000),
+});
+
+export type CommentFormState = { error: string | null; success: boolean };
+
+/**
+ * Free-form notes on a trade, separate from journal_entries -- an ongoing
+ * timestamped log (e.g. "moved stop to breakeven") rather than the single
+ * structured record journal_entries holds. Not mirrored to Notion: the
+ * outbound mirror only covers the specific journal fields the original
+ * Notion template had (see docs/NOTION_IMPORT.md); comments are new.
+ */
+export async function addComment(_prevState: CommentFormState, formData: FormData): Promise<CommentFormState> {
+  const user = await requireUser();
+
+  const parsed = commentSchema.safeParse({
+    tradeId: formData.get("tradeId"),
+    body: formData.get("body"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
+  const supabase = await createClient();
+
+  const { data: trade } = await supabase
+    .from("trades")
+    .select("id")
+    .eq("id", parsed.data.tradeId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!trade) {
+    return { error: "Operación no encontrada.", success: false };
+  }
+
+  const { error } = await supabase
+    .from("trade_comments")
+    .insert({ user_id: user.id, trade_id: parsed.data.tradeId, body: parsed.data.body });
+  if (error) {
+    return { error: "No se pudo guardar el comentario.", success: false };
+  }
+
+  revalidatePath(`/trades/${parsed.data.tradeId}`);
+  return { error: null, success: true };
+}
+
+export async function deleteComment(tradeId: string, commentId: string, _formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  await supabase.from("trade_comments").delete().eq("id", commentId).eq("trade_id", tradeId).eq("user_id", user.id);
+
+  revalidatePath(`/trades/${tradeId}`);
+}

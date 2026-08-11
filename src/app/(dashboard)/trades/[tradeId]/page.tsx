@@ -7,6 +7,7 @@ import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-
 import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart } from "@/components/trades/trade-chart";
+import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeSummary } from "@/components/trades/trade-summary";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
@@ -48,21 +49,33 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
   // identical [start, end] range the server originally rendered.
   const chartWindow = wantsChart ? pickChartWindow(chartOpenedAt, chartClosedAt) : null;
 
-  const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }, { data: tradeTags }, chartData] =
-    await Promise.all([
-      supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
-      supabase
-        .from("trade_fills")
-        .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no")
-        .eq("trade_id", trade.id)
-        .order("sequence_no", { ascending: true }),
-      supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
-      supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
-      supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
-      wantsChart
-        ? fetchTradeCandles({ productId: trade.product_id, openedAt: chartOpenedAt, closedAt: chartClosedAt })
-        : Promise.resolve(null),
-    ]);
+  const [
+    { data: account },
+    { data: tradeFills },
+    { data: journalEntry },
+    { data: strategies },
+    { data: tradeTags },
+    { data: tradeComments },
+    chartData,
+  ] = await Promise.all([
+    supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
+    supabase
+      .from("trade_fills")
+      .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no")
+      .eq("trade_id", trade.id)
+      .order("sequence_no", { ascending: true }),
+    supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
+    supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
+    supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
+    supabase
+      .from("trade_comments")
+      .select("id, body, created_at")
+      .eq("trade_id", trade.id)
+      .order("created_at", { ascending: false }),
+    wantsChart
+      ? fetchTradeCandles({ productId: trade.product_id, openedAt: chartOpenedAt, closedAt: chartClosedAt })
+      : Promise.resolve(null),
+  ]);
 
   const isLiveOpenPosition =
     trade.status === "OPEN" && trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
@@ -170,6 +183,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         strategies={strategies ?? []}
         currentSetupGrade={currentSetupGrade}
       />
+
+      <TradeComments tradeId={trade.id} comments={tradeComments ?? []} timezone={timezone} />
     </>
   );
 }
