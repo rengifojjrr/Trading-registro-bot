@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -13,6 +13,9 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GRANULARITY_LABELS, GRANULARITY_ORDER } from "@/lib/analytics/chart-window";
+import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { formatMoney } from "@/lib/format";
 
 export interface TradeChartCandle {
@@ -53,19 +56,59 @@ const THEME = {
  * historical window and likely has no matching symbol for this exact
  * futures contract anyway. Purely illustrative: never a source of truth for
  * P&L or any other figure shown elsewhere on the page.
+ *
+ * `initialCandles`/`initialGranularity` seed local state -- picking a
+ * different granularity re-fetches the same fixed [windowStart, windowEnd]
+ * window at that granularity via /api/coinbase/trade-candles rather than
+ * recomputing the window, so the visible time range never jumps around.
  */
 export function TradeChart({
-  candles,
-  granularityLabel,
+  productId,
+  windowStart,
+  windowEnd,
+  initialCandles,
+  initialGranularity,
   entry,
   exit,
 }: {
-  candles: TradeChartCandle[];
-  granularityLabel: string;
+  productId: string;
+  windowStart: number; // unix seconds
+  windowEnd: number; // unix seconds
+  initialCandles: TradeChartCandle[];
+  initialGranularity: CoinbaseCandleGranularity;
   entry: TradeChartMarker;
   exit: TradeChartMarker | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+  const [candles, setCandles] = useState(initialCandles);
+  const [granularity, setGranularity] = useState(initialGranularity);
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleGranularityChange(next: string) {
+    const nextGranularity = next as CoinbaseCandleGranularity;
+    setGranularity(nextGranularity);
+    setIsLoading(true);
+    const requestId = ++requestIdRef.current;
+
+    try {
+      const query = new URLSearchParams({
+        productId,
+        start: String(windowStart),
+        end: String(windowEnd),
+        granularity: nextGranularity,
+      });
+      const res = await fetch(`/api/coinbase/trade-candles?${query.toString()}`);
+      const data = (await res.json()) as { candles: TradeChartCandle[] | null };
+      if (requestId !== requestIdRef.current) return; // superseded by a newer selection
+      if (data.candles) setCandles(data.candles);
+    } catch {
+      // Keep showing the last-known candles -- see the route's own
+      // never-throws contract; this only guards the fetch() call itself.
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -156,8 +199,23 @@ export function TradeChart({
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Select value={granularity} onValueChange={handleGranularityChange}>
+          <SelectTrigger className="h-8 w-24 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GRANULARITY_ORDER.map((g) => (
+              <SelectItem key={g} value={g}>
+                {GRANULARITY_LABELS[g]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
+      </div>
       <div ref={containerRef} className="w-full" />
-      <p className="text-xs text-muted-foreground">Velas de {granularityLabel} · datos de Coinbase</p>
+      <p className="text-xs text-muted-foreground">Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase</p>
     </div>
   );
 }

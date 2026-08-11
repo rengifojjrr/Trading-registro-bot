@@ -8,6 +8,7 @@ import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart } from "@/components/trades/trade-chart";
 import { TradeSummary } from "@/components/trades/trade-summary";
+import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
@@ -39,6 +40,13 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
   // "MBT-EXTERNAL", "BIT-DEMO-CDE") and was never a real Coinbase product,
   // so there's no real chart to fetch for it -- see fetch-trade-candles.ts.
   const wantsChart = trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
+  const chartOpenedAt = new Date(trade.opened_at);
+  const chartClosedAt = trade.closed_at ? new Date(trade.closed_at) : new Date();
+  // Computed from the exact same Date instances passed to fetchTradeCandles
+  // below, which picks this same window internally -- so the client's
+  // manual granularity selector (see trade-chart.tsx) always re-fetches the
+  // identical [start, end] range the server originally rendered.
+  const chartWindow = wantsChart ? pickChartWindow(chartOpenedAt, chartClosedAt) : null;
 
   const [{ data: account }, { data: tradeFills }, { data: journalEntry }, { data: strategies }, { data: tradeTags }, chartData] =
     await Promise.all([
@@ -52,11 +60,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
       supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
       wantsChart
-        ? fetchTradeCandles({
-            productId: trade.product_id,
-            openedAt: new Date(trade.opened_at),
-            closedAt: trade.closed_at ? new Date(trade.closed_at) : new Date(),
-          })
+        ? fetchTradeCandles({ productId: trade.product_id, openedAt: chartOpenedAt, closedAt: chartClosedAt })
         : Promise.resolve(null),
     ]);
 
@@ -138,15 +142,18 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
       <TradeSummary trade={trade} accountName={account?.name ?? "--"} timezone={timezone} />
 
-      {chartData && entryMarker ? (
+      {chartData && entryMarker && chartWindow ? (
         <Card>
           <CardHeader>
             <CardTitle>Gráfico de la operación</CardTitle>
           </CardHeader>
           <CardContent>
             <TradeChart
-              candles={chartData.candles}
-              granularityLabel={chartData.granularityLabel}
+              productId={trade.product_id}
+              windowStart={Math.floor(chartWindow.start.getTime() / 1000)}
+              windowEnd={Math.floor(chartWindow.end.getTime() / 1000)}
+              initialCandles={chartData.candles}
+              initialGranularity={chartWindow.granularity}
               entry={entryMarker}
               exit={exitMarker}
             />

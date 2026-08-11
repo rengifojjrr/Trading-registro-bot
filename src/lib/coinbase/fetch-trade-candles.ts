@@ -1,10 +1,10 @@
 import "server-only";
 
-import { pickChartWindow } from "@/lib/analytics/chart-window";
+import { GRANULARITY_LABELS, pickChartWindow } from "@/lib/analytics/chart-window";
 import { serverEnv } from "@/lib/env";
 
 import { CfmAdapter } from "./venues/cfm";
-import type { CoinbaseCandleGranularity } from "./types";
+import type { CoinbaseCandle } from "./types";
 
 export interface TradeChartCandle {
   time: number; // unix seconds
@@ -19,17 +19,22 @@ export interface TradeChartData {
   granularityLabel: string;
 }
 
-const GRANULARITY_LABELS: Record<CoinbaseCandleGranularity, string> = {
-  ONE_MINUTE: "1 min",
-  FIVE_MINUTE: "5 min",
-  FIFTEEN_MINUTE: "15 min",
-  THIRTY_MINUTE: "30 min",
-  ONE_HOUR: "1 h",
-  TWO_HOUR: "2 h",
-  FOUR_HOUR: "4 h",
-  SIX_HOUR: "6 h",
-  ONE_DAY: "1 día",
-};
+/**
+ * Shared by the initial server-rendered fetch below and the manual
+ * granularity re-fetch route (api/coinbase/trade-candles/route.ts), so both
+ * ever produce candles from a single mapping of Coinbase's raw response.
+ */
+export function mapCoinbaseCandles(candles: CoinbaseCandle[]): TradeChartCandle[] {
+  return candles
+    .map((c) => ({
+      time: Number(c.start),
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close),
+    }))
+    .sort((a, b) => a.time - b.time);
+}
 
 /**
  * Chart data is decoration, never a source of truth -- this never throws
@@ -70,15 +75,7 @@ export async function fetchTradeCandles(params: {
     });
 
     return {
-      candles: candles
-        .map((c) => ({
-          time: Number(c.start),
-          open: Number(c.open),
-          high: Number(c.high),
-          low: Number(c.low),
-          close: Number(c.close),
-        }))
-        .sort((a, b) => a.time - b.time),
+      candles: mapCoinbaseCandles(candles),
       granularityLabel: GRANULARITY_LABELS[granularity],
     };
   } catch (error) {

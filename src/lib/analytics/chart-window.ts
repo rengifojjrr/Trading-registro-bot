@@ -18,8 +18,10 @@ const GRANULARITY_SECONDS: Record<CoinbaseCandleGranularity, number> = {
 };
 
 // Ordered finest-to-coarsest so the first one that fits the window under
-// MAX_CANDLES_PER_REQUEST is also the most detailed one available.
-const GRANULARITY_ORDER: CoinbaseCandleGranularity[] = [
+// MAX_CANDLES_PER_REQUEST is also the most detailed one available. Exported
+// because the manual granularity selector (components/trades/trade-chart.tsx)
+// lists its options in this same order.
+export const GRANULARITY_ORDER: CoinbaseCandleGranularity[] = [
   "ONE_MINUTE",
   "FIVE_MINUTE",
   "FIFTEEN_MINUTE",
@@ -30,6 +32,21 @@ const GRANULARITY_ORDER: CoinbaseCandleGranularity[] = [
   "SIX_HOUR",
   "ONE_DAY",
 ];
+
+// Single source of truth for both the server-picked default label
+// (lib/coinbase/fetch-trade-candles.ts) and the client selector's option
+// labels (components/trades/trade-chart.tsx).
+export const GRANULARITY_LABELS: Record<CoinbaseCandleGranularity, string> = {
+  ONE_MINUTE: "1 min",
+  FIVE_MINUTE: "5 min",
+  FIFTEEN_MINUTE: "15 min",
+  THIRTY_MINUTE: "30 min",
+  ONE_HOUR: "1 h",
+  TWO_HOUR: "2 h",
+  FOUR_HOUR: "4 h",
+  SIX_HOUR: "6 h",
+  ONE_DAY: "1 día",
+};
 
 const MIN_PADDING_SECONDS = 15 * 60;
 const MAX_PADDING_SECONDS = 6 * 60 * 60;
