@@ -5,8 +5,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-history-table";
 import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
+import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart } from "@/components/trades/trade-chart";
 import { TradeSummary } from "@/components/trades/trade-summary";
+import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
 import { formatDate } from "@/lib/format";
@@ -73,6 +75,21 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       ? { time: Math.floor(new Date(trade.closed_at).getTime() / 1000), price: Number(trade.exit_wap) }
       : null;
 
+  // MFE/MAE only makes sense retrospectively, for a trade that actually
+  // finished -- reuses the exact same candles already fetched for the
+  // chart above rather than fetching anything twice.
+  const mfeMae =
+    chartData && trade.status === "CLOSED" && trade.closed_at
+      ? computeMfeMae(chartData.candles, {
+          openedAtUnix: Math.floor(new Date(trade.opened_at).getTime() / 1000),
+          closedAtUnix: Math.floor(new Date(trade.closed_at).getTime() / 1000),
+          direction: trade.direction,
+          entryWap: trade.entry_wap!,
+          maxSize: trade.max_size,
+          contractSize: trade.contract_multiplier,
+        })
+      : null;
+
   const tagIds = (tradeTags ?? []).map((t) => t.tag_id);
   const { data: tags } =
     tagIds.length > 0 ? await supabase.from("tags").select("id, name").in("id", tagIds) : { data: [] };
@@ -133,6 +150,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
               entry={entryMarker}
               exit={exitMarker}
             />
+            {mfeMae ? <MfeMaeStats mfeMae={mfeMae} /> : null}
           </CardContent>
         </Card>
       ) : null}
