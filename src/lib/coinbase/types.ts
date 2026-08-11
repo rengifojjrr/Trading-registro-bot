@@ -45,6 +45,8 @@ export interface CoinbaseProduct {
   quote_increment?: string;
   price_increment?: string;
   display_name?: string;
+  /** Current price, in quote currency -- confirmed present for futures too, not just spot. */
+  price?: string;
   future_product_details?: CoinbaseFutureProductDetails;
 }
 

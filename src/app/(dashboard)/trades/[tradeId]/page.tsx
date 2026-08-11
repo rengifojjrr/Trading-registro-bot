@@ -1,8 +1,10 @@
+import { Decimal } from "decimal.js";
 import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-history-table";
+import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { TradeChart } from "@/components/trades/trade-chart";
 import { TradeSummary } from "@/components/trades/trade-summary";
 import { requireUser } from "@/lib/auth/require-user";
@@ -13,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 import { JournalForm } from "./journal-form";
 
 const TRADE_COLUMNS =
-  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source";
+  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, contract_multiplier, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source";
 
 export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId]">) {
   const { tradeId } = await props.params;
@@ -55,6 +57,12 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
           })
         : Promise.resolve(null),
     ]);
+
+  const isLiveOpenPosition =
+    trade.status === "OPEN" && trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
+  const openQty = isLiveOpenPosition
+    ? new Decimal(trade.total_entry_qty).minus(trade.total_exit_qty).toString()
+    : null;
 
   const entryMarker =
     chartData && trade.entry_wap
@@ -99,6 +107,17 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         title={`${trade.product_id} · ${trade.direction === "LONG" ? "Long" : "Short"}`}
         description={`${account?.name ?? "Cuenta"} · Abierta ${formatDate(trade.opened_at, timezone)}`}
       />
+
+      {isLiveOpenPosition && openQty ? (
+        <LiveUnrealizedPnl
+          productId={trade.product_id}
+          direction={trade.direction}
+          entryWap={trade.entry_wap!}
+          openQty={openQty}
+          contractSize={trade.contract_multiplier}
+          entryCommissions={trade.entry_commissions}
+        />
+      ) : null}
 
       <TradeSummary trade={trade} accountName={account?.name ?? "--"} timezone={timezone} />
 
