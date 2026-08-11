@@ -2,6 +2,53 @@ import { createPrivateKey, randomBytes, type KeyObject } from "node:crypto";
 import { SignJWT } from "jose";
 
 /**
+ * Some CDP portal flows show an Ed25519 secret as a bare base64 string (the
+ * "Secret API key details" -> "Save your API key" dialog) instead of a
+ * PKCS8 PEM block. Confirmed by inspection: it decodes to either the raw
+ * 32-byte seed, or 64 bytes (the NaCl/libsodium "secret key" convention --
+ * the 32-byte seed followed by its 32-byte public key). Either way, only
+ * the first 32 bytes (the seed) are needed to build a real Ed25519 key.
+ *
+ * PKCS8's DER encoding of an Ed25519 private key has no variable-length
+ * fields besides the 32-byte seed itself (RFC 8410 s7), so this 16-byte
+ * prefix is a fixed constant, not something derived per-key -- verified by
+ * generating a fresh Ed25519 key with node:crypto and diffing its own
+ * PKCS8 DER export against this exact prefix.
+ */
+const ED25519_PKCS8_DER_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
+const ED25519_SEED_LENGTH = 32;
+const ED25519_LIBSODIUM_SECRET_KEY_LENGTH = 64;
+
+function tryParseRawEd25519Base64(value: string): KeyObject | null {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+
+  const raw = Buffer.from(value, "base64");
+  // Buffer.from(..., "base64") silently drops invalid characters instead of
+  // throwing -- re-encoding and comparing catches a false-positive match on
+  // a string that only looks like base64.
+  if (raw.toString("base64").replace(/=+$/, "") !== value.replace(/=+$/, "")) return null;
+
+  let seed: Buffer;
+  if (raw.length === ED25519_LIBSODIUM_SECRET_KEY_LENGTH) {
+    seed = raw.subarray(0, ED25519_SEED_LENGTH);
+  } else if (raw.length === ED25519_SEED_LENGTH) {
+    seed = raw;
+  } else {
+    return null;
+  }
+
+  try {
+    return createPrivateKey({
+      key: Buffer.concat([ED25519_PKCS8_DER_PREFIX, seed]),
+      format: "der",
+      type: "pkcs8",
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * No `import "server-only"` here on purpose: this module is pure crypto
  * that takes a key as a parameter rather than reading one from
  * process.env, so it has no secret-leakage boundary of its own -- that
@@ -25,7 +72,10 @@ import { SignJWT } from "jose";
  * PEM); the correct alg is auto-detected from the key material rather than
  * assumed, exactly like Coinbase's own SDKs do. Node's createPrivateKey
  * parses both PEM encodings natively, so there's no need for jose's
- * PKCS8-only importer here.
+ * PKCS8-only importer here. The portal's "Secret API key" creation dialog
+ * has also been observed showing an Ed25519 key as a bare base64 string
+ * instead of PEM -- see tryParseRawEd25519Base64 below, tried first for
+ * anything that isn't already a PEM block.
  *
  * This module signs tokens; it never makes an HTTP request itself (that's
  * lib/coinbase/client.ts, Phase 2). Signing is pure, deterministic-enough
@@ -64,6 +114,12 @@ function describePemShape(raw: string): Record<string, number | boolean> {
 }
 
 function loadSigningKey(privateKeyPem: string): { key: KeyObject; alg: "ES256" | "EdDSA" } {
+  const trimmed = privateKeyPem.trim();
+  if (!trimmed.startsWith("-----BEGIN")) {
+    const rawKey = tryParseRawEd25519Base64(trimmed);
+    if (rawKey) return { key: rawKey, alg: "EdDSA" };
+  }
+
   let key: KeyObject;
   try {
     key = createPrivateKey(privateKeyPem);
