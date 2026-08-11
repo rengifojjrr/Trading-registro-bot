@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import type { Database, SessionLabel } from "@/types/database";
+import type { Database, SessionLabel, TradeSource } from "@/types/database";
 
 export interface TradeFilters {
   accountId?: string;
@@ -11,6 +11,9 @@ export interface TradeFilters {
   dateFrom?: string; // ISO, filters on opened_at
   dateTo?: string; // ISO, filters on opened_at
   session?: SessionLabel;
+  source?: TradeSource;
+  netPnlMin?: number;
+  netPnlMax?: number;
 }
 
 type TradeRow = Database["public"]["Tables"]["trades"]["Row"];
@@ -67,6 +70,9 @@ function applyFilters<T>(query: T, filters: TradeFilters): T {
   if (filters.dateFrom) q = q.gte("opened_at", filters.dateFrom);
   if (filters.dateTo) q = q.lte("opened_at", filters.dateTo);
   if (filters.session) q = q.eq("session_effective", filters.session);
+  if (filters.source) q = q.eq("source", filters.source);
+  if (filters.netPnlMin !== undefined) q = q.gte("net_pnl", filters.netPnlMin);
+  if (filters.netPnlMax !== undefined) q = q.lte("net_pnl", filters.netPnlMax);
   return q as T;
 }
 
@@ -133,6 +139,21 @@ export async function fetchOpenLivePositions(): Promise<OpenPositionRow[]> {
     .order("opened_at", { ascending: false });
   if (error) throw new Error(`fetchOpenLivePositions: ${error.message}`);
   return (data ?? []) as unknown as OpenPositionRow[];
+}
+
+/**
+ * Distinct product_ids the user has ever traded, for the FilterBar's
+ * product selector. Fetches just the one column and dedupes in JS rather
+ * than a DISTINCT query -- PostgREST has no query-builder shorthand for it,
+ * and this app's trade counts (hundreds to low thousands, see
+ * trades-table.tsx) make a single-column full scan cheap enough that it's
+ * not worth a database view just for this.
+ */
+export async function fetchDistinctProductIds(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("trades").select("product_id").order("product_id", { ascending: true });
+  if (error) throw new Error(`fetchDistinctProductIds: ${error.message}`);
+  return Array.from(new Set((data ?? []).map((r) => r.product_id)));
 }
 
 export async function fetchAccounts() {

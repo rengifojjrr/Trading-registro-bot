@@ -41,6 +41,9 @@ export type SessionLabel =
   | "NEW_YORK"
   | "OFF_SESSION";
 
+// Mirrors the trades.source check constraint.
+export type TradeSource = "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
+
 export interface Database {
   public: {
     Tables: {
@@ -400,7 +403,7 @@ export interface Database {
           session_computed: SessionLabel | null;
           session_override: SessionLabel | null;
           session_effective: SessionLabel | null;
-          source: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
+          source: TradeSource;
           created_at: string;
           updated_at: string;
         },

@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseTradeFilters, pickSearchParam } from "@/lib/analytics/filter-params";
-import { fetchAccounts, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
+import { fetchAccounts, fetchDistinctProductIds, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
@@ -21,10 +21,11 @@ export default async function DashboardPage(props: PageProps<"/">) {
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, openPositions] = await Promise.all([
+  const [{ count: totalTradeCount }, { data: settings }, accounts, products, openPositions] = await Promise.all([
     supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
     fetchAccounts(),
+    fetchDistinctProductIds(),
     fetchOpenLivePositions(),
   ]);
 
@@ -79,7 +80,7 @@ export default async function DashboardPage(props: PageProps<"/">) {
 
       <OpenPositionsPanel positions={openPositions} />
 
-      <FilterBar accounts={accounts} />
+      <FilterBar accounts={accounts} products={products} />
 
       {trades.length === 0 ? (
         <EmptyState

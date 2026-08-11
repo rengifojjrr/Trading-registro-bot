@@ -6,12 +6,13 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SESSION_LABELS_ES } from "@/lib/format";
-import type { SessionLabel } from "@/types/database";
+import { SESSION_LABELS_ES, SOURCE_LABELS_ES } from "@/lib/format";
+import type { SessionLabel, TradeSource } from "@/types/database";
 
 const ALL = "ALL";
 
 const SESSION_OPTIONS = Object.entries(SESSION_LABELS_ES) as [SessionLabel, string][];
+const SOURCE_OPTIONS = Object.entries(SOURCE_LABELS_ES) as [TradeSource, string][];
 
 /**
  * Every filter here lives in the URL, not client state -- the dashboard
@@ -19,9 +20,17 @@ const SESSION_OPTIONS = Object.entries(SESSION_LABELS_ES) as [SessionLabel, stri
  * every stat, chart, and the calendar from the same filtered query, so
  * changing a filter can never leave one part of the screen showing a
  * different slice of data than another (the spec's "filtros coherentes"
- * requirement).
+ * requirement). Shared by the Dashboard and Operaciones pages for the same
+ * reason -- a product/source/P&L filter set on one must carry over to the
+ * other, not silently reset.
  */
-export function FilterBar({ accounts }: { accounts: { id: string; name: string }[] }) {
+export function FilterBar({
+  accounts,
+  products,
+}: {
+  accounts: { id: string; name: string }[];
+  products: string[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -41,13 +50,22 @@ export function FilterBar({ accounts }: { accounts: { id: string; name: string }
   }, [pathname, router]);
 
   const accountId = searchParams.get("accountId") ?? ALL;
+  const productId = searchParams.get("productId") ?? ALL;
   const direction = searchParams.get("direction") ?? ALL;
   const status = searchParams.get("status") ?? ALL;
   const session = searchParams.get("session") ?? ALL;
+  const source = searchParams.get("source") ?? ALL;
   const dateFrom = searchParams.get("dateFrom") ?? "";
   const dateTo = searchParams.get("dateTo") ?? "";
+  const netPnlMin = searchParams.get("netPnlMin") ?? "";
+  const netPnlMax = searchParams.get("netPnlMax") ?? "";
 
-  const hasActiveFilters = [accountId, direction, status, session].some((v) => v !== ALL) || dateFrom || dateTo;
+  const hasActiveFilters =
+    [accountId, productId, direction, status, session, source].some((v) => v !== ALL) ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    Boolean(netPnlMin) ||
+    Boolean(netPnlMax);
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
@@ -66,6 +84,24 @@ export function FilterBar({ accounts }: { accounts: { id: string; name: string }
           </SelectContent>
         </Select>
       </FilterField>
+
+      {products.length > 1 ? (
+        <FilterField label="Producto">
+          <Select value={productId} onValueChange={(v) => setParam("productId", v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todos</SelectItem>
+              {products.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+      ) : null}
 
       <FilterField label="Dirección">
         <Select value={direction} onValueChange={(v) => setParam("direction", v)}>
@@ -89,6 +125,22 @@ export function FilterBar({ accounts }: { accounts: { id: string; name: string }
             <SelectItem value={ALL}>Todos</SelectItem>
             <SelectItem value="OPEN">Abiertas</SelectItem>
             <SelectItem value="CLOSED">Cerradas</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+
+      <FilterField label="Origen">
+        <Select value={source} onValueChange={(v) => setParam("source", v)}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Todos</SelectItem>
+            {SOURCE_OPTIONS.map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </FilterField>
@@ -124,6 +176,28 @@ export function FilterBar({ accounts }: { accounts: { id: string; name: string }
           className="w-36"
           value={dateTo}
           onChange={(e) => setParam("dateTo", e.target.value || null)}
+        />
+      </FilterField>
+
+      <FilterField label="P&L mín">
+        <Input
+          type="number"
+          step="any"
+          placeholder="Sin mínimo"
+          className="w-28"
+          value={netPnlMin}
+          onChange={(e) => setParam("netPnlMin", e.target.value || null)}
+        />
+      </FilterField>
+
+      <FilterField label="P&L máx">
+        <Input
+          type="number"
+          step="any"
+          placeholder="Sin máximo"
+          className="w-28"
+          value={netPnlMax}
+          onChange={(e) => setParam("netPnlMax", e.target.value || null)}
         />
       </FilterField>
 

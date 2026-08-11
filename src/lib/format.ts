@@ -1,7 +1,7 @@
 import { Decimal } from "decimal.js";
 import { DateTime } from "luxon";
 
-import type { SessionLabel } from "@/types/database";
+import type { SessionLabel, TradeSource } from "@/types/database";
 
 /**
  * Shared formatting helpers for money/percent/duration/dates -- every
@@ -116,4 +116,17 @@ export const SESSION_LABELS_ES: Record<SessionLabel, string> = {
 export function formatSessionLabel(session: SessionLabel | null | undefined): string {
   if (!session) return "--";
   return SESSION_LABELS_ES[session];
+}
+
+export const SOURCE_LABELS_ES: Record<TradeSource, string> = {
+  COINBASE_SYNC: "Coinbase",
+  CSV_IMPORT: "CSV",
+  MANUAL: "Manual",
+  DEMO_SEED: "Demo",
+  NOTION_IMPORT: "Notion",
+};
+
+export function formatSourceLabel(source: TradeSource | null | undefined): string {
+  if (!source) return "--";
+  return SOURCE_LABELS_ES[source];
 }

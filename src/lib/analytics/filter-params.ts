@@ -7,6 +7,13 @@ export function pickSearchParam(value: string | string[] | undefined): string | 
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function pickNumberParam(value: string | string[] | undefined): number | undefined {
+  const raw = pickSearchParam(value);
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /**
  * Builds TradeFilters from raw URL search params (as Next.js hands them to
  * a page's searchParams prop). Date-only dateFrom/dateTo values are
@@ -36,6 +43,9 @@ export function parseTradeFilters(
     direction: pickSearchParam(searchParams.direction) as TradeFilters["direction"],
     status: pickSearchParam(searchParams.status) as TradeFilters["status"],
     session: pickSearchParam(searchParams.session) as SessionLabel | undefined,
+    source: pickSearchParam(searchParams.source) as TradeFilters["source"],
+    netPnlMin: pickNumberParam(searchParams.netPnlMin),
+    netPnlMax: pickNumberParam(searchParams.netPnlMax),
     dateFrom,
     dateTo,
   };
