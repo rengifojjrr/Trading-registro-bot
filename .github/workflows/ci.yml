@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run test
+
+      # NEXT_PUBLIC_* values below are fake but validly-shaped -- next build
+      # only checks their format at build time (nothing here talks to a
+      # real Supabase project during the build itself; every route in this
+      # app is server-rendered on demand, not statically generated against
+      # live data), so no real project or secret is needed just to verify
+      # the app compiles.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder-project.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_not_real
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          CRON_SECRET: ci-placeholder-secret-not-real-at-least-16-chars
