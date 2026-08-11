@@ -80,3 +80,11 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Postgres grants EXECUTE to PUBLIC by default on function creation, which
+-- PostgREST then exposes as a callable RPC (/rest/v1/rpc/handle_new_user)
+-- to anon/authenticated even though this function is only meant to run via
+-- the trigger above. Revoking from PUBLIC (not just anon/authenticated,
+-- which merely inherit from it) is what Supabase's security advisor
+-- actually requires -- flagged and fixed live against the real project.
+revoke execute on function public.handle_new_user() from public;
