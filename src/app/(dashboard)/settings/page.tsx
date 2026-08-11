@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { ConnectionStatus } from "@/components/settings/connection-status";
+import { SyncNow } from "@/components/settings/sync-now";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
         description="Zona horaria, sincronización, producto de Coinbase e integraciones."
       />
       <ConnectionStatus />
+      <SyncNow />
       {settings ? <SettingsForm settings={settings} /> : null}
     </>
   );
