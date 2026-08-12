@@ -19,7 +19,7 @@ export async function DemoDataBanner() {
   if (!count) return null;
 
   return (
-    <div className="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning">
+    <div className="sticky top-14 z-10 flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning">
       <FlaskConical className="size-3.5 shrink-0" aria-hidden />
       <span>
         Estás viendo datos de demostración generados localmente, no operaciones reales de

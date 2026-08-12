@@ -14,7 +14,7 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
     .eq("is_read", false);
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
       <div className="flex items-center gap-2">
         <MobileNav />
       </div>
