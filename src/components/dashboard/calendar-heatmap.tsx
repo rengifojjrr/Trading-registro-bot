@@ -91,7 +91,7 @@ export function CalendarHeatmap({
             <div
               key={iso}
               className={cn(
-                "flex aspect-square flex-col justify-between rounded-md border px-1.5 py-1 text-[11px]",
+                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1.5 py-1 text-[11px]",
                 !inMonth && "border-transparent opacity-25",
                 inMonth && pnl === null && "border-border/60",
                 inMonth && pnl !== null && pnl > 0 && "border-positive/30 bg-positive/10",
@@ -102,12 +102,14 @@ export function CalendarHeatmap({
               <span className="text-muted-foreground">{day.day}</span>
               {entry ? (
                 <>
-                  <span className={cn("font-medium tabular-nums", pnlColorClass(pnl))}>
+                  <span className={cn("truncate font-medium tabular-nums", pnlColorClass(pnl))}>
                     {formatSignedMoney(pnl, { compact: true })}
                   </span>
-                  <span className="text-muted-foreground">
-                    {entry.tradesCount} op.
-                  </span>
+                  {/* Cells run ~43px square on a narrow phone -- three lines
+                      of text there risks visual overlap, so the trade-count
+                      line (the least essential of the three) only shows once
+                      cells have more room. */}
+                  <span className="hidden text-muted-foreground sm:block">{entry.tradesCount} op.</span>
                 </>
               ) : null}
             </div>

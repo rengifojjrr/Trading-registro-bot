@@ -123,7 +123,7 @@ export default async function ActivityPage() {
           ) : (
             <ul className="flex flex-col divide-y divide-border">
               {syncRuns.map((run) => (
-                <li key={run.id} className="flex items-center justify-between py-2 text-sm">
+                <li key={run.id} className="flex flex-wrap items-center justify-between gap-y-1 py-2 text-sm">
                   <div className="flex items-center gap-2">
                     <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
                     <span className="text-muted-foreground">
@@ -179,7 +179,7 @@ export default async function ActivityPage() {
           <CardContent>
             <ul className="flex flex-col divide-y divide-border">
               {reconciliations.map((r) => (
-                <li key={r.id} className="flex items-center justify-between py-2 text-sm">
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-y-1 py-2 text-sm">
                   <span>{r.run_date}</span>
                   <span className="tabular-nums text-muted-foreground">
                     Coinbase: {r.coinbase_fill_count ?? "--"} · BD: {r.db_fill_count ?? "--"}
