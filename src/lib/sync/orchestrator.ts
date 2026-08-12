@@ -111,9 +111,17 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
       limit: 100,
     });
 
-    const fillsNew = await upsertRawFills(account.user_id, accountId, run.id, fills);
+    // raw_orders must exist before raw_fills: raw_fills.order_id is a
+    // foreign key into raw_orders.order_id, so on a fresh order (never
+    // synced before) inserting the fill first trips
+    // "raw_fills_order_id_fkey" -- upsertRawOrders' own failure is
+    // deliberately swallowed (see its docstring), so if it can't reach
+    // Coinbase for order detail, the fill insert right after still fails
+    // loudly via that same FK instead of silently referencing an order
+    // that was never persisted.
     const orderIds = [...new Set(fills.map((f) => f.order_id))];
     await upsertRawOrders(adapter, account.user_id, accountId, productId, run.id, orderIds);
+    const fillsNew = await upsertRawFills(account.user_id, accountId, run.id, fills);
 
     const result = await persistReconstruction({
       userId: account.user_id,
