@@ -19,6 +19,10 @@ type AppSettingsRow = {
   reconciliation_hour_local: number;
   notion_enabled: boolean;
   auto_sync_enabled: boolean;
+  maintenance_margin_rate: number;
+  target_margin_ratio: number;
+  trading_fee_pct: number;
+  min_fee_per_contract: number;
 };
 
 const initialState: SettingsState = { error: null, success: false };
@@ -95,6 +99,69 @@ export function SettingsForm({ settings }: { settings: AppSettingsRow }) {
                 <SelectItem value="INTX">INTX -- perpetuos internacionales (experimental)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Parámetros de riesgo y margen</CardTitle>
+          <CardDescription>
+            Usados por la calculadora de riesgo (menú &quot;Riesgo&quot;). Coinbase no expone un endpoint
+            de maintenance margin, así que ese valor y el margen ratio objetivo son tuyos -- cópialos de tu
+            cuenta de Coinbase antes de operar, pueden cambiar. El initial margin (día/noche) y el funding sí
+            se leen en vivo de Coinbase y no se configuran aquí.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="maintenance_margin_rate">Maintenance Margin Rate (%)</Label>
+            <Input
+              id="maintenance_margin_rate"
+              name="maintenance_margin_rate"
+              type="number"
+              min={0.01}
+              max={100}
+              step={0.01}
+              defaultValue={settings.maintenance_margin_rate * 100}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="target_margin_ratio">Margin Ratio objetivo al precio de riesgo (%)</Label>
+            <Input
+              id="target_margin_ratio"
+              name="target_margin_ratio"
+              type="number"
+              min={1}
+              max={99}
+              step={1}
+              defaultValue={settings.target_margin_ratio * 100}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="trading_fee_pct">Trading fee por lado (%)</Label>
+            <Input
+              id="trading_fee_pct"
+              name="trading_fee_pct"
+              type="number"
+              min={0}
+              step={0.001}
+              defaultValue={settings.trading_fee_pct * 100}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="min_fee_per_contract">Fee mínimo por contrato / lado (USD)</Label>
+            <Input
+              id="min_fee_per_contract"
+              name="min_fee_per_contract"
+              type="number"
+              min={0}
+              step={0.01}
+              defaultValue={settings.min_fee_per_contract}
+            />
           </div>
         </CardContent>
       </Card>

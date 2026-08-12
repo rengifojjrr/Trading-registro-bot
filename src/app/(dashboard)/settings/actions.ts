@@ -13,6 +13,12 @@ const schema = z.object({
   sync_interval_minutes: z.coerce.number().int().min(1).max(60),
   reconciliation_hour_local: z.coerce.number().int().min(0).max(23),
   notion_enabled: z.preprocess((v) => v === "on" || v === true, z.boolean()),
+  // Entered as percent (e.g. 10 for 10%), stored as a fraction (0.10) --
+  // see lib/risk/margin.ts's MarginConstants, which expects fractions.
+  maintenance_margin_rate: z.coerce.number().min(0.01).max(100),
+  target_margin_ratio: z.coerce.number().min(1).max(99),
+  trading_fee_pct: z.coerce.number().min(0).max(100),
+  min_fee_per_contract: z.coerce.number().min(0),
 });
 
 export type SettingsState = { error: string | null; success: boolean };
@@ -29,6 +35,10 @@ export async function updateSettings(
     sync_interval_minutes: formData.get("sync_interval_minutes"),
     reconciliation_hour_local: formData.get("reconciliation_hour_local"),
     notion_enabled: formData.get("notion_enabled"),
+    maintenance_margin_rate: formData.get("maintenance_margin_rate"),
+    target_margin_ratio: formData.get("target_margin_ratio"),
+    trading_fee_pct: formData.get("trading_fee_pct"),
+    min_fee_per_contract: formData.get("min_fee_per_contract"),
   });
 
   if (!parsed.success) {
@@ -52,6 +62,10 @@ export async function updateSettings(
       sync_interval_minutes: parsed.data.sync_interval_minutes,
       reconciliation_hour_local: parsed.data.reconciliation_hour_local,
       notion_enabled: parsed.data.notion_enabled,
+      maintenance_margin_rate: parsed.data.maintenance_margin_rate / 100,
+      target_margin_ratio: parsed.data.target_margin_ratio / 100,
+      trading_fee_pct: parsed.data.trading_fee_pct / 100,
+      min_fee_per_contract: parsed.data.min_fee_per_contract,
     })
     .eq("user_id", user.id);
 

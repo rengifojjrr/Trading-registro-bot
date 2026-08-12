@@ -69,6 +69,10 @@ export interface Database {
           notion_enabled: boolean;
           notion_database_id: string | null;
           auto_sync_enabled: boolean;
+          maintenance_margin_rate: number;
+          target_margin_ratio: number;
+          trading_fee_pct: number;
+          min_fee_per_contract: number;
           created_at: string;
           updated_at: string;
         },
@@ -83,6 +87,10 @@ export interface Database {
           notion_enabled?: boolean;
           notion_database_id?: string | null;
           auto_sync_enabled?: boolean;
+          maintenance_margin_rate?: number;
+          target_margin_ratio?: number;
+          trading_fee_pct?: number;
+          min_fee_per_contract?: number;
         }
       >;
 
