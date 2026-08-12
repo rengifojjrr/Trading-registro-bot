@@ -735,6 +735,26 @@ export interface Database {
         { id?: string; user_id: string; trade_id: string; body: string }
       >;
 
+      chart_drawings: Table<
+        {
+          id: string;
+          user_id: string;
+          trade_id: string;
+          tool: "HLINE" | "TRENDLINE" | "RECTANGLE";
+          points: Json;
+          color: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          trade_id: string;
+          tool: "HLINE" | "TRENDLINE" | "RECTANGLE";
+          points: Json;
+          color?: string;
+        }
+      >;
+
       notion_sync_links: Table<
         {
           id: string;

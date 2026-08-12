@@ -52,9 +52,14 @@ const MIN_PADDING_SECONDS = 45 * 60;
 const MAX_PADDING_SECONDS = 6 * 60 * 60;
 const PADDING_FRACTION = 0.25;
 // Traders care more about "what was the market doing before I got in" than
-// the aftermath, so the window looks back roughly three times as far as it
-// looks forward -- both sides still independently capped at MAX_PADDING_SECONDS.
+// the aftermath, so the window looks back further than it looks forward.
 const PRE_ENTRY_MULTIPLIER = 3;
+// User feedback: even a short scalp should default to at least a week of
+// pre-entry context, not just a scaled-up multiple of its own (short)
+// duration -- this is what actually dominates prePadding below for every
+// trade duration in practice, since postPadding's own MAX_PADDING_SECONDS
+// cap means the multiplier term above can never exceed 18h.
+const MIN_PRE_ENTRY_PADDING_SECONDS = 7 * 24 * 60 * 60;
 
 export interface ChartWindow {
   start: Date;
@@ -62,24 +67,39 @@ export interface ChartWindow {
   granularity: CoinbaseCandleGranularity;
 }
 
+function candleCountFor(totalSeconds: number, granularity: CoinbaseCandleGranularity): number {
+  return Math.ceil(totalSeconds / GRANULARITY_SECONDS[granularity]);
+}
+
+/**
+ * Whether requesting `granularity` over a window spanning `totalSeconds`
+ * stays under Coinbase's per-request candle cap. Exported so the manual
+ * granularity selector (components/trades/trade-chart.tsx) can disable
+ * options that would silently overrun the cap for the current window --
+ * e.g. 1-minute candles across the default ~1-week pre-entry window.
+ */
+export function isGranularityViable(totalSeconds: number, granularity: CoinbaseCandleGranularity): boolean {
+  return candleCountFor(totalSeconds, granularity) <= MAX_CANDLES_PER_REQUEST;
+}
+
 /**
  * Picks a time window (trade duration + context padding on both sides,
- * weighted toward pre-entry context) and the finest candle granularity that
- * still fits Coinbase's 350-candle cap, so a five-minute scalp gets minute
- * candles and a three-day swing gets hourly ones instead of an unreadable
- * wall of 1-minute bars.
+ * weighted toward pre-entry context, with at least a week of pre-entry
+ * context regardless of trade duration) and the finest candle granularity
+ * that still fits Coinbase's 350-candle cap -- so a five-minute scalp still
+ * gets a full week of hourly context instead of the trade duration itself
+ * dictating the whole window.
  */
 export function pickChartWindow(openedAt: Date, closedAt: Date): ChartWindow {
   const durationSeconds = Math.max((closedAt.getTime() - openedAt.getTime()) / 1000, 60);
   const postPadding = Math.min(Math.max(durationSeconds * PADDING_FRACTION, MIN_PADDING_SECONDS), MAX_PADDING_SECONDS);
-  const prePadding = Math.min(postPadding * PRE_ENTRY_MULTIPLIER, MAX_PADDING_SECONDS);
+  const prePadding = Math.max(postPadding * PRE_ENTRY_MULTIPLIER, MIN_PRE_ENTRY_PADDING_SECONDS);
 
   const start = new Date(openedAt.getTime() - prePadding * 1000);
   const end = new Date(closedAt.getTime() + postPadding * 1000);
   const totalSeconds = (end.getTime() - start.getTime()) / 1000;
 
-  const granularity =
-    GRANULARITY_ORDER.find((g) => totalSeconds / GRANULARITY_SECONDS[g] <= MAX_CANDLES_PER_REQUEST) ?? "ONE_DAY";
+  const granularity = GRANULARITY_ORDER.find((g) => isGranularityViable(totalSeconds, g)) ?? "ONE_DAY";
 
   return { start, end, granularity };
 }

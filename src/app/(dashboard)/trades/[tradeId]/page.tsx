@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-history-table";
 import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
-import { TradeChart } from "@/components/trades/trade-chart";
+import { TradeChart, type TradeChartDrawing } from "@/components/trades/trade-chart";
 import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
@@ -58,6 +58,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     { data: tradeTags },
     { data: tradeComments },
     { data: tradeScreenshotRows },
+    { data: chartDrawingRows },
     chartData,
   ] = await Promise.all([
     supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
@@ -79,6 +80,13 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       .select("id, storage_path, caption, phase")
       .eq("trade_id", trade.id)
       .order("uploaded_at", { ascending: false }),
+    wantsChart
+      ? supabase
+          .from("chart_drawings")
+          .select("id, tool, points, color")
+          .eq("trade_id", trade.id)
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: null }),
     wantsChart
       ? fetchTradeCandles({ productId: trade.product_id, openedAt: chartOpenedAt, closedAt: chartClosedAt })
       : Promise.resolve(null),
@@ -189,11 +197,18 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
           </CardHeader>
           <CardContent>
             <TradeChart
+              tradeId={trade.id}
               productId={trade.product_id}
               windowStart={Math.floor(chartWindow.start.getTime() / 1000)}
               windowEnd={Math.floor(chartWindow.end.getTime() / 1000)}
               initialCandles={chartData.candles}
               initialGranularity={chartWindow.granularity}
+              initialDrawings={(chartDrawingRows ?? []).map((d) => ({
+                id: d.id,
+                tool: d.tool,
+                points: d.points as TradeChartDrawing["points"],
+                color: d.color,
+              }))}
               entry={entryMarker}
               exit={exitMarker}
               stopLoss={journalEntry?.stop_loss_price ? Number(journalEntry.stop_loss_price) : null}
