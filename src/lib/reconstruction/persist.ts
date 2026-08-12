@@ -147,7 +147,10 @@ export async function persistReconstruction(
     let tradeId: string;
 
     if (existingId) {
-      await supabase.from("trades").update(row).eq("id", existingId);
+      const { error } = await supabase.from("trades").update(row).eq("id", existingId);
+      if (error) {
+        throw new Error(`Failed to update trade ${existingId} (opening_fill_id ${trade.openingFillId}): ${error.message}`);
+      }
       tradeId = existingId;
       tradesUpdated += 1;
     } else {
@@ -167,9 +170,12 @@ export async function persistReconstruction(
     touchedTradeIds.push(tradeId);
 
     // Full replace of this trade's fill allocations -- cheap, derived data.
-    await supabase.from("trade_fills").delete().eq("trade_id", tradeId);
+    const { error: deleteError } = await supabase.from("trade_fills").delete().eq("trade_id", tradeId);
+    if (deleteError) {
+      throw new Error(`Failed to clear trade_fills for trade ${tradeId}: ${deleteError.message}`);
+    }
     if (trade.fillAllocations.length > 0) {
-      await supabase.from("trade_fills").insert(
+      const { error: fillsError } = await supabase.from("trade_fills").insert(
         trade.fillAllocations.map((a) => ({
           user_id: params.userId,
           trade_id: tradeId,
@@ -180,6 +186,9 @@ export async function persistReconstruction(
           sequence_no: a.sequenceNo,
         })),
       );
+      if (fillsError) {
+        throw new Error(`Failed to insert trade_fills for trade ${tradeId}: ${fillsError.message}`);
+      }
     }
   }
 

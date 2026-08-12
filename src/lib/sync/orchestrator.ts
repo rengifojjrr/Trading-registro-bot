@@ -288,7 +288,7 @@ async function upsertRawFills(
   const newFills = fills.filter((f) => !existingIds.has(f.entry_id));
   if (newFills.length === 0) return 0;
 
-  await supabase.from("raw_fills").insert(
+  const { error: insertError } = await supabase.from("raw_fills").insert(
     newFills.map((f) => ({
       entry_id: f.entry_id,
       user_id: userId,
@@ -312,6 +312,9 @@ async function upsertRawFills(
       sync_run_id: syncRunId,
     })),
   );
+  if (insertError) {
+    throw new Error(`Failed to insert raw_fills: ${insertError.message}`);
+  }
 
   return newFills.length;
 }

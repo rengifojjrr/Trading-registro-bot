@@ -86,7 +86,7 @@ export async function runNightlyReconciliation(accountId: string) {
     const missingInCoinbase = [...dbEntryIds].filter((id) => !coinbaseEntryIds.has(id));
 
     for (const fill of missingInDb) {
-      await supabase.from("raw_fills").insert({
+      const { error: fillInsertError } = await supabase.from("raw_fills").insert({
         entry_id: fill.entry_id,
         user_id: account.user_id,
         account_id: accountId,
@@ -107,8 +107,11 @@ export async function runNightlyReconciliation(accountId: string) {
         future_legs: (fill.future_legs ?? []) as unknown as Json,
         raw_payload: fill as unknown as Json,
       });
+      if (fillInsertError) {
+        throw new Error(`Failed to insert raw_fill ${fill.entry_id} during reconciliation: ${fillInsertError.message}`);
+      }
 
-      await supabase.from("reconciliation_discrepancies").insert({
+      const { error: discrepancyError } = await supabase.from("reconciliation_discrepancies").insert({
         user_id: account.user_id,
         reconciliation_run_id: run.id,
         discrepancy_type: "MISSING_IN_DB",
@@ -116,19 +119,25 @@ export async function runNightlyReconciliation(accountId: string) {
         entity_id: fill.entry_id,
         expected: fill as unknown as Json,
       });
+      if (discrepancyError) {
+        throw new Error(`Failed to record MISSING_IN_DB discrepancy for ${fill.entry_id}: ${discrepancyError.message}`);
+      }
     }
 
     for (const entryId of missingInCoinbase) {
       // A fill we have but Coinbase's window no longer reports -- flagged
       // for manual review, never auto-deleted (raw_fills is immutable by
       // design; if this happens it needs a human to understand why).
-      await supabase.from("reconciliation_discrepancies").insert({
+      const { error: discrepancyError } = await supabase.from("reconciliation_discrepancies").insert({
         user_id: account.user_id,
         reconciliation_run_id: run.id,
         discrepancy_type: "MISSING_IN_COINBASE",
         entity_type: "raw_fill",
         entity_id: entryId,
       });
+      if (discrepancyError) {
+        throw new Error(`Failed to record MISSING_IN_COINBASE discrepancy for ${entryId}: ${discrepancyError.message}`);
+      }
     }
 
     if (missingInDb.length > 0) {
