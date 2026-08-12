@@ -48,9 +48,13 @@ export const GRANULARITY_LABELS: Record<CoinbaseCandleGranularity, string> = {
   ONE_DAY: "1 día",
 };
 
-const MIN_PADDING_SECONDS = 15 * 60;
+const MIN_PADDING_SECONDS = 30 * 60;
 const MAX_PADDING_SECONDS = 6 * 60 * 60;
 const PADDING_FRACTION = 0.25;
+// Traders care more about "what was the market doing before I got in" than
+// the aftermath, so the window looks back roughly twice as far as it looks
+// forward -- both sides still independently capped at MAX_PADDING_SECONDS.
+const PRE_ENTRY_MULTIPLIER = 2;
 
 export interface ChartWindow {
   start: Date;
@@ -59,17 +63,19 @@ export interface ChartWindow {
 }
 
 /**
- * Picks a time window (trade duration + context padding on both sides) and
- * the finest candle granularity that still fits Coinbase's 350-candle cap,
- * so a five-minute scalp gets minute candles and a three-day swing gets
- * hourly ones instead of an unreadable wall of 1-minute bars.
+ * Picks a time window (trade duration + context padding on both sides,
+ * weighted toward pre-entry context) and the finest candle granularity that
+ * still fits Coinbase's 350-candle cap, so a five-minute scalp gets minute
+ * candles and a three-day swing gets hourly ones instead of an unreadable
+ * wall of 1-minute bars.
  */
 export function pickChartWindow(openedAt: Date, closedAt: Date): ChartWindow {
   const durationSeconds = Math.max((closedAt.getTime() - openedAt.getTime()) / 1000, 60);
-  const padding = Math.min(Math.max(durationSeconds * PADDING_FRACTION, MIN_PADDING_SECONDS), MAX_PADDING_SECONDS);
+  const postPadding = Math.min(Math.max(durationSeconds * PADDING_FRACTION, MIN_PADDING_SECONDS), MAX_PADDING_SECONDS);
+  const prePadding = Math.min(postPadding * PRE_ENTRY_MULTIPLIER, MAX_PADDING_SECONDS);
 
-  const start = new Date(openedAt.getTime() - padding * 1000);
-  const end = new Date(closedAt.getTime() + padding * 1000);
+  const start = new Date(openedAt.getTime() - prePadding * 1000);
+  const end = new Date(closedAt.getTime() + postPadding * 1000);
   const totalSeconds = (end.getTime() - start.getTime()) / 1000;
 
   const granularity =

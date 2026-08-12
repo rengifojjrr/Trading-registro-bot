@@ -5,6 +5,7 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  LineStyle,
   createChart,
   createSeriesMarkers,
   type IChartApi,
@@ -70,6 +71,8 @@ export function TradeChart({
   initialGranularity,
   entry,
   exit,
+  stopLoss = null,
+  takeProfit = null,
 }: {
   productId: string;
   windowStart: number; // unix seconds
@@ -78,6 +81,9 @@ export function TradeChart({
   initialGranularity: CoinbaseCandleGranularity;
   entry: TradeChartMarker;
   exit: TradeChartMarker | null;
+  /** From journal_entries -- the trader's own planned level, not something Coinbase reports. Drawn as a dashed reference line when present. */
+  stopLoss?: number | null;
+  takeProfit?: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
@@ -174,6 +180,27 @@ export function TradeChart({
     }
     createSeriesMarkers(series, markers);
 
+    if (stopLoss !== null) {
+      series.createPriceLine({
+        price: stopLoss,
+        color: THEME.down,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "SL",
+      });
+    }
+    if (takeProfit !== null) {
+      series.createPriceLine({
+        price: takeProfit,
+        color: THEME.up,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "TP",
+      });
+    }
+
     chart.timeScale().fitContent();
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -187,7 +214,7 @@ export function TradeChart({
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [candles, entry, exit]);
+  }, [candles, entry, exit, stopLoss, takeProfit]);
 
   if (candles.length === 0) {
     return (

@@ -196,6 +196,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
               initialGranularity={chartWindow.granularity}
               entry={entryMarker}
               exit={exitMarker}
+              stopLoss={journalEntry?.stop_loss_price ? Number(journalEntry.stop_loss_price) : null}
+              takeProfit={journalEntry?.take_profit_price ? Number(journalEntry.take_profit_price) : null}
             />
             {mfeMae ? <MfeMaeStats mfeMae={mfeMae} /> : null}
           </CardContent>

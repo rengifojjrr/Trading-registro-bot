@@ -50,6 +50,7 @@ export function CalendarHeatmap({
         <div className="flex items-center gap-2">
           <Link
             href={buildMonthHref(prevMonth)}
+            scroll={false}
             className="flex size-6 items-center justify-center rounded-md border border-border text-xs text-muted-foreground hover:text-foreground"
             aria-label="Mes anterior"
           >
@@ -60,6 +61,7 @@ export function CalendarHeatmap({
           </span>
           <Link
             href={buildMonthHref(nextMonth)}
+            scroll={false}
             className="flex size-6 items-center justify-center rounded-md border border-border text-xs text-muted-foreground hover:text-foreground"
             aria-label="Mes siguiente"
           >

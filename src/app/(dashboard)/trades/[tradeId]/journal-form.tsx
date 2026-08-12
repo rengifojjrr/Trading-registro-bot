@@ -135,13 +135,14 @@ export function JournalForm({
             </Field>
 
             <Field label="Sesgo HTF" htmlFor="htf_bias">
-              <Input id="htf_bias" name="htf_bias" defaultValue={journalEntry?.htf_bias ?? ""} />
+              <Input id="htf_bias" name="htf_bias" autoComplete="off" defaultValue={journalEntry?.htf_bias ?? ""} />
             </Field>
 
             <Field label="Proximidad a soporte/resistencia" htmlFor="sr_proximity">
               <Input
                 id="sr_proximity"
                 name="sr_proximity"
+                autoComplete="off"
                 defaultValue={journalEntry?.sr_proximity ?? ""}
                 placeholder="p. ej. cerca de resistencia diaria"
               />
@@ -153,12 +154,20 @@ export function JournalForm({
                 name="risk_amount"
                 type="number"
                 step="any"
+                autoComplete="off"
                 defaultValue={journalEntry?.risk_amount ?? ""}
               />
             </Field>
 
             <Field label="Resultado en R" htmlFor="result_r">
-              <Input id="result_r" name="result_r" type="number" step="any" defaultValue={journalEntry?.result_r ?? ""} />
+              <Input
+                id="result_r"
+                name="result_r"
+                type="number"
+                step="any"
+                autoComplete="off"
+                defaultValue={journalEntry?.result_r ?? ""}
+              />
             </Field>
 
             <Field label="Stop loss planeado" htmlFor="stop_loss_price">
@@ -167,6 +176,7 @@ export function JournalForm({
                 name="stop_loss_price"
                 type="number"
                 step="any"
+                autoComplete="off"
                 defaultValue={journalEntry?.stop_loss_price ?? ""}
               />
             </Field>
@@ -177,6 +187,7 @@ export function JournalForm({
                 name="take_profit_price"
                 type="number"
                 step="any"
+                autoComplete="off"
                 defaultValue={journalEntry?.take_profit_price ?? ""}
               />
             </Field>
@@ -189,6 +200,7 @@ export function JournalForm({
                 min={1}
                 max={5}
                 step={1}
+                autoComplete="off"
                 defaultValue={journalEntry?.plan_adherence ?? ""}
               />
             </Field>
@@ -201,6 +213,7 @@ export function JournalForm({
                 min={1}
                 max={5}
                 step={1}
+                autoComplete="off"
                 defaultValue={journalEntry?.entry_quality ?? ""}
               />
             </Field>
@@ -211,11 +224,17 @@ export function JournalForm({
           <CheckboxGroupField label="Errores" name="mistake_tag" options={mistakeOptions} defaultValues={splitList(mistakeValues)} />
 
           <Field label="Lección aprendida" htmlFor="lesson_learned">
-            <Textarea id="lesson_learned" name="lesson_learned" rows={2} defaultValue={journalEntry?.lesson_learned ?? ""} />
+            <Textarea
+              id="lesson_learned"
+              name="lesson_learned"
+              rows={2}
+              autoComplete="off"
+              defaultValue={journalEntry?.lesson_learned ?? ""}
+            />
           </Field>
 
           <Field label="Notas" htmlFor="notes">
-            <Textarea id="notes" name="notes" rows={4} defaultValue={journalEntry?.notes ?? ""} />
+            <Textarea id="notes" name="notes" rows={4} autoComplete="off" defaultValue={journalEntry?.notes ?? ""} />
           </Field>
 
           <div>
@@ -244,6 +263,14 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor: string; c
   );
 }
 
+/**
+ * Real <button>s, not a <label> wrapping a visually-hidden checkbox -- the
+ * checkbox-in-label version was clickable but focusing the (clipped, sr-only)
+ * checkbox made the browser jump-scroll the page toward it. A plain button
+ * never has that failure mode. Native form submission is preserved by
+ * rendering one hidden input per currently-selected option instead of relying
+ * on real checkboxes' checked state.
+ */
 function CheckboxGroupField({
   label,
   name,
@@ -257,6 +284,15 @@ function CheckboxGroupField({
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultValues));
 
+  function toggle(option: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(option)) next.delete(option);
+      else next.add(option);
+      return next;
+    });
+  }
+
   return (
     <div className="flex flex-col gap-1.5">
       <Label>{label}</Label>
@@ -264,8 +300,11 @@ function CheckboxGroupField({
         {options.map((option) => {
           const checked = selected.has(option);
           return (
-            <label
+            <button
               key={option}
+              type="button"
+              aria-pressed={checked}
+              onClick={() => toggle(option)}
               className={cn(
                 "cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors select-none",
                 checked
@@ -273,26 +312,14 @@ function CheckboxGroupField({
                   : "border-border bg-secondary text-secondary-foreground hover:bg-accent",
               )}
             >
-              <input
-                type="checkbox"
-                name={name}
-                value={option}
-                checked={checked}
-                onChange={() =>
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(option)) next.delete(option);
-                    else next.add(option);
-                    return next;
-                  })
-                }
-                className="sr-only"
-              />
               {option}
-            </label>
+            </button>
           );
         })}
       </div>
+      {[...selected].map((option) => (
+        <input key={option} type="hidden" name={name} value={option} />
+      ))}
     </div>
   );
 }

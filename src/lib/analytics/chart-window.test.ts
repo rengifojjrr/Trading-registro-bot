@@ -12,15 +12,15 @@ describe("pickChartWindow", () => {
     expect(end.getTime()).toBeGreaterThan(closedAt.getTime());
   });
 
-  it("picks 1-minute candles for a short trade (padding floor applies)", () => {
+  it("picks 1-minute candles for a short trade (padding floor applies, weighted before entry)", () => {
     const openedAt = new Date("2026-08-11T14:00:00Z");
     const closedAt = new Date("2026-08-11T14:05:00Z");
     const { start, end, granularity } = pickChartWindow(openedAt, closedAt);
 
-    // 5 min trade -> 25% padding (75s) is below the 15 min floor, so the
-    // floor applies on both sides: 15 min before, 15 min after.
-    expect(start.toISOString()).toBe("2026-08-11T13:45:00.000Z");
-    expect(end.toISOString()).toBe("2026-08-11T14:20:00.000Z");
+    // 5 min trade -> 25% padding (75s) is below the 30 min floor, so the
+    // floor applies: 30 min after exit, and twice that (60 min) before entry.
+    expect(start.toISOString()).toBe("2026-08-11T13:00:00.000Z");
+    expect(end.toISOString()).toBe("2026-08-11T14:35:00.000Z");
     expect(granularity).toBe("ONE_MINUTE");
   });
 
