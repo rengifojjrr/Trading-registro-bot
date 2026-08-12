@@ -48,13 +48,13 @@ export const GRANULARITY_LABELS: Record<CoinbaseCandleGranularity, string> = {
   ONE_DAY: "1 día",
 };
 
-const MIN_PADDING_SECONDS = 30 * 60;
+const MIN_PADDING_SECONDS = 45 * 60;
 const MAX_PADDING_SECONDS = 6 * 60 * 60;
 const PADDING_FRACTION = 0.25;
 // Traders care more about "what was the market doing before I got in" than
-// the aftermath, so the window looks back roughly twice as far as it looks
-// forward -- both sides still independently capped at MAX_PADDING_SECONDS.
-const PRE_ENTRY_MULTIPLIER = 2;
+// the aftermath, so the window looks back roughly three times as far as it
+// looks forward -- both sides still independently capped at MAX_PADDING_SECONDS.
+const PRE_ENTRY_MULTIPLIER = 3;
 
 export interface ChartWindow {
   start: Date;

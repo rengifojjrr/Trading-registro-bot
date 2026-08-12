@@ -59,26 +59,37 @@ export function LiveUnrealizedPnl({
       <CardHeader>
         <CardTitle>Posición abierta -- en vivo</CardTitle>
         <CardDescription>
-          Se actualiza cada 15s con el precio actual de Coinbase. Estimado, no incluye comisiones de salida
-          (todavía no ocurrieron) -- el P&amp;L real se calcula solo cuando la operación cierra.
+          Se actualiza cada 5s con el precio actual de Coinbase. P&amp;L bruto (solo movimiento de precio) --
+          igual que en Coinbase, las comisiones se muestran aparte, no incluye comisiones de salida (todavía no
+          ocurrieron). El P&amp;L real se calcula solo cuando la operación cierra.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <div>
-          <p className="text-xs text-muted-foreground">Precio actual</p>
-          <p className="text-lg font-semibold tabular-nums">{formatMoney(price)}</p>
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Precio actual</p>
+            <p className="text-lg font-semibold tabular-nums">{formatMoney(price)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">P&amp;L no realizado</p>
+            <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(pnl.grossPnl))}>
+              {formatSignedMoney(pnl.grossPnl)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Retorno</p>
+            <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(pnl.grossPnl))}>
+              {pnl.grossReturnPct ? formatPercent(pnl.grossReturnPct) : "--"}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">P&amp;L no realizado</p>
-          <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(pnl.netPnl))}>
-            {formatSignedMoney(pnl.netPnl)}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Retorno</p>
-          <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(pnl.netPnl))}>
-            {pnl.returnPct ? formatPercent(pnl.returnPct) : "--"}
-          </p>
+        <div className="flex items-center gap-4 border-t border-border pt-3 text-xs text-muted-foreground">
+          <span>
+            Comisiones de entrada: <span className="tabular-nums">{formatSignedMoney(`-${entryCommissions}`)}</span>
+          </span>
+          <span>
+            Neto: <span className={cn("tabular-nums", pnlColorClass(pnl.netPnl))}>{formatSignedMoney(pnl.netPnl)}</span>
+          </span>
         </div>
       </CardContent>
     </Card>

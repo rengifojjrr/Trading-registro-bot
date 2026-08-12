@@ -17,10 +17,10 @@ describe("pickChartWindow", () => {
     const closedAt = new Date("2026-08-11T14:05:00Z");
     const { start, end, granularity } = pickChartWindow(openedAt, closedAt);
 
-    // 5 min trade -> 25% padding (75s) is below the 30 min floor, so the
-    // floor applies: 30 min after exit, and twice that (60 min) before entry.
-    expect(start.toISOString()).toBe("2026-08-11T13:00:00.000Z");
-    expect(end.toISOString()).toBe("2026-08-11T14:35:00.000Z");
+    // 5 min trade -> 25% padding (75s) is below the 45 min floor, so the
+    // floor applies: 45 min after exit, and 3x that (135 min) before entry.
+    expect(start.toISOString()).toBe("2026-08-11T11:45:00.000Z");
+    expect(end.toISOString()).toBe("2026-08-11T14:50:00.000Z");
     expect(granularity).toBe("ONE_MINUTE");
   });
 

@@ -13,6 +13,7 @@ export interface UnrealizedPnlResult {
   grossPnl: string;
   netPnl: string;
   returnPct: string | null;
+  grossReturnPct: string | null;
 }
 
 /**
@@ -20,8 +21,18 @@ export interface UnrealizedPnlResult {
  * quoted price -- NOT the audited realized P&L in lib/pnl/calculate.ts,
  * which only exists once a position actually closes and is what trades.net_pnl
  * always holds. This is never persisted, always recomputed fresh from a live
- * price poll, and deliberately excludes exit commissions -- none have been
- * paid yet, since the position hasn't closed.
+ * price poll.
+ *
+ * grossPnl is pure price movement (currentPrice - entryWap) with no fees --
+ * this is what to show as the headline "unrealized P&L" figure, since that's
+ * the convention Coinbase's own UI follows (fees are their own line item,
+ * never netted into the headline number). netPnl additionally subtracts
+ * entry commissions already paid (exit commissions are excluded -- none have
+ * been paid yet, since the position hasn't closed) and exists so the fee
+ * impact can still be shown as a separate, explicit figure. Near breakeven,
+ * gross and net can even have different signs -- showing net as the
+ * headline would then contradict Coinbase's own display, which is exactly
+ * the bug this split fixes.
  */
 export function calculateUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnlResult {
   const entryWap = new Decimal(input.entryWap);
@@ -35,10 +46,12 @@ export function calculateUnrealizedPnl(input: UnrealizedPnlInput): UnrealizedPnl
   const netPnl = grossPnl.minus(entryCommissions);
   const notionalValue = entryWap.times(openQty).times(contractSize);
   const returnPct = notionalValue.isZero() ? null : netPnl.dividedBy(notionalValue).times(100);
+  const grossReturnPct = notionalValue.isZero() ? null : grossPnl.dividedBy(notionalValue).times(100);
 
   return {
     grossPnl: grossPnl.toString(),
     netPnl: netPnl.toString(),
     returnPct: returnPct ? returnPct.toString() : null,
+    grossReturnPct: grossReturnPct ? grossReturnPct.toString() : null,
   };
 }

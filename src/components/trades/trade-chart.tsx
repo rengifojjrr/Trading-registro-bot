@@ -180,6 +180,19 @@ export function TradeChart({
     }
     createSeriesMarkers(series, markers);
 
+    // A solid line, not just the arrow marker -- extends across the whole
+    // visible width so it's obvious at a glance whether later price action
+    // (including the live edge, for a still-open trade) sits above or below
+    // entry, not just where the fill happened.
+    series.createPriceLine({
+      price: entry.price,
+      color: THEME.entry,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: true,
+      title: "Entrada",
+    });
+
     if (stopLoss !== null) {
       series.createPriceLine({
         price: stopLoss,

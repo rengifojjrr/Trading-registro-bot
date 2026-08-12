@@ -25,7 +25,9 @@ export function OpenPositionsPanel({ positions }: { positions: OpenPositionRow[]
     <Card>
       <CardHeader>
         <CardTitle>Posiciones abiertas -- en vivo</CardTitle>
-        <CardDescription>Precio y P&amp;L no realizado se actualizan cada 15s.</CardDescription>
+        <CardDescription>
+          Precio y P&amp;L no realizado (bruto, igual que en Coinbase) se actualizan cada 5s.
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-border">
         {positions.map((position) => (
@@ -70,7 +72,7 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
       ) : (
         <div className="flex items-center gap-3 tabular-nums">
           <span className="text-muted-foreground">{formatMoney(price)}</span>
-          <span className={pnlColorClass(pnl.netPnl)}>{formatSignedMoney(pnl.netPnl)}</span>
+          <span className={pnlColorClass(pnl.grossPnl)}>{formatSignedMoney(pnl.grossPnl)}</span>
         </div>
       )}
     </Link>
