@@ -113,6 +113,28 @@ describe("computeRDistribution", () => {
     expect(result.averageR).toBe("1");
   });
 
+  it("accepts numeric R values, not just strings", () => {
+    // Regression: Postgres numerics can arrive as JS numbers, and calling
+    // .trim() on them threw, taking down the whole Análisis page.
+    const result = computeRDistribution([
+      trade({ id: "1", resultR: 2.5 as unknown as string }),
+      trade({ id: "2", resultR: -1.5 as unknown as string }),
+    ]);
+
+    expect(result.sampleSize).toBe(2);
+    expect(result.bins.find((b) => b.label === "2R a 3R")!.count).toBe(1);
+    expect(Number(result.averageR)).toBeCloseTo(0.5, 10);
+  });
+
+  it("ignores unparseable values instead of throwing", () => {
+    const result = computeRDistribution([
+      trade({ id: "1", resultR: "no-es-un-numero" }),
+      trade({ id: "2", resultR: "1" }),
+    ]);
+    expect(result.sampleSize).toBe(1);
+    expect(result.averageR).toBe("1");
+  });
+
   it("returns a null average when nothing has been journalled yet", () => {
     const result = computeRDistribution([trade({ id: "1", resultR: null })]);
     expect(result.sampleSize).toBe(0);

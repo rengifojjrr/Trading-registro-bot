@@ -32,6 +32,21 @@ export async function markNotificationRead(notificationId: string): Promise<void
   revalidatePath("/activity");
 }
 
+/**
+ * Removes a notification the user has dealt with. Only the notification
+ * row goes away -- whatever caused it is untouched, and if the condition
+ * recurs, raiseNotification creates a fresh one.
+ */
+export async function dismissNotification(notificationId: string): Promise<void> {
+  const user = await requireUser();
+  if (!uuidSchema.safeParse(notificationId).success) return;
+
+  const supabase = await createClient();
+  await supabase.from("notifications").delete().eq("id", notificationId).eq("user_id", user.id);
+
+  revalidatePath("/activity");
+}
+
 /** Marks every unread notification read at once -- the "clear the pile" action. */
 export async function markAllNotificationsRead(): Promise<void> {
   const user = await requireUser();

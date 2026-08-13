@@ -98,17 +98,18 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
 
       <Card>
         <CardContent className="flex items-center justify-between gap-3 pt-5">
-          <Button variant="outline" size="sm" asChild disabled={!canGoBack}>
-            <Link href={canGoBack ? `?month=${monthStart.minus({ months: 1 }).toFormat("yyyy-LL")}` : "#"}>
-              ← Anterior
-            </Link>
-          </Button>
+          {/* A `disabled` attribute does nothing on an anchor, so an
+              unavailable month renders as a real disabled button rather
+              than a link that still navigates. */}
+          <MonthNavButton
+            href={canGoBack ? `?month=${monthStart.minus({ months: 1 }).toFormat("yyyy-LL")}` : null}
+            label="← Anterior"
+          />
           <span className="text-sm font-medium capitalize">{monthLabel}</span>
-          <Button variant="outline" size="sm" asChild disabled={!canGoForward}>
-            <Link href={canGoForward ? `?month=${monthStart.plus({ months: 1 }).toFormat("yyyy-LL")}` : "#"}>
-              Siguiente →
-            </Link>
-          </Button>
+          <MonthNavButton
+            href={canGoForward ? `?month=${monthStart.plus({ months: 1 }).toFormat("yyyy-LL")}` : null}
+            label="Siguiente →"
+          />
         </CardContent>
       </Card>
 
@@ -201,6 +202,21 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         </>
       )}
     </>
+  );
+}
+
+function MonthNavButton({ href, label }: { href: string | null; label: string }) {
+  if (!href) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <Button variant="outline" size="sm" asChild>
+      <Link href={href}>{label}</Link>
+    </Button>
   );
 }
 

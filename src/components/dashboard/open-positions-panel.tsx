@@ -23,11 +23,16 @@ export function OpenPositionsPanel({ positions }: { positions: OpenPositionRow[]
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Posiciones abiertas -- en vivo</CardTitle>
-        <CardDescription>
-          Precio y P&amp;L no realizado (bruto, igual que en Coinbase) se actualizan cada 5s.
-        </CardDescription>
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+        <div className="flex flex-col gap-1">
+          <CardTitle className="text-foreground">Posiciones abiertas</CardTitle>
+          <CardDescription>Ganancia o pérdida actual, antes de comisiones -- igual que en Coinbase.</CardDescription>
+        </div>
+        {/* The margin view is the fuller answer for an open position, so
+            point at it rather than duplicating that detail here. */}
+        <Link href="/risk" className="shrink-0 text-xs text-primary hover:underline">
+          Ver margen
+        </Link>
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-border">
         {positions.map((position) => (

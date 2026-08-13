@@ -1,5 +1,6 @@
 import { LayoutDashboard, SearchX } from "lucide-react";
 import { DateTime } from "luxon";
+import Link from "next/link";
 
 import { CalendarHeatmap } from "@/components/dashboard/calendar-heatmap";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
@@ -9,6 +10,7 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseTradeFilters, pickSearchParam, previousPeriodFilters } from "@/lib/analytics/filter-params";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
@@ -42,13 +44,21 @@ export default async function DashboardPage(props: PageProps<"/">) {
         <EmptyState
           icon={LayoutDashboard}
           title="Todavía no hay operaciones que analizar"
-          description="Conecta Coinbase Advanced o importa un histórico en CSV para que el motor de reconstrucción genere tus primeras operaciones. Las métricas de este panel (P&L, win rate, profit factor, curva de capital, calendario diario, rendimiento por sesión) se calculan a partir de operaciones reales -- no se muestran cifras de ejemplo aquí."
+          description="Conecta tu cuenta de Coinbase para que se importen tus operaciones. Todo lo que ves aquí se calcula con datos reales -- nunca se muestran cifras de ejemplo."
+          action={
+            <Button asChild size="sm">
+              <Link href="/settings">Ir a Configuración</Link>
+            </Button>
+          }
         />
       </>
     );
   }
 
   const timezone = settings?.timezone || "UTC";
+  // Amounts are shown in the account's own currency rather than a hardcoded
+  // USD, falling back to the accounts-table default when unset.
+  const currency = accounts[0]?.currency ?? "USD";
   const filters = parseTradeFilters(searchParams, timezone);
 
   const trades = await fetchTradesForStats(filters);
@@ -117,7 +127,7 @@ export default async function DashboardPage(props: PageProps<"/">) {
             <StatTile
               size="lg"
               label="P&L neto"
-              value={formatSignedMoney(stats.netPnl)}
+              value={formatSignedMoney(stats.netPnl, { currency })}
               tone={pnlTone(stats.netPnl)}
               sub={
                 netPnlDelta !== null
@@ -143,7 +153,7 @@ export default async function DashboardPage(props: PageProps<"/">) {
             <StatTile
               size="lg"
               label="Drawdown máximo"
-              value={stats.maxDrawdown === "0" ? formatMoney("0") : `-${formatMoney(stats.maxDrawdown)}`}
+              value={stats.maxDrawdown === "0" ? formatMoney("0", { currency }) : `-${formatMoney(stats.maxDrawdown, { currency })}`}
               tone={stats.maxDrawdown === "0" ? "neutral" : "negative"}
               description="Mayor caída desde un máximo hasta un mínimo posterior en la curva de capital acumulada del período filtrado."
             />
@@ -153,18 +163,18 @@ export default async function DashboardPage(props: PageProps<"/">) {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <StatTile
                 label="P&L bruto"
-                value={formatSignedMoney(stats.grossPnl)}
+                value={formatSignedMoney(stats.grossPnl, { currency })}
                 tone={pnlTone(stats.grossPnl)}
                 description="Ganancia o pérdida de las operaciones cerradas antes de comisiones."
               />
               <StatTile
                 label="Comisiones"
-                value={formatMoney(stats.totalCommissions)}
+                value={formatMoney(stats.totalCommissions, { currency })}
                 description="Suma de comisiones de entrada y salida de todas las operaciones del período filtrado (abiertas y cerradas)."
               />
               <StatTile
                 label="Expectancy"
-                value={stats.expectancy === null ? "--" : formatSignedMoney(stats.expectancy)}
+                value={stats.expectancy === null ? "--" : formatSignedMoney(stats.expectancy, { currency })}
                 tone={pnlTone(stats.expectancy)}
                 description="P&L neto promedio por operación cerrada. Es lo que, en promedio, deja cada operación."
               />
@@ -176,13 +186,13 @@ export default async function DashboardPage(props: PageProps<"/">) {
               />
               <StatTile
                 label="Mejor operación"
-                value={stats.bestTrade ? formatSignedMoney(stats.bestTrade.netPnl) : "--"}
+                value={stats.bestTrade ? formatSignedMoney(stats.bestTrade.netPnl, { currency }) : "--"}
                 tone={stats.bestTrade ? pnlTone(stats.bestTrade.netPnl) : "neutral"}
                 description="Operación cerrada con el mayor P&L neto del período filtrado."
               />
               <StatTile
                 label="Peor operación"
-                value={stats.worstTrade ? formatSignedMoney(stats.worstTrade.netPnl) : "--"}
+                value={stats.worstTrade ? formatSignedMoney(stats.worstTrade.netPnl, { currency }) : "--"}
                 tone={stats.worstTrade ? pnlTone(stats.worstTrade.netPnl) : "neutral"}
                 description="Operación cerrada con el menor P&L neto del período filtrado."
               />

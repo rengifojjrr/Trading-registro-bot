@@ -1,9 +1,9 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useTransition } from "react";
 
-import { markAllNotificationsRead, markNotificationRead } from "@/app/(dashboard)/activity/actions";
+import { dismissNotification, markAllNotificationsRead, markNotificationRead } from "@/app/(dashboard)/activity/actions";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,17 +85,28 @@ export function NotificationsList({
               <span className="text-xs text-muted-foreground">{formatDateTime(n.created_at, timezone)}</span>
             </div>
 
-            {n.is_read ? null : (
+            <div className="flex shrink-0 items-center gap-0.5">
+              {n.is_read ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Marcar "${n.title}" como leída`}
+                  disabled={isPending}
+                  onClick={() => startTransition(() => markNotificationRead(n.id))}
+                >
+                  <Check className="size-4" aria-hidden />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={`Marcar "${n.title}" como leída`}
+                aria-label={`Descartar "${n.title}"`}
                 disabled={isPending}
-                onClick={() => startTransition(() => markNotificationRead(n.id))}
+                onClick={() => startTransition(() => dismissNotification(n.id))}
               >
-                <Check className="size-4" aria-hidden />
+                <X className="size-4" aria-hidden />
               </Button>
-            )}
+            </div>
           </li>
         ))}
       </ul>

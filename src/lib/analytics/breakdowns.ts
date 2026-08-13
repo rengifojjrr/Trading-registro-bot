@@ -21,8 +21,14 @@ export interface TradeForBreakdown {
   openedAt: string;
   netPnl: string | null;
   session: SessionLabel | null;
-  /** journal_entries.result_r -- the trader's own R multiple, absent unless they filled it in. */
-  resultR: string | null;
+  /**
+   * journal_entries.result_r -- the trader's own R multiple, absent unless
+   * they filled it in. Typed to accept a number as well as a string:
+   * Postgres numerics come back as either depending on the column and the
+   * client, and assuming string here crashed the whole Análisis page with
+   * "r.trim is not a function".
+   */
+  resultR: string | number | null;
 }
 
 export interface Bucket {
@@ -153,9 +159,17 @@ export interface RDistribution {
 export function computeRDistribution(trades: TradeForBreakdown[]): RDistribution {
   const values = trades
     .map((t) => t.resultR)
-    .filter((r): r is string => r !== null && r.trim() !== "")
-    .map((r) => new Decimal(r))
-    .filter((d) => d.isFinite());
+    .filter((r): r is string | number => r !== null && String(r).trim() !== "")
+    .map((r) => {
+      try {
+        return new Decimal(r);
+      } catch {
+        // Junk in the column must not take down the page -- it's simply
+        // not a usable R value, same as a missing one.
+        return null;
+      }
+    })
+    .filter((d): d is Decimal => d !== null && d.isFinite());
 
   const bins: RDistributionBin[] = R_BINS.map((bin) => ({
     ...bin,

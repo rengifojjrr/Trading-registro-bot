@@ -73,14 +73,14 @@ export function CalendarHeatmap({
         </span>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] text-muted-foreground">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center text-[11px] text-muted-foreground">
         {WEEKDAY_LABELS_ES.map((w, i) => (
           // Luxon weeks are Monday-first; index doubles as a stable key here.
           <div key={i}>{w}</div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
         {days.map((day) => {
           const iso = day.toFormat("yyyy-LL-dd");
           const entry = byDate.get(iso);
@@ -91,7 +91,7 @@ export function CalendarHeatmap({
             <div
               key={iso}
               className={cn(
-                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1.5 py-1 text-[11px]",
+                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1 py-1 text-[10px] sm:px-1.5 sm:text-[11px]",
                 !inMonth && "border-transparent opacity-25",
                 inMonth && pnl === null && "border-border/60",
                 inMonth && pnl !== null && pnl > 0 && "border-positive/30 bg-positive/10",

@@ -1,7 +1,7 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -31,16 +31,24 @@ export function InfoHint({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Radix closes the tooltip on pointerdown and its focus handler can
+  // re-open it, both before our click fires -- so `open` at click time is
+  // not a reliable base to toggle from. Capturing the state at pointerdown
+  // makes the toggle depend on what the user actually saw when they
+  // pressed, rather than on the intermediate state Radix passed through.
+  const wasOpenOnPress = useRef(false);
 
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
         type="button"
         aria-label={`Qué significa "${label}"`}
-        onPointerDown={(event) => event.preventDefault()}
+        onPointerDown={() => {
+          wasOpenOnPress.current = open;
+        }}
         onClick={(event) => {
           event.preventDefault();
-          setOpen((v) => !v);
+          setOpen(!wasOpenOnPress.current);
         }}
         className={cn(
           "inline-flex shrink-0 text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground",
