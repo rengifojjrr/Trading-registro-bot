@@ -3,6 +3,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
+import { sendCriticalAlertEmail } from "./email";
+
 type NotificationType = Database["public"]["Tables"]["notifications"]["Row"]["type"];
 type NotificationSeverity = Database["public"]["Tables"]["notifications"]["Row"]["severity"];
 
@@ -22,6 +24,13 @@ export async function raiseNotification(params: {
   relatedEntityType?: string;
   relatedEntityId?: string;
   dedupKey?: string;
+  /**
+   * Additionally email this alert. Deliberately only sent when the
+   * notification is genuinely NEW -- a deduped repeat bumps the counter
+   * silently, so a sync failing every five minutes produces one email, not
+   * one every five minutes.
+   */
+  alsoEmail?: { subject: string; body: string };
 }) {
   const supabase = createAdminClient();
 
@@ -57,4 +66,8 @@ export async function raiseNotification(params: {
     related_entity_id: params.relatedEntityId,
     dedup_key: params.dedupKey,
   });
+
+  if (params.alsoEmail) {
+    await sendCriticalAlertEmail(params.alsoEmail);
+  }
 }

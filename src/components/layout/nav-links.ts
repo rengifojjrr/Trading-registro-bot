@@ -32,8 +32,8 @@ export const NAV_LINKS: NavLink[] = [
   { href: "/analytics", label: "Análisis", icon: BarChart3 },
   { href: "/risk", label: "Riesgo", icon: Shield },
   { href: "/strategies", label: "Estrategias", icon: Target },
+  { href: "/reports", label: "Reportes", icon: FileText },
   { href: "/activity", label: "Actividad", icon: Activity },
   { href: "/settings", label: "Configuración", icon: Settings },
-  { href: "/reports", label: "Reportes", icon: FileText, comingSoon: true },
   { href: "/import", label: "Importar", icon: Upload, comingSoon: true },
 ];

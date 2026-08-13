@@ -52,12 +52,15 @@ export function SettingsForm({
   settings,
   connectionSlot,
   notionMappingsSlot,
+  backupSlot,
 }: {
   settings: AppSettingsRow;
   /** Coinbase connection status + manual sync trigger; rendered inside the General tab. */
   connectionSlot?: ReactNode;
   /** Per-field Notion mirror toggles; rendered inside the Integraciones tab. */
   notionMappingsSlot?: ReactNode;
+  /** Full-data download; rendered inside the Integraciones tab. */
+  backupSlot?: ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(updateSettings, initialState);
   const [activeTab, setActiveTab] = useState<TabId>("general");
@@ -266,6 +269,8 @@ export function SettingsForm({
         </Card>
 
         {notionMappingsSlot}
+
+        {backupSlot}
 
         <Card>
           <CardHeader>

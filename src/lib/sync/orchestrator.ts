@@ -5,6 +5,7 @@ import { IntxAdapter } from "@/lib/coinbase/venues/intx";
 import type { MarketDataPort } from "@/lib/coinbase/ports";
 import type { CoinbaseFill, CoinbaseProduct } from "@/lib/coinbase/types";
 import { serverEnv } from "@/lib/env";
+import { parseProductIds } from "./product-ids";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
@@ -68,7 +69,8 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
 
   try {
     const env = serverEnv();
-    if (!env.COINBASE_CDP_API_KEY_NAME || !env.COINBASE_CDP_PRIVATE_KEY || !env.COINBASE_PRODUCT_ID) {
+    const productIds = parseProductIds(env.COINBASE_PRODUCT_ID);
+    if (!env.COINBASE_CDP_API_KEY_NAME || !env.COINBASE_CDP_PRIVATE_KEY || productIds.length === 0) {
       throw new Error(
         "Coinbase credentials or COINBASE_PRODUCT_ID are not configured -- see .env.example.",
       );
@@ -82,7 +84,6 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
             privateKeyPem: env.COINBASE_CDP_PRIVATE_KEY,
           });
 
-    const productId = env.COINBASE_PRODUCT_ID;
     const nowIso = new Date().toISOString();
     const startIso = syncState?.high_water_mark
       ? new Date(
@@ -90,79 +91,36 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
         ).toISOString()
       : new Date(Date.now() - DEFAULT_INITIAL_BACKFILL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    const product = await refreshProductSpec(adapter, productId);
-    if (!product.contractSize) {
-      await raiseNotification({
+    // Each configured product is synced and reconstructed independently --
+    // position state is per (account, product), so they must never be
+    // interleaved into one reconstruction pass. Counters and the high-water
+    // mark are aggregated across all of them into this single run.
+    let totalFills = 0;
+    let totalFillsNew = 0;
+    let totalTradesCreated = 0;
+    let totalTradesUpdated = 0;
+    let totalDiscrepancies = 0;
+    let newHighWaterMark = syncState?.high_water_mark ?? "1970-01-01T00:00:00Z";
+
+    for (const productId of productIds) {
+      const productResult = await syncOneProduct({
+        adapter,
         userId: account.user_id,
-        type: "MISSING_CONTRACT_SPEC",
-        severity: "CRITICAL",
-        title: "Falta la especificación de contrato",
-        message: `Coinbase no devolvió un contract_size para ${productId}. La sincronización se detuvo -- el motor de P&L no puede calcular resultados sin el multiplicador real del contrato.`,
-        dedupKey: `MISSING_CONTRACT_SPEC:${productId}`,
+        accountId,
+        productId,
+        runId: run.id,
+        startIso,
+        nowIso,
       });
-      throw new Error(`Missing contract_size for product ${productId}`);
+      totalFills += productResult.fillsFetched;
+      totalFillsNew += productResult.fillsNew;
+      totalTradesCreated += productResult.tradesCreated;
+      totalTradesUpdated += productResult.tradesUpdated;
+      totalDiscrepancies += productResult.discrepancies;
+      if (productResult.highWaterMark > newHighWaterMark) {
+        newHighWaterMark = productResult.highWaterMark;
+      }
     }
-
-    const fills = await adapter.listFills({
-      product_ids: [productId],
-      product_types: ["FUTURE"],
-      start_sequence_timestamp: startIso,
-      end_sequence_timestamp: nowIso,
-      limit: 100,
-    });
-
-    // raw_orders must exist before raw_fills: raw_fills.order_id is a
-    // foreign key into raw_orders.order_id, so on a fresh order (never
-    // synced before) inserting the fill first trips
-    // "raw_fills_order_id_fkey" -- upsertRawOrders' own failure is
-    // deliberately swallowed (see its docstring), so if it can't reach
-    // Coinbase for order detail, the fill insert right after still fails
-    // loudly via that same FK instead of silently referencing an order
-    // that was never persisted.
-    const orderIds = [...new Set(fills.map((f) => f.order_id))];
-    await upsertRawOrders(adapter, account.user_id, accountId, productId, run.id, orderIds);
-    const fillsNew = await upsertRawFills(account.user_id, accountId, run.id, fills);
-
-    const result = await persistReconstruction({
-      userId: account.user_id,
-      accountId,
-      productId,
-      contractSize: product.contractSize,
-      algorithmVersion: RECONSTRUCTION_ALGORITHM_VERSION,
-    });
-
-    await Promise.all(
-      result.touchedTradeIds.map((tradeId) => enqueueNotionSync(account.user_id, tradeId)),
-    );
-
-    if (result.unclassifiedFillIds.length > 0) {
-      await raiseNotification({
-        userId: account.user_id,
-        type: "UNCLASSIFIED_FILL",
-        severity: "WARNING",
-        title: "Fills sin clasificar",
-        message: `${result.unclassifiedFillIds.length} fill(s) no se procesaron automáticamente (tipo de ajuste o combo no confirmado -- ver docs/COINBASE_INTEGRATION.md). No afectan las operaciones ya calculadas, pero no están incluidos.`,
-        relatedEntityType: "product",
-        relatedEntityId: productId,
-        dedupKey: `UNCLASSIFIED_FILL:account:${accountId}:product:${productId}`,
-      });
-    }
-
-    if (result.orphanedOpeningFillIds.length > 0) {
-      await raiseNotification({
-        userId: account.user_id,
-        type: "DISCREPANCY",
-        severity: "WARNING",
-        title: "Límites de operación cambiaron",
-        message: `${result.orphanedOpeningFillIds.length} operación(es) ya no corresponden a un límite de posición bajo el recálculo más reciente. Revísalas manualmente -- no se eliminaron automáticamente.`,
-        dedupKey: `TRADE_BOUNDARY_CHANGED:account:${accountId}:product:${productId}`,
-      });
-    }
-
-    const newHighWaterMark = fills.reduce(
-      (max, f) => (f.sequence_timestamp > max ? f.sequence_timestamp : max),
-      syncState?.high_water_mark ?? "1970-01-01T00:00:00Z",
-    );
 
     await supabase
       .from("sync_state")
@@ -180,20 +138,20 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
       .update({
         status: "SUCCESS",
         finished_at: new Date().toISOString(),
-        fills_fetched: fills.length,
-        fills_new: fillsNew,
-        trades_created: result.tradesCreated,
-        trades_updated: result.tradesUpdated,
-        discrepancies_found: result.orphanedOpeningFillIds.length,
+        fills_fetched: totalFills,
+        fills_new: totalFillsNew,
+        trades_created: totalTradesCreated,
+        trades_updated: totalTradesUpdated,
+        discrepancies_found: totalDiscrepancies,
       })
       .eq("id", run.id);
 
     return {
       status: "SUCCESS",
-      fillsFetched: fills.length,
-      fillsNew,
-      tradesCreated: result.tradesCreated,
-      tradesUpdated: result.tradesUpdated,
+      fillsFetched: totalFills,
+      fillsNew: totalFillsNew,
+      tradesCreated: totalTradesCreated,
+      tradesUpdated: totalTradesUpdated,
     };
   } catch (error) {
     // Sanitized: never include the raw error object (could theoretically
@@ -228,11 +186,126 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
         title: "La sincronización con Coinbase sigue fallando",
         message: `${newFailureCount} intentos consecutivos han fallado. Último error: ${errorSummary}`,
         dedupKey: `SYNC_FAILURE:account:${accountId}`,
+        // Also push this one out by email: a sync that stays broken is
+        // exactly the failure the user would otherwise not notice until
+        // they happened to open the app.
+        alsoEmail: {
+          subject: "Trading Registro Bot: la sincronización con Coinbase sigue fallando",
+          body: `${newFailureCount} intentos consecutivos de sincronización han fallado para la cuenta ${accountId}.\n\nÚltimo error: ${errorSummary}\n\nRevisa la sección Actividad de la app para más detalle.`,
+        },
       });
     }
 
     return { status: "FAILED", fillsFetched: 0, fillsNew: 0, tradesCreated: 0, tradesUpdated: 0, errorSummary };
   }
+}
+
+interface SyncOneProductResult {
+  fillsFetched: number;
+  fillsNew: number;
+  tradesCreated: number;
+  tradesUpdated: number;
+  discrepancies: number;
+  highWaterMark: string;
+}
+
+/**
+ * One product's slice of a poll cycle. Extracted so runPollSync can loop
+ * over every configured product without interleaving their state:
+ * reconstruction is per (account, product), so each product's fills must
+ * be persisted and reconstructed as its own pass.
+ */
+async function syncOneProduct(params: {
+  adapter: MarketDataPort;
+  userId: string;
+  accountId: string;
+  productId: string;
+  runId: string;
+  startIso: string;
+  nowIso: string;
+}): Promise<SyncOneProductResult> {
+  const { adapter, userId, accountId, productId, runId, startIso, nowIso } = params;
+
+  const product = await refreshProductSpec(adapter, productId);
+  if (!product.contractSize) {
+    await raiseNotification({
+      userId: userId,
+      type: "MISSING_CONTRACT_SPEC",
+      severity: "CRITICAL",
+      title: "Falta la especificación de contrato",
+      message: `Coinbase no devolvió un contract_size para ${productId}. La sincronización se detuvo -- el motor de P&L no puede calcular resultados sin el multiplicador real del contrato.`,
+      dedupKey: `MISSING_CONTRACT_SPEC:${productId}`,
+    });
+    throw new Error(`Missing contract_size for product ${productId}`);
+  }
+
+  const fills = await adapter.listFills({
+    product_ids: [productId],
+    product_types: ["FUTURE"],
+    start_sequence_timestamp: startIso,
+    end_sequence_timestamp: nowIso,
+    limit: 100,
+  });
+
+  // raw_orders must exist before raw_fills: raw_fills.order_id is a
+  // foreign key into raw_orders.order_id, so on a fresh order (never
+  // synced before) inserting the fill first trips
+  // "raw_fills_order_id_fkey" -- upsertRawOrders' own failure is
+  // deliberately swallowed (see its docstring), so if it can't reach
+  // Coinbase for order detail, the fill insert right after still fails
+  // loudly via that same FK instead of silently referencing an order
+  // that was never persisted.
+  const orderIds = [...new Set(fills.map((f) => f.order_id))];
+  await upsertRawOrders(adapter, userId, accountId, productId, runId, orderIds);
+  const fillsNew = await upsertRawFills(userId, accountId, runId, fills);
+
+  const result = await persistReconstruction({
+    userId: userId,
+    accountId,
+    productId,
+    contractSize: product.contractSize,
+    algorithmVersion: RECONSTRUCTION_ALGORITHM_VERSION,
+  });
+
+  await Promise.all(
+    result.touchedTradeIds.map((tradeId) => enqueueNotionSync(userId, tradeId)),
+  );
+
+  if (result.unclassifiedFillIds.length > 0) {
+    await raiseNotification({
+      userId: userId,
+      type: "UNCLASSIFIED_FILL",
+      severity: "WARNING",
+      title: "Fills sin clasificar",
+      message: `${result.unclassifiedFillIds.length} fill(s) no se procesaron automáticamente (tipo de ajuste o combo no confirmado -- ver docs/COINBASE_INTEGRATION.md). No afectan las operaciones ya calculadas, pero no están incluidos.`,
+      relatedEntityType: "product",
+      relatedEntityId: productId,
+      dedupKey: `UNCLASSIFIED_FILL:account:${accountId}:product:${productId}`,
+    });
+  }
+
+  if (result.orphanedOpeningFillIds.length > 0) {
+    await raiseNotification({
+      userId: userId,
+      type: "DISCREPANCY",
+      severity: "WARNING",
+      title: "Límites de operación cambiaron",
+      message: `${result.orphanedOpeningFillIds.length} operación(es) ya no corresponden a un límite de posición bajo el recálculo más reciente. Revísalas manualmente -- no se eliminaron automáticamente.`,
+      dedupKey: `TRADE_BOUNDARY_CHANGED:account:${accountId}:product:${productId}`,
+    });
+  }
+
+  return {
+    fillsFetched: fills.length,
+    fillsNew,
+    tradesCreated: result.tradesCreated,
+    tradesUpdated: result.tradesUpdated,
+    discrepancies: result.orphanedOpeningFillIds.length,
+    highWaterMark: fills.reduce(
+      (max, f) => (f.sequence_timestamp > max ? f.sequence_timestamp : max),
+      "1970-01-01T00:00:00Z",
+    ),
+  };
 }
 
 async function ensureSyncState(accountId: string, userId: string): Promise<string> {

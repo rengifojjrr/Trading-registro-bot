@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/layout/page-header";
+import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
 import { SyncNow } from "@/components/settings/sync-now";
@@ -44,6 +45,7 @@ export default async function SettingsPage() {
             </>
           }
           notionMappingsSlot={<NotionFieldMappings mappings={fieldMappings} />}
+          backupSlot={<BackupExport />}
         />
       ) : null}
     </>

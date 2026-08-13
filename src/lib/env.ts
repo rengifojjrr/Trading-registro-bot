@@ -38,6 +38,13 @@ const serverEnvSchema = z.object({
   // only the configured scheduler (Vercel Cron, pg_cron, or the local CLI
   // script) can trigger a sync -- see docs/COINBASE_INTEGRATION.md.
   CRON_SECRET: z.string().min(16).optional(),
+
+  // Optional email alerting for critical problems (repeated sync failures).
+  // All three are required together -- with any of them missing, alerting
+  // silently stays off rather than half-working. See lib/notifications/email.ts.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  ALERT_EMAIL_TO: z.email().optional(),
+  ALERT_EMAIL_FROM: z.string().min(1).optional(),
 });
 
 /**
@@ -106,6 +113,9 @@ export function serverEnv() {
     NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
     NOTION_DATABASE_ID: process.env.NOTION_DATABASE_ID,
     CRON_SECRET: process.env.CRON_SECRET,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    ALERT_EMAIL_TO: process.env.ALERT_EMAIL_TO,
+    ALERT_EMAIL_FROM: process.env.ALERT_EMAIL_FROM,
   });
 
   if (!parsed.success) {
