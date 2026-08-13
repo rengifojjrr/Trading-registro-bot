@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TradesTable } from "@/components/trades/trades-table";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
-import { fetchAccounts, fetchDistinctProductIds, fetchTradesForTable } from "@/lib/analytics/queries";
+import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForTable } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,11 +14,12 @@ export default async function TradesPage(props: PageProps<"/trades">) {
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, products] = await Promise.all([
+  const [{ count: totalTradeCount }, { data: settings }, accounts, products, filterOptions] = await Promise.all([
     supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
     fetchAccounts(),
     fetchDistinctProductIds(),
+    fetchFilterOptions(),
   ]);
 
   if (!totalTradeCount) {
@@ -48,7 +49,12 @@ export default async function TradesPage(props: PageProps<"/trades">) {
         title="Operaciones"
         description="Todas tus operaciones reconstruidas a partir de los fills de Coinbase."
       />
-      <FilterBar accounts={accounts} products={products} />
+      <FilterBar
+        accounts={accounts}
+        products={products}
+        strategies={filterOptions.strategies}
+        tags={filterOptions.tags}
+      />
       {rows.length === 0 ? (
         <EmptyState
           icon={SearchX}

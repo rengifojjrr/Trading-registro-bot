@@ -29,9 +29,13 @@ const SOURCE_OPTIONS = Object.entries(SOURCE_LABELS_ES) as [TradeSource, string]
 export function FilterBar({
   accounts,
   products,
+  strategies = [],
+  tags = [],
 }: {
   accounts: { id: string; name: string }[];
   products: string[];
+  strategies?: { id: string; name: string }[];
+  tags?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -57,13 +61,15 @@ export function FilterBar({
   const status = searchParams.get("status") ?? ALL;
   const session = searchParams.get("session") ?? ALL;
   const source = searchParams.get("source") ?? ALL;
+  const strategyId = searchParams.get("strategyId") ?? ALL;
+  const tagId = searchParams.get("tagId") ?? ALL;
   const dateFrom = searchParams.get("dateFrom") ?? "";
   const dateTo = searchParams.get("dateTo") ?? "";
   const netPnlMin = searchParams.get("netPnlMin") ?? "";
   const netPnlMax = searchParams.get("netPnlMax") ?? "";
 
   const activeFilterCount =
-    [accountId, productId, direction, status, session, source].filter((v) => v !== ALL).length +
+    [accountId, productId, direction, status, session, source, strategyId, tagId].filter((v) => v !== ALL).length +
     [dateFrom, dateTo, netPnlMin, netPnlMax].filter(Boolean).length;
   const hasActiveFilters = activeFilterCount > 0;
 
@@ -184,6 +190,42 @@ export function FilterBar({
             </SelectContent>
           </Select>
         </FilterField>
+
+        {strategies.length > 0 ? (
+          <FilterField label="Estrategia">
+            <Select value={strategyId} onValueChange={(v) => setParam("strategyId", v)}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas</SelectItem>
+                {strategies.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+        ) : null}
+
+        {tags.length > 0 ? (
+          <FilterField label="Etiqueta">
+            <Select value={tagId} onValueChange={(v) => setParam("tagId", v)}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas</SelectItem>
+                {tags.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+        ) : null}
 
         <FilterField label="Desde">
           <Input

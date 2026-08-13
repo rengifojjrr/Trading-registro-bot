@@ -10,8 +10,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { parseTradeFilters, pickSearchParam } from "@/lib/analytics/filter-params";
-import { fetchAccounts, fetchDistinctProductIds, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
+import { parseTradeFilters, pickSearchParam, previousPeriodFilters } from "@/lib/analytics/filter-params";
+import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
@@ -22,13 +22,15 @@ export default async function DashboardPage(props: PageProps<"/">) {
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, products, openPositions] = await Promise.all([
-    supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
-    supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
-    fetchAccounts(),
-    fetchDistinctProductIds(),
-    fetchOpenLivePositions(),
-  ]);
+  const [{ count: totalTradeCount }, { data: settings }, accounts, products, openPositions, filterOptions] =
+    await Promise.all([
+      supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+      supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+      fetchAccounts(),
+      fetchDistinctProductIds(),
+      fetchOpenLivePositions(),
+      fetchFilterOptions(),
+    ]);
 
   if (!totalTradeCount) {
     return (
@@ -51,6 +53,17 @@ export default async function DashboardPage(props: PageProps<"/">) {
 
   const trades = await fetchTradesForStats(filters);
   const stats = computeStats(trades);
+
+  // Only meaningful when the user picked an explicit date range -- an
+  // open-ended "everything ever" view has no previous period to compare
+  // against, so the KPI simply omits the comparison rather than inventing
+  // one.
+  const previousFilters = previousPeriodFilters(filters);
+  const previousStats = previousFilters ? computeStats(await fetchTradesForStats(previousFilters)) : null;
+  const netPnlDelta =
+    previousStats && Number(previousStats.netPnl) !== 0
+      ? ((Number(stats.netPnl) - Number(previousStats.netPnl)) / Math.abs(Number(previousStats.netPnl))) * 100
+      : null;
   const equityCurve = computeEquityCurve(trades);
   const dailyPnl = computeDailyPnl(trades, (iso) =>
     DateTime.fromISO(iso, { zone: "utc" }).setZone(timezone).toFormat("yyyy-LL-dd"),
@@ -81,7 +94,12 @@ export default async function DashboardPage(props: PageProps<"/">) {
 
       <OpenPositionsPanel positions={openPositions} />
 
-      <FilterBar accounts={accounts} products={products} />
+      <FilterBar
+        accounts={accounts}
+        products={products}
+        strategies={filterOptions.strategies}
+        tags={filterOptions.tags}
+      />
 
       {trades.length === 0 ? (
         <EmptyState
@@ -101,7 +119,12 @@ export default async function DashboardPage(props: PageProps<"/">) {
               label="P&L neto"
               value={formatSignedMoney(stats.netPnl)}
               tone={pnlTone(stats.netPnl)}
-              description="Ganancia o pérdida de las operaciones cerradas en el período filtrado, después de comisiones."
+              sub={
+                netPnlDelta !== null
+                  ? `${netPnlDelta >= 0 ? "+" : ""}${netPnlDelta.toFixed(0)}% vs. período anterior`
+                  : undefined
+              }
+              description="Ganancia o pérdida de las operaciones cerradas en el período filtrado, después de comisiones. La comparación aparece solo cuando eliges un rango de fechas concreto."
             />
             <StatTile
               size="lg"

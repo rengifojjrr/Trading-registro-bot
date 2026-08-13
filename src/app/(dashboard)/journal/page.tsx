@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
-import { fetchAccounts, fetchDistinctProductIds, fetchTradesForTable } from "@/lib/analytics/queries";
+import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForTable } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatDate, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
@@ -26,11 +26,12 @@ export default async function JournalPage(props: PageProps<"/journal">) {
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, products] = await Promise.all([
+  const [{ count: totalTradeCount }, { data: settings }, accounts, products, filterOptions] = await Promise.all([
     supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
     fetchAccounts(),
     fetchDistinctProductIds(),
+    fetchFilterOptions(),
   ]);
 
   if (!totalTradeCount) {
@@ -78,7 +79,12 @@ export default async function JournalPage(props: PageProps<"/journal">) {
             : `Las ${trades.length} operaciones del período tienen anotaciones.`
         }
       />
-      <FilterBar accounts={accounts} products={products} />
+      <FilterBar
+        accounts={accounts}
+        products={products}
+        strategies={filterOptions.strategies}
+        tags={filterOptions.tags}
+      />
 
       {trades.length === 0 ? (
         <EmptyState

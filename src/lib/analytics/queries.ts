@@ -1,8 +1,11 @@
 import "server-only";
 
+import { Decimal } from "decimal.js";
+
 import { createClient } from "@/lib/supabase/server";
 import type { Database, SessionLabel, TradeSource } from "@/types/database";
 
+import type { TradeExcursion, TradeForBreakdown } from "./breakdowns";
 import type { TradeForStats } from "./stats";
 
 export interface TradeFilters {
@@ -16,6 +19,44 @@ export interface TradeFilters {
   source?: TradeSource;
   netPnlMin?: number;
   netPnlMax?: number;
+  /**
+   * Both live on journal_entries / trade_tags rather than on trades, so
+   * they can't be applied in the same PostgREST query as the rest --
+   * resolveJournalFilters() turns them into a trade-id set first. Kept in
+   * the same TradeFilters shape so callers and the URL don't need to know
+   * where a given filter physically lives.
+   */
+  strategyId?: string;
+  tagId?: string;
+}
+
+/**
+ * Turns the journal/tag filters into an explicit trade-id list, or null
+ * when neither is active. Returning an empty array (rather than null) is
+ * meaningful: it means "a filter was applied and nothing matched", which
+ * must produce zero results, not every result.
+ */
+async function resolveJournalFilters(filters: TradeFilters): Promise<string[] | null> {
+  if (!filters.strategyId && !filters.tagId) return null;
+
+  const supabase = await createClient();
+  const idSets: string[][] = [];
+
+  if (filters.strategyId) {
+    const { data } = await supabase
+      .from("journal_entries")
+      .select("trade_id")
+      .eq("strategy_id", filters.strategyId);
+    idSets.push((data ?? []).map((r) => r.trade_id));
+  }
+
+  if (filters.tagId) {
+    const { data } = await supabase.from("trade_tags").select("trade_id").eq("tag_id", filters.tagId);
+    idSets.push((data ?? []).map((r) => r.trade_id));
+  }
+
+  // Multiple filters intersect -- "strategy X AND tag Y", not "either".
+  return idSets.reduce((acc, ids) => acc.filter((id) => ids.includes(id)));
 }
 
 type TradeRow = Database["public"]["Tables"]["trades"]["Row"];
@@ -76,6 +117,13 @@ function applyFilters<T>(query: T, filters: TradeFilters): T {
   if (filters.netPnlMin !== undefined) q = q.gte("net_pnl", filters.netPnlMin);
   if (filters.netPnlMax !== undefined) q = q.lte("net_pnl", filters.netPnlMax);
   return q as T;
+}
+
+/** Applies the id restriction from resolveJournalFilters, if any. */
+function applyIdRestriction<T>(query: T, tradeIds: string[] | null): T {
+  if (tradeIds === null) return query;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (query as any).in("id", tradeIds) as T;
 }
 
 /** Minimal columns for lib/analytics/stats.ts -- every dashboard metric and chart goes through this same query shape, filtered or not. */
@@ -207,8 +255,110 @@ export async function fetchAccounts() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("accounts")
-    .select("id, name, venue, is_demo, is_active")
+    .select("id, name, venue, currency, is_demo, is_active")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`fetchAccounts: ${error.message}`);
   return data ?? [];
+}
+
+/** Strategies and tags for the FilterBar's selectors -- both are per-user, so RLS scopes them. */
+export async function fetchFilterOptions() {
+  const supabase = await createClient();
+  const [{ data: strategies }, { data: tags }] = await Promise.all([
+    supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
+    supabase.from("tags").select("id, name").order("name", { ascending: true }),
+  ]);
+  return { strategies: strategies ?? [], tags: tags ?? [] };
+}
+
+/**
+ * Everything the breakdown views need in one pass: the trade's own columns
+ * plus the journalled R multiple, which lives on journal_entries.
+ */
+export async function fetchTradesForBreakdown(filters: TradeFilters = {}): Promise<TradeForBreakdown[]> {
+  const supabase = await createClient();
+  const restrictedIds = await resolveJournalFilters(filters);
+  if (restrictedIds !== null && restrictedIds.length === 0) return [];
+
+  let query = supabase.from("trades").select("id, status, opened_at, net_pnl, session_effective");
+  query = applyFilters(query, filters);
+  query = applyIdRestriction(query, restrictedIds);
+  const { data: trades, error } = await query.order("opened_at", { ascending: true });
+  if (error) throw new Error(`fetchTradesForBreakdown: ${error.message}`);
+
+  const tradeIds = (trades ?? []).map((t) => t.id);
+  const resultRByTradeId = new Map<string, string | null>();
+  if (tradeIds.length > 0) {
+    const { data: entries } = await supabase
+      .from("journal_entries")
+      .select("trade_id, result_r")
+      .in("trade_id", tradeIds);
+    for (const e of entries ?? []) resultRByTradeId.set(e.trade_id, e.result_r);
+  }
+
+  return (trades ?? []).map((t) => ({
+    id: t.id,
+    status: t.status,
+    openedAt: t.opened_at,
+    netPnl: t.net_pnl,
+    session: t.session_effective,
+    resultR: resultRByTradeId.get(t.id) ?? null,
+  }));
+}
+
+/**
+ * Stored MFE/MAE joined to each trade's realized result. Only trades with
+ * an actual computed value are returned -- rows carrying an
+ * unavailable_reason are skipped so they can't be mistaken for zero
+ * excursion. `totalTrades` lets the UI say "computed for N of M".
+ */
+export async function fetchExcursions(
+  filters: TradeFilters = {},
+): Promise<{ excursions: TradeExcursion[]; totalClosed: number }> {
+  const supabase = await createClient();
+  const restrictedIds = await resolveJournalFilters(filters);
+  if (restrictedIds !== null && restrictedIds.length === 0) return { excursions: [], totalClosed: 0 };
+
+  let query = supabase
+    .from("trades")
+    .select("id, direction, entry_wap, max_size, contract_multiplier, net_pnl")
+    .eq("status", "CLOSED")
+    .not("net_pnl", "is", null);
+  query = applyFilters(query, filters);
+  query = applyIdRestriction(query, restrictedIds);
+  const { data: trades, error } = await query;
+  if (error) throw new Error(`fetchExcursions: ${error.message}`);
+
+  const tradeIds = (trades ?? []).map((t) => t.id);
+  if (tradeIds.length === 0) return { excursions: [], totalClosed: 0 };
+
+  const { data: extremes } = await supabase
+    .from("trade_price_extremes")
+    .select("trade_id, mfe_price, mae_price")
+    .in("trade_id", tradeIds);
+
+  const extremeByTradeId = new Map((extremes ?? []).map((e) => [e.trade_id, e]));
+
+  const excursions: TradeExcursion[] = [];
+  for (const trade of trades ?? []) {
+    const extreme = extremeByTradeId.get(trade.id);
+    if (!extreme?.mfe_price || !extreme.mae_price || !trade.entry_wap) continue;
+
+    // Convert the stored extreme prices into account-currency amounts the
+    // same way lib/analytics/mfe-mae.ts does, so both views agree.
+    const size = new Decimal(trade.max_size).times(trade.contract_multiplier);
+    const entry = new Decimal(trade.entry_wap);
+    const sign = trade.direction === "LONG" ? 1 : -1;
+    const mfe = new Decimal(extreme.mfe_price).minus(entry).times(sign).times(size);
+    const mae = new Decimal(extreme.mae_price).minus(entry).times(sign).times(size);
+
+    excursions.push({
+      tradeId: trade.id,
+      mfeAmount: Decimal.max(0, mfe).toString(),
+      maeAmount: Decimal.max(0, mae.negated()).toString(),
+      netPnl: trade.net_pnl!,
+    });
+  }
+
+  return { excursions, totalClosed: tradeIds.length };
 }

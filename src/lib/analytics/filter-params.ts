@@ -46,7 +46,32 @@ export function parseTradeFilters(
     source: pickSearchParam(searchParams.source) as TradeFilters["source"],
     netPnlMin: pickNumberParam(searchParams.netPnlMin),
     netPnlMax: pickNumberParam(searchParams.netPnlMax),
+    strategyId: pickSearchParam(searchParams.strategyId),
+    tagId: pickSearchParam(searchParams.tagId),
     dateFrom,
     dateTo,
+  };
+}
+
+/**
+ * The window immediately before [dateFrom, dateTo], of the same length --
+ * for "this period vs the previous one" comparisons. Returns null unless
+ * both ends are set, since an open-ended range has no well-defined
+ * predecessor.
+ */
+export function previousPeriodFilters(filters: TradeFilters): TradeFilters | null {
+  if (!filters.dateFrom || !filters.dateTo) return null;
+
+  const from = DateTime.fromISO(filters.dateFrom);
+  const to = DateTime.fromISO(filters.dateTo);
+  if (!from.isValid || !to.isValid) return null;
+
+  const lengthMs = to.toMillis() - from.toMillis();
+  if (lengthMs <= 0) return null;
+
+  return {
+    ...filters,
+    dateFrom: from.minus({ milliseconds: lengthMs }).toISO() ?? undefined,
+    dateTo: from.toISO() ?? undefined,
   };
 }

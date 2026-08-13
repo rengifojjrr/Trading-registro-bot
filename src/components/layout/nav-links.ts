@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  BarChart3,
   BookOpen,
   FileText,
   LayoutDashboard,
@@ -28,6 +29,7 @@ export const NAV_LINKS: NavLink[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trades", label: "Operaciones", icon: ListOrdered },
   { href: "/journal", label: "Diario", icon: BookOpen },
+  { href: "/analytics", label: "Análisis", icon: BarChart3 },
   { href: "/risk", label: "Riesgo", icon: Shield },
   { href: "/strategies", label: "Estrategias", icon: Target },
   { href: "/activity", label: "Actividad", icon: Activity },
