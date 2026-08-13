@@ -33,14 +33,19 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Configuración"
-        description="Zona horaria, sincronización, producto de Coinbase e integraciones."
-      />
-      <ConnectionStatus />
-      <SyncNow />
-      {settings ? <SettingsForm settings={settings} /> : null}
-      <NotionFieldMappings mappings={fieldMappings} />
+      <PageHeader title="Configuración" />
+      {settings ? (
+        <SettingsForm
+          settings={settings}
+          connectionSlot={
+            <>
+              <ConnectionStatus />
+              <SyncNow />
+            </>
+          }
+          notionMappingsSlot={<NotionFieldMappings mappings={fieldMappings} />}
+        />
+      ) : null}
     </>
   );
 }

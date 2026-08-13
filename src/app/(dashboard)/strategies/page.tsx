@@ -3,6 +3,7 @@ import { Target } from "lucide-react";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { CreateStrategyForm } from "@/components/strategies/create-strategy-form";
 import { StrategyPerformanceCard } from "@/components/strategies/strategy-performance-card";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
 import { computeStrategyPerformance } from "@/lib/analytics/strategy-report";
@@ -27,12 +28,13 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
       <>
         <PageHeader
           title="Estrategias"
-          description="Reglas de cada setup y su rendimiento comparado: profit factor, expectativa, drawdown, R promedio y tamaño de muestra."
+          description="Cómo rinde cada setup: profit factor, expectativa, drawdown y tamaño de muestra."
         />
         <EmptyState
           icon={Target}
-          title="Todavía no hay estrategias definidas"
-          description="Cuando definas una estrategia y la asignes a tus operaciones, esta sección mostrará su rendimiento -- y advertirá visualmente cuando una conclusión se base en muy pocas operaciones. Ninguna estrategia se declarará rentable solo por win rate o por una muestra pequeña."
+          title="Todavía no hay estrategias"
+          description="Crea una y asígnala a tus operaciones desde el diario de cada una. Aquí verás su rendimiento comparado, avisando cuando una conclusión se base en muy pocas operaciones."
+          action={<CreateStrategyForm />}
         />
       </>
     );
@@ -47,7 +49,8 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
     <>
       <PageHeader
         title="Estrategias"
-        description="Reglas de cada setup y su rendimiento comparado: profit factor, expectativa, drawdown y tamaño de muestra."
+        description="Cómo rinde cada setup: profit factor, expectativa, drawdown y tamaño de muestra."
+        action={<CreateStrategyForm />}
       />
       <FilterBar accounts={accounts} products={products} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

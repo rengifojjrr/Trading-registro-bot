@@ -15,16 +15,23 @@ export type NavLink = {
   href: string;
   label: string;
   icon: LucideIcon;
+  /**
+   * Pages that exist as routes but are still placeholders. They stay
+   * reachable (so the roadmap is visible) but are visually separated and
+   * labelled, instead of sitting in the main list looking like working
+   * features and rewarding a click with "coming in phase 5".
+   */
+  comingSoon?: boolean;
 };
 
 export const NAV_LINKS: NavLink[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trades", label: "Operaciones", icon: ListOrdered },
   { href: "/journal", label: "Diario", icon: BookOpen },
-  { href: "/strategies", label: "Estrategias", icon: Target },
   { href: "/risk", label: "Riesgo", icon: Shield },
-  { href: "/reports", label: "Reportes", icon: FileText },
-  { href: "/import", label: "Importar", icon: Upload },
+  { href: "/strategies", label: "Estrategias", icon: Target },
   { href: "/activity", label: "Actividad", icon: Activity },
   { href: "/settings", label: "Configuración", icon: Settings },
+  { href: "/reports", label: "Reportes", icon: FileText, comingSoon: true },
+  { href: "/import", label: "Importar", icon: Upload, comingSoon: true },
 ];

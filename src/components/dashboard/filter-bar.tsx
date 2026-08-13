@@ -67,12 +67,12 @@ export function FilterBar({
     [dateFrom, dateTo, netPnlMin, netPnlMax].filter(Boolean).length;
   const hasActiveFilters = activeFilterCount > 0;
 
-  // Collapsed by default on mobile (md:flex below always wins at desktop
-  // widths, so this toggle only affects small screens) -- but starts
-  // expanded if the URL already carries filters, so arriving with a
-  // filtered link never hides *why* the results look filtered. Ten
-  // fixed-width fields wrapping onto ~5-6 stacked rows was the concrete
-  // mobile complaint this fixes.
+  // Collapsed by default on every screen size unless the URL already
+  // carries filters -- arriving with a filtered link must never hide *why*
+  // the results look filtered. Ten fixed-width fields permanently occupying
+  // the top of both the Dashboard and Operaciones was the single loudest
+  // piece of chrome in the app; on a phone they wrapped onto ~5-6 stacked
+  // rows before any actual content.
   const [isExpanded, setIsExpanded] = useState(hasActiveFilters);
 
   return (
@@ -80,7 +80,7 @@ export function FilterBar({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="flex items-center justify-between gap-2 md:hidden"
+        className="flex items-center justify-between gap-2"
         aria-expanded={isExpanded}
       >
         <span className="text-sm font-medium text-foreground">
@@ -92,7 +92,7 @@ export function FilterBar({
         />
       </button>
 
-      <div className={cn("flex-wrap items-end gap-3", isExpanded ? "flex" : "hidden md:flex")}>
+      <div className={cn("flex-wrap items-end gap-3", isExpanded ? "flex" : "hidden")}>
         <FilterField label="Cuenta">
           <Select value={accountId} onValueChange={(v) => setParam("accountId", v)}>
             <SelectTrigger className="w-40">

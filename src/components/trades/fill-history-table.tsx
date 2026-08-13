@@ -1,5 +1,6 @@
+import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
 
 export interface FillHistoryRow {
@@ -27,13 +28,17 @@ export interface FillHistoryRow {
 export function FillHistoryTable({ fills, timezone }: { fills: FillHistoryRow[]; timezone: string }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Historial de fills</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {fills.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Sin fills asociados.</p>
-        ) : (
+      <CardContent className="pt-5">
+        {/* Audit-trail detail: valuable when reconciling against Coinbase,
+            but not what you open a trade to look at -- so it stays folded
+            until asked for. */}
+        <CollapsibleSection
+          title="Historial de fills"
+          subtitle={fills.length === 1 ? "1 fill" : `${fills.length} fills`}
+        >
+          {fills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin fills asociados.</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
@@ -81,8 +86,9 @@ export function FillHistoryTable({ fills, timezone }: { fills: FillHistoryRow[];
                 })}
               </tbody>
             </table>
-          </div>
-        )}
+            </div>
+          )}
+        </CollapsibleSection>
       </CardContent>
     </Card>
   );

@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
+import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseTradeFilters, pickSearchParam } from "@/lib/analytics/filter-params";
@@ -90,84 +91,97 @@ export default async function DashboardPage(props: PageProps<"/">) {
         />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          {/* The four numbers that answer "how am I doing?" -- deliberately
+              larger and alone on their row. Everything else is supporting
+              detail and lives behind the fold below, so the headline figures
+              aren't competing with eight tiles of equal weight. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile
+              size="lg"
               label="P&L neto"
               value={formatSignedMoney(stats.netPnl)}
               tone={pnlTone(stats.netPnl)}
               description="Ganancia o pérdida de las operaciones cerradas en el período filtrado, después de comisiones."
             />
             <StatTile
-              label="P&L bruto"
-              value={formatSignedMoney(stats.grossPnl)}
-              tone={pnlTone(stats.grossPnl)}
-              description="Ganancia o pérdida de las operaciones cerradas antes de comisiones."
-            />
-            <StatTile
-              label="Comisiones"
-              value={formatMoney(stats.totalCommissions)}
-              description="Suma de comisiones de entrada y salida de todas las operaciones del período filtrado (abiertas y cerradas)."
-            />
-            <StatTile
+              size="lg"
               label="Win rate"
               value={stats.winRate === null ? "--" : formatPercent(stats.winRate)}
               sub={`${stats.wins}/${stats.closedTradesCount} cerradas`}
               description="Porcentaje de operaciones cerradas con P&L neto positivo sobre el total de cerradas. Las operaciones en punto de equilibrio no cuentan como ganadas."
             />
             <StatTile
+              size="lg"
               label="Profit factor"
               value={stats.profitFactor === null ? "--" : formatNumber(stats.profitFactor)}
               tone={stats.profitFactor === null ? "neutral" : stats.profitFactor >= 1 ? "positive" : "negative"}
-              description="Suma de ganancias netas dividida entre el valor absoluto de la suma de pérdidas netas. Sin operaciones perdedoras, no está definido."
+              description="Suma de ganancias netas dividida entre el valor absoluto de la suma de pérdidas netas. Por encima de 1 ganas más de lo que pierdes. Sin operaciones perdedoras, no está definido."
             />
             <StatTile
-              label="Expectancy"
-              value={stats.expectancy === null ? "--" : formatSignedMoney(stats.expectancy)}
-              tone={pnlTone(stats.expectancy)}
-              description="P&L neto promedio por operación cerrada."
-            />
-            <StatTile
+              size="lg"
               label="Drawdown máximo"
               value={stats.maxDrawdown === "0" ? formatMoney("0") : `-${formatMoney(stats.maxDrawdown)}`}
               tone={stats.maxDrawdown === "0" ? "neutral" : "negative"}
               description="Mayor caída desde un máximo hasta un mínimo posterior en la curva de capital acumulada del período filtrado."
             />
-            <StatTile
-              label="Operaciones"
-              value={stats.tradesCount}
-              sub={`${stats.openTradesCount} abiertas · ${stats.closedTradesCount} cerradas`}
-              description="Total de operaciones reconstruidas en el período filtrado."
-            />
-            <StatTile
-              label="Mejor operación"
-              value={stats.bestTrade ? formatSignedMoney(stats.bestTrade.netPnl) : "--"}
-              tone={stats.bestTrade ? pnlTone(stats.bestTrade.netPnl) : "neutral"}
-              description="Operación cerrada con el mayor P&L neto del período filtrado."
-            />
-            <StatTile
-              label="Peor operación"
-              value={stats.worstTrade ? formatSignedMoney(stats.worstTrade.netPnl) : "--"}
-              tone={stats.worstTrade ? pnlTone(stats.worstTrade.netPnl) : "neutral"}
-              description="Operación cerrada con el menor P&L neto del período filtrado."
-            />
-            <StatTile
-              label="Racha actual"
-              value={streakLabel}
-              tone={
-                stats.currentStreak.type === "WIN"
-                  ? "positive"
-                  : stats.currentStreak.type === "LOSS"
-                    ? "negative"
-                    : "neutral"
-              }
-              description="Operaciones ganadoras o perdedoras consecutivas más recientes, terminando en la última operación cerrada."
-            />
-            <StatTile
-              label="Rachas máximas"
-              value={`${stats.longestWinStreak}G · ${stats.longestLossStreak}P`}
-              description="Racha ganadora y racha perdedora más largas del período filtrado."
-            />
           </div>
+
+          <CollapsibleSection title="Más estadísticas" subtitle="Comisiones, rachas, mejores y peores operaciones">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatTile
+                label="P&L bruto"
+                value={formatSignedMoney(stats.grossPnl)}
+                tone={pnlTone(stats.grossPnl)}
+                description="Ganancia o pérdida de las operaciones cerradas antes de comisiones."
+              />
+              <StatTile
+                label="Comisiones"
+                value={formatMoney(stats.totalCommissions)}
+                description="Suma de comisiones de entrada y salida de todas las operaciones del período filtrado (abiertas y cerradas)."
+              />
+              <StatTile
+                label="Expectancy"
+                value={stats.expectancy === null ? "--" : formatSignedMoney(stats.expectancy)}
+                tone={pnlTone(stats.expectancy)}
+                description="P&L neto promedio por operación cerrada. Es lo que, en promedio, deja cada operación."
+              />
+              <StatTile
+                label="Operaciones"
+                value={stats.tradesCount}
+                sub={`${stats.openTradesCount} abiertas · ${stats.closedTradesCount} cerradas`}
+                description="Total de operaciones reconstruidas en el período filtrado."
+              />
+              <StatTile
+                label="Mejor operación"
+                value={stats.bestTrade ? formatSignedMoney(stats.bestTrade.netPnl) : "--"}
+                tone={stats.bestTrade ? pnlTone(stats.bestTrade.netPnl) : "neutral"}
+                description="Operación cerrada con el mayor P&L neto del período filtrado."
+              />
+              <StatTile
+                label="Peor operación"
+                value={stats.worstTrade ? formatSignedMoney(stats.worstTrade.netPnl) : "--"}
+                tone={stats.worstTrade ? pnlTone(stats.worstTrade.netPnl) : "neutral"}
+                description="Operación cerrada con el menor P&L neto del período filtrado."
+              />
+              <StatTile
+                label="Racha actual"
+                value={streakLabel}
+                tone={
+                  stats.currentStreak.type === "WIN"
+                    ? "positive"
+                    : stats.currentStreak.type === "LOSS"
+                      ? "negative"
+                      : "neutral"
+                }
+                description="Operaciones ganadoras o perdedoras consecutivas más recientes, terminando en la última operación cerrada."
+              />
+              <StatTile
+                label="Rachas máximas"
+                value={`${stats.longestWinStreak}G · ${stats.longestLossStreak}P`}
+                description="Racha ganadora y racha perdedora más largas del período filtrado."
+              />
+            </div>
+          </CollapsibleSection>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>

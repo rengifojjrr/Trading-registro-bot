@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -85,10 +86,14 @@ export function JournalForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={formAction} className="flex flex-col gap-4">
+        <form action={formAction} className="flex flex-col gap-6">
           <input type="hidden" name="tradeId" value={tradeId} />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Grouped by *when* you fill each part in -- the plan before
+              entering, how it went during, and what you take away after.
+              Previously these were one flat eleven-field grid where a stop
+              loss sat next to an emotion with identical visual weight. */}
+          <FieldGroup title="El plan" subtitle="Lo que tenías pensado antes de entrar">
             <Field label="Estrategia" htmlFor="strategy_id">
               <Select name="strategy_id" defaultValue={journalEntry?.strategy_id ?? "NONE"}>
                 <SelectTrigger id="strategy_id">
@@ -159,17 +164,6 @@ export function JournalForm({
               />
             </Field>
 
-            <Field label="Resultado en R" htmlFor="result_r">
-              <Input
-                id="result_r"
-                name="result_r"
-                type="number"
-                step="any"
-                autoComplete="off"
-                defaultValue={journalEntry?.result_r ?? ""}
-              />
-            </Field>
-
             <Field label="Stop loss planeado" htmlFor="stop_loss_price">
               <Input
                 id="stop_loss_price"
@@ -189,6 +183,19 @@ export function JournalForm({
                 step="any"
                 autoComplete="off"
                 defaultValue={journalEntry?.take_profit_price ?? ""}
+              />
+            </Field>
+          </FieldGroup>
+
+          <FieldGroup title="Cómo salió" subtitle="Qué tan bien ejecutaste lo que habías planeado">
+            <Field label="Resultado en R" htmlFor="result_r" hint="Cuántas veces tu riesgo inicial ganaste o perdiste. 2R = ganaste el doble de lo que arriesgabas.">
+              <Input
+                id="result_r"
+                name="result_r"
+                type="number"
+                step="any"
+                autoComplete="off"
+                defaultValue={journalEntry?.result_r ?? ""}
               />
             </Field>
 
@@ -217,25 +224,42 @@ export function JournalForm({
                 defaultValue={journalEntry?.entry_quality ?? ""}
               />
             </Field>
-          </div>
+          </FieldGroup>
 
-          <CheckboxGroupField label="Emociones" name="emotional_state" options={emotionOptions} defaultValues={splitList(emotionValues)} />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5">
+              <h3 className="text-sm font-medium text-foreground">Qué te llevas</h3>
+              <p className="text-xs text-muted-foreground">Lo que quieres recordar la próxima vez</p>
+            </div>
 
-          <CheckboxGroupField label="Errores" name="mistake_tag" options={mistakeOptions} defaultValues={splitList(mistakeValues)} />
-
-          <Field label="Lección aprendida" htmlFor="lesson_learned">
-            <Textarea
-              id="lesson_learned"
-              name="lesson_learned"
-              rows={2}
-              autoComplete="off"
-              defaultValue={journalEntry?.lesson_learned ?? ""}
+            <CheckboxGroupField
+              label="Emociones"
+              name="emotional_state"
+              options={emotionOptions}
+              defaultValues={splitList(emotionValues)}
             />
-          </Field>
 
-          <Field label="Notas" htmlFor="notes">
-            <Textarea id="notes" name="notes" rows={4} autoComplete="off" defaultValue={journalEntry?.notes ?? ""} />
-          </Field>
+            <CheckboxGroupField
+              label="Errores"
+              name="mistake_tag"
+              options={mistakeOptions}
+              defaultValues={splitList(mistakeValues)}
+            />
+
+            <Field label="Lección aprendida" htmlFor="lesson_learned">
+              <Textarea
+                id="lesson_learned"
+                name="lesson_learned"
+                rows={2}
+                autoComplete="off"
+                defaultValue={journalEntry?.lesson_learned ?? ""}
+              />
+            </Field>
+
+            <Field label="Notas" htmlFor="notes">
+              <Textarea id="notes" name="notes" rows={4} autoComplete="off" defaultValue={journalEntry?.notes ?? ""} />
+            </Field>
+          </div>
 
           <div>
             <Button type="submit" disabled={pending}>
@@ -254,10 +278,44 @@ function mergeOptions(known: string[], storedValue: string | null): string[] {
   return extra.length > 0 ? [...known, ...extra] : known;
 }
 
-function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
+/** One titled block of related fields, so the form reads as three short steps instead of one long wall. */
+function FieldGroup({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <Label htmlFor={htmlFor} className="flex items-center gap-1.5">
+        {label}
+        {hint ? <InfoHint label={label}>{hint}</InfoHint> : null}
+      </Label>
       {children}
     </div>
   );

@@ -3,6 +3,8 @@
 import { Decimal } from "decimal.js";
 import { useMemo, useState } from "react";
 
+import { CollapsibleSection } from "@/components/shared/collapsible-section";
+import { InfoHint } from "@/components/shared/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -108,6 +110,7 @@ function NumberField({
   step = "any",
   min,
   max,
+  hint,
 }: {
   id: string;
   label: string;
@@ -116,10 +119,14 @@ function NumberField({
   step?: string | number;
   min?: number;
   max?: number;
+  hint?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="flex items-center gap-1.5">
+        {label}
+        {hint ? <InfoHint label={label}>{hint}</InfoHint> : null}
+      </Label>
       <Input
         id={id}
         type="number"
@@ -136,14 +143,15 @@ function NumberField({
 /**
  * Faithful React port of the uploaded standalone HTML risk calculator
  * (coinbase_btc_perpetual_risk_calculator.html), reusing lib/risk/margin.ts
- * (validated against the tool's own PDF-documented worked example) instead
- * of re-deriving the formula. Two enhancements over the original: (1) a
- * direction toggle -- the prototype was LONG-only, calculateMaxContracts
- * already supports both; (2) day/night initial margin and funding prefill
- * from Coinbase's REAL synced rates for the selected product (see
- * lib/risk/product-margin.ts) instead of requiring the user to copy them in
- * by hand, though they stay editable since Coinbase can change them anytime.
- * Purely a client-side what-if scratchpad -- nothing here is persisted.
+ * (validated against that tool's own PDF-documented worked example) instead
+ * of re-deriving the formula. Enhancements over the original: a direction
+ * toggle (the prototype was LONG-only), day/night initial margin and
+ * funding prefilled from Coinbase's REAL synced rates for the selected
+ * product, and -- the reason for this layout -- only the four inputs a
+ * trader actually changes per trade are shown by default. The original's
+ * twelve co-equal fields were the single biggest source of "too much
+ * going on" here. Purely a client-side what-if scratchpad; nothing is
+ * persisted.
  */
 export function MarginCalculator({
   riskConstants,
@@ -158,12 +166,10 @@ export function MarginCalculator({
     setState((s) => ({ ...s, [key]: value }));
   }
 
-  function handleProductChange(productId: string) {
-    const product = products.find((p) => p.productId === productId);
-    const rates = ratesForDirection(product, state.direction);
+  function applyRates(next: Partial<CalculatorState>, rates: LiveMarginRates | null) {
     setState((s) => ({
       ...s,
-      productId,
+      ...next,
       ...(rates
         ? {
             imDay: new Decimal(rates.intradayMarginRate).times(100).toString(),
@@ -172,25 +178,31 @@ export function MarginCalculator({
           }
         : {}),
     }));
+  }
+
+  function handleProductChange(productId: string) {
+    const product = products.find((p) => p.productId === productId);
+    applyRates({ productId }, ratesForDirection(product, state.direction));
   }
 
   function handleDirectionChange(direction: Direction) {
     const product = products.find((p) => p.productId === state.productId);
-    const rates = ratesForDirection(product, direction);
-    setState((s) => ({
-      ...s,
-      direction,
-      ...(rates
-        ? {
-            imDay: new Decimal(rates.intradayMarginRate).times(100).toString(),
-            imNight: new Decimal(rates.overnightMarginRate).times(100).toString(),
-            funding: new Decimal(rates.fundingRatePerHour).times(100).toString(),
-          }
-        : {}),
-    }));
+    applyRates({ direction }, ratesForDirection(product, direction));
   }
 
   const contractSize = products.find((p) => p.productId === state.productId)?.contractSize ?? "0.01";
+
+  const sizingParams = useMemo(
+    () => ({
+      direction: state.direction,
+      capital: safeDecimal(state.capital).toString(),
+      reserveCash: safeDecimal(state.reserve).toString(),
+      entryPrice: safeDecimal(state.entry).toString(),
+      riskPrice: safeDecimal(state.riskPrice).toString(),
+      hoursOpen: safeDecimal(state.hours).toString(),
+    }),
+    [state.direction, state.capital, state.reserve, state.entry, state.riskPrice, state.hours],
+  );
 
   const sizing = useMemo(
     () =>
@@ -203,14 +215,9 @@ export function MarginCalculator({
           minFee: state.minFee,
           contractSize,
         }),
-        direction: state.direction,
-        capital: safeDecimal(state.capital).toString(),
-        reserveCash: safeDecimal(state.reserve).toString(),
-        entryPrice: safeDecimal(state.entry).toString(),
-        riskPrice: safeDecimal(state.riskPrice).toString(),
-        hoursOpen: safeDecimal(state.hours).toString(),
+        ...sizingParams,
       }),
-    [state, contractSize],
+    [sizingParams, state.mmr, state.targetMR, state.funding, state.tradeFee, state.minFee, contractSize],
   );
 
   const scenarios = useMemo(
@@ -226,15 +233,10 @@ export function MarginCalculator({
             minFee: state.minFee,
             contractSize,
           }),
-          direction: state.direction,
-          capital: safeDecimal(state.capital).toString(),
-          reserveCash: safeDecimal(state.reserve).toString(),
-          entryPrice: safeDecimal(state.entry).toString(),
-          riskPrice: safeDecimal(state.riskPrice).toString(),
-          hoursOpen: safeDecimal(state.hours).toString(),
+          ...sizingParams,
         }),
       })),
-    [state, contractSize],
+    [sizingParams, state.targetMR, state.funding, state.tradeFee, state.minFee, contractSize],
   );
 
   const usable = Decimal.max(0, safeDecimal(state.capital).minus(safeDecimal(state.reserve)));
@@ -242,25 +244,25 @@ export function MarginCalculator({
   const dayMargin = notional.times(pct(state.imDay));
   const nightMargin = notional.times(pct(state.imNight));
   const nightOk = nightMargin.lte(usable);
-  const riskOk = sizing.marginRatioAtRisk === null ? true : new Decimal(sizing.marginRatioAtRisk).lte(pct(state.targetMR));
+  const riskOk =
+    sizing.marginRatioAtRisk === null ? true : new Decimal(sizing.marginRatioAtRisk).lte(pct(state.targetMR));
 
   let statusLabel: string;
   let statusVariant: "positive" | "negative";
   if (sizing.contracts === 0) {
-    statusLabel = "Parámetros incompatibles";
+    statusLabel = "Revisa los parámetros";
     statusVariant = "negative";
   } else if (!nightOk) {
     statusLabel = "No pasa margen overnight";
     statusVariant = "negative";
   } else if (!riskOk) {
-    statusLabel = "Excede el margen objetivo";
+    statusLabel = "Excede tu margen objetivo";
     statusVariant = "negative";
   } else {
-    statusLabel = "Dentro del modelo configurado";
+    statusLabel = "Dentro de tu modelo";
     statusVariant = "positive";
   }
 
-  const usedPct = Decimal.min(100, nightMargin.dividedBy(Decimal.max(1, usable)).times(100));
   const fundingSigned = new Decimal(sizing.fundingCost);
 
   return (
@@ -268,212 +270,283 @@ export function MarginCalculator({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.25fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Calculadora -- parámetros</CardTitle>
+            <CardTitle className="text-foreground">Calculadora de tamaño</CardTitle>
             <CardDescription>
-              Ajusta cualquier valor y el resultado se recalcula al instante. Nada de esto se guarda.
+              ¿Cuántos contratos puedo abrir sin pasarme de mi riesgo? Cambia los valores y se recalcula solo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {products.length > 0 ? (
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {products.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="calc-product">Producto</Label>
+                  <Select value={state.productId} onValueChange={handleProductChange}>
+                    <SelectTrigger id="calc-product">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((p) => (
+                        <SelectItem key={p.productId} value={p.productId}>
+                          {p.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="calc-product">Producto</Label>
-                <Select value={state.productId} onValueChange={handleProductChange}>
-                  <SelectTrigger id="calc-product">
+                <Label htmlFor="calc-direction">Dirección</Label>
+                <Select value={state.direction} onValueChange={(v) => handleDirectionChange(v as Direction)}>
+                  <SelectTrigger id="calc-direction">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {products.map((p) => (
-                      <SelectItem key={p.productId} value={p.productId}>
-                        {p.displayName}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="LONG">Long</SelectItem>
+                    <SelectItem value="SHORT">Short</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            ) : null}
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="calc-direction">Dirección</Label>
-              <Select value={state.direction} onValueChange={(v) => handleDirectionChange(v as Direction)}>
-                <SelectTrigger id="calc-direction">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="LONG">Long</SelectItem>
-                  <SelectItem value="SHORT">Short</SelectItem>
-                </SelectContent>
-              </Select>
+              <NumberField
+                id="calc-capital"
+                label="Capital disponible (USD)"
+                value={state.capital}
+                min={0}
+                onChange={(v) => updateField("capital", v)}
+              />
+              <NumberField
+                id="calc-entry"
+                label="Precio de entrada (USD)"
+                value={state.entry}
+                min={0}
+                onChange={(v) => updateField("entry", v)}
+              />
+              <NumberField
+                id="calc-risk-price"
+                label={state.direction === "LONG" ? "Precio mínimo a soportar" : "Precio máximo a soportar"}
+                value={state.riskPrice}
+                min={0}
+                hint={
+                  state.direction === "LONG"
+                    ? "El precio más bajo al que quieres seguir en la operación sin pasarte de tu margen objetivo."
+                    : "El precio más alto al que quieres seguir en la operación sin pasarte de tu margen objetivo."
+                }
+                onChange={(v) => updateField("riskPrice", v)}
+              />
+              <NumberField
+                id="calc-hours"
+                label="Horas estimadas abierta"
+                value={state.hours}
+                min={0}
+                hint="Se usa solo para estimar el costo de funding acumulado."
+                onChange={(v) => updateField("hours", v)}
+              />
             </div>
 
-            <NumberField id="calc-capital" label="Capital disponible (USD)" value={state.capital} min={0} onChange={(v) => updateField("capital", v)} />
-            <NumberField id="calc-entry" label="Precio de entrada BTC (USD)" value={state.entry} min={0} onChange={(v) => updateField("entry", v)} />
-            <NumberField
-              id="calc-risk-price"
-              label={state.direction === "LONG" ? "Precio mínimo de riesgo (USD)" : "Precio máximo de riesgo (USD)"}
-              value={state.riskPrice}
-              min={0}
-              onChange={(v) => updateField("riskPrice", v)}
-            />
-            <NumberField id="calc-hours" label="Horas estimadas abierta" value={state.hours} min={0} onChange={(v) => updateField("hours", v)} />
-
-            <NumberField id="calc-mmr" label="Maintenance Margin Rate (%) -- usa el valor de Coinbase" value={state.mmr} min={0.01} max={100} step={0.1} onChange={(v) => updateField("mmr", v)} />
-            <NumberField id="calc-target-mr" label="Margin Ratio máximo deseado al precio de riesgo (%)" value={state.targetMR} min={1} max={99} step={1} onChange={(v) => updateField("targetMR", v)} />
-
-            <NumberField id="calc-im-day" label="Initial Margin intradía (%)" value={state.imDay} min={0} max={100} step={0.1} onChange={(v) => updateField("imDay", v)} />
-            <NumberField id="calc-im-night" label="Initial Margin overnight (%)" value={state.imNight} min={0} max={100} step={0.1} onChange={(v) => updateField("imNight", v)} />
-
-            <NumberField id="calc-funding" label="Funding promedio por hora (%)" value={state.funding} step={0.0001} onChange={(v) => updateField("funding", v)} />
-            <NumberField id="calc-trade-fee" label="Trading fee por lado (%)" value={state.tradeFee} min={0} step={0.001} onChange={(v) => updateField("tradeFee", v)} />
-
-            <NumberField id="calc-min-fee" label="Fee mínimo por contrato / lado (USD)" value={state.minFee} min={0} step={0.01} onChange={(v) => updateField("minFee", v)} />
-            <NumberField id="calc-reserve" label="Reserva de efectivo que NO quieres arriesgar (USD)" value={state.reserve} min={0} step={100} onChange={(v) => updateField("reserve", v)} />
+            <CollapsibleSection
+              title="Ajustes avanzados"
+              subtitle="Fees, funding y márgenes -- ya vienen con tus valores configurados"
+              className="border-t border-border pt-3"
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <NumberField
+                  id="calc-mmr"
+                  label="Maintenance Margin Rate (%)"
+                  value={state.mmr}
+                  min={0.01}
+                  max={100}
+                  step={0.1}
+                  hint="Coinbase no lo expone por API: cópialo de tu cuenta. Se toma de tu Configuración."
+                  onChange={(v) => updateField("mmr", v)}
+                />
+                <NumberField
+                  id="calc-target-mr"
+                  label="Margin Ratio objetivo (%)"
+                  value={state.targetMR}
+                  min={1}
+                  max={99}
+                  step={1}
+                  hint="El colchón que quieres conservar al precio de riesgo. Más bajo = más conservador."
+                  onChange={(v) => updateField("targetMR", v)}
+                />
+                <NumberField
+                  id="calc-im-day"
+                  label="Initial Margin intradía (%)"
+                  value={state.imDay}
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  hint="Valor real sincronizado desde Coinbase para este producto."
+                  onChange={(v) => updateField("imDay", v)}
+                />
+                <NumberField
+                  id="calc-im-night"
+                  label="Initial Margin overnight (%)"
+                  value={state.imNight}
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  hint="Valor real sincronizado desde Coinbase. Suele ser bastante más alto que el intradía."
+                  onChange={(v) => updateField("imNight", v)}
+                />
+                <NumberField
+                  id="calc-funding"
+                  label="Funding por hora (%)"
+                  value={state.funding}
+                  step={0.0001}
+                  onChange={(v) => updateField("funding", v)}
+                />
+                <NumberField
+                  id="calc-trade-fee"
+                  label="Trading fee por lado (%)"
+                  value={state.tradeFee}
+                  min={0}
+                  step={0.001}
+                  onChange={(v) => updateField("tradeFee", v)}
+                />
+                <NumberField
+                  id="calc-min-fee"
+                  label="Fee mínimo por contrato (USD)"
+                  value={state.minFee}
+                  min={0}
+                  step={0.01}
+                  onChange={(v) => updateField("minFee", v)}
+                />
+                <NumberField
+                  id="calc-reserve"
+                  label="Reserva que no arriesgas (USD)"
+                  value={state.reserve}
+                  min={0}
+                  step={100}
+                  onChange={(v) => updateField("reserve", v)}
+                />
+              </div>
+            </CollapsibleSection>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardDescription>Máximo calculado por tu umbral de riesgo</CardDescription>
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold tabular-nums">{sizing.contracts}</span>
-              <span className="text-sm text-muted-foreground">contratos</span>
-            </div>
-            <div>
-              <Badge variant={statusVariant}>{statusLabel}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div>
-              <div className="h-3 overflow-hidden rounded-full border border-border bg-secondary">
-                <div className="h-full bg-primary transition-all" style={{ width: `${usedPct.toFixed(2)}%` }} />
+          <CardContent className="flex flex-col gap-4 pt-5">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Puedes abrir como máximo</span>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-4xl font-bold tabular-nums">{sizing.contracts}</span>
+                <span className="text-sm text-muted-foreground">
+                  contratos · {formatNumber(sizing.btcExposure, 4)} BTC
+                </span>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Con {formatMoney(state.capital)}, entrada en {formatMoney(state.entry)} y umbral en{" "}
-                {formatMoney(state.riskPrice)}, el modelo limita la posición a {sizing.contracts} contratos (
-                {formatNumber(sizing.btcExposure, 2)} BTC). El número está redondeado hacia abajo porque Coinbase
-                opera estos contratos en enteros.
-              </p>
+              <div className="mt-1">
+                <Badge variant={statusVariant}>{statusLabel}</Badge>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border border-border bg-card/50 p-3">
-                <p className="text-xs text-muted-foreground">Exposición BTC</p>
-                <p className="text-lg font-semibold tabular-nums">{formatNumber(sizing.btcExposure, 4)}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-xs text-muted-foreground">Si el precio llega a tu umbral, pierdes</p>
+                <p className="text-lg font-semibold tabular-nums text-negative">
+                  {formatMoney(sizing.lossAtRisk)}
+                </p>
               </div>
-              <div className="rounded-lg border border-border bg-card/50 p-3">
-                <p className="text-xs text-muted-foreground">Notional de entrada</p>
-                <p className="text-lg font-semibold tabular-nums">{formatMoney(sizing.notional)}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-card/50 p-3">
-                <p className="text-xs text-muted-foreground">Apalancamiento efectivo</p>
+              <div className="rounded-lg border border-border p-3">
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Apalancamiento
+                  <InfoHint label="Apalancamiento">
+                    Valor total de la posición dividido entre tu capital. 2× significa que mueves el doble de lo
+                    que tienes.
+                  </InfoHint>
+                </p>
                 <p className="text-lg font-semibold tabular-nums">
                   {sizing.leverage ? `${formatNumber(sizing.leverage, 2)}×` : "--"}
                 </p>
               </div>
-              <div className="rounded-lg border border-border bg-card/50 p-3">
-                <p className="text-xs text-muted-foreground">Pérdida si BTC llega al umbral</p>
-                <p className="text-lg font-semibold tabular-nums">{formatMoney(sizing.lossAtRisk)}</p>
-              </div>
             </div>
 
-            <div>
-              <h3 className="mb-1 text-sm font-medium">Chequeo de margen</h3>
+            <CollapsibleSection title="Ver desglose completo" className="border-t border-border pt-3">
               <dl className="flex flex-col divide-y divide-border text-sm">
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Initial margin intradía</dt>
-                  <dd className="tabular-nums">{formatMoney(dayMargin.toString())}</dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Initial margin overnight</dt>
-                  <dd className="tabular-nums">{formatMoney(nightMargin.toString())}</dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Equity estimado al precio de riesgo</dt>
-                  <dd className="tabular-nums">{formatMoney(sizing.equityAtRisk)}</dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Maintenance margin al precio de riesgo</dt>
-                  <dd className="tabular-nums">{formatMoney(sizing.maintenanceAtRisk)}</dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Margin Ratio estimado al precio de riesgo</dt>
-                  <dd className="tabular-nums">
-                    {sizing.marginRatioAtRisk ? `${new Decimal(sizing.marginRatioAtRisk).times(100).toFixed(1)}%` : "≥100%"}
-                  </dd>
-                </div>
+                <Row label="Valor de la posición (notional)" value={formatMoney(sizing.notional)} />
+                <Row label="Initial margin intradía" value={formatMoney(dayMargin.toString())} />
+                <Row label="Initial margin overnight" value={formatMoney(nightMargin.toString())} />
+                <Row label="Equity estimado al precio de riesgo" value={formatMoney(sizing.equityAtRisk)} />
+                <Row label="Maintenance margin al precio de riesgo" value={formatMoney(sizing.maintenanceAtRisk)} />
+                <Row
+                  label="Margin Ratio estimado al precio de riesgo"
+                  value={
+                    sizing.marginRatioAtRisk
+                      ? `${new Decimal(sizing.marginRatioAtRisk).times(100).toFixed(1)}%`
+                      : "≥100%"
+                  }
+                />
+                <Row label="Comisiones entrada + salida" value={formatMoney(sizing.roundtripFees)} />
+                <Row
+                  label="Funding del período"
+                  value={`${fundingSigned.isNegative() ? "Crédito " : ""}${formatMoney(fundingSigned.abs().toString())}`}
+                />
+                <Row label="Costo total estimado" value={formatMoney(sizing.totalCost)} />
               </dl>
-            </div>
-
-            <div>
-              <h3 className="mb-1 text-sm font-medium">Costos estimados</h3>
-              <dl className="flex flex-col divide-y divide-border text-sm">
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Entrada + salida</dt>
-                  <dd className="tabular-nums">{formatMoney(sizing.roundtripFees)}</dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Funding del período</dt>
-                  <dd className="tabular-nums">
-                    {fundingSigned.isNegative() ? "Crédito " : ""}
-                    {formatMoney(fundingSigned.abs().toString())}
-                  </dd>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <dt className="text-muted-foreground">Costo total estimado</dt>
-                  <dd className="tabular-nums">{formatMoney(sizing.totalCost)}</dd>
-                </div>
-              </dl>
-            </div>
+            </CollapsibleSection>
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Escenarios rápidos</CardTitle>
-          <CardDescription>
-            Como el maintenance margin real puede cambiar, esta tabla muestra cómo cambia el máximo de contratos
-            usando distintos MMR, manteniendo el resto de tus parámetros.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="py-2 font-normal">MMR</th>
-                  <th className="py-2 text-right font-normal">Contratos máx.</th>
-                  <th className="py-2 text-right font-normal">BTC</th>
-                  <th className="py-2 text-right font-normal">Notional</th>
-                  <th className="py-2 text-right font-normal">Leverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scenarios.map(({ mmrPercent, result }) => (
-                  <tr
-                    key={mmrPercent}
-                    className={cn("border-b border-border last:border-0", mmrPercent === state.mmr && "bg-accent/40")}
-                  >
-                    <td className="py-2">{mmrPercent}%</td>
-                    <td className="py-2 text-right tabular-nums">{result.contracts}</td>
-                    <td className="py-2 text-right tabular-nums">{formatNumber(result.btcExposure, 2)}</td>
-                    <td className="py-2 text-right tabular-nums">{formatMoney(result.notional)}</td>
-                    <td className="py-2 text-right tabular-nums">{result.leverage ? `${formatNumber(result.leverage, 2)}×` : "--"}</td>
+        <CardContent className="pt-5">
+          <CollapsibleSection
+            title="¿Y si el maintenance margin fuera distinto?"
+            subtitle="Cómo cambia el máximo de contratos con otros MMR"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-2 font-normal">MMR</th>
+                    <th className="py-2 text-right font-normal">Contratos máx.</th>
+                    <th className="py-2 text-right font-normal">BTC</th>
+                    <th className="py-2 text-right font-normal">Notional</th>
+                    <th className="py-2 text-right font-normal">Leverage</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {scenarios.map(({ mmrPercent, result }) => (
+                    <tr
+                      key={mmrPercent}
+                      className={cn("border-b border-border last:border-0", mmrPercent === state.mmr && "bg-accent/40")}
+                    >
+                      <td className="py-2">{mmrPercent}%</td>
+                      <td className="py-2 text-right tabular-nums">{result.contracts}</td>
+                      <td className="py-2 text-right tabular-nums">{formatNumber(result.btcExposure, 2)}</td>
+                      <td className="py-2 text-right tabular-nums">{formatMoney(result.notional)}</td>
+                      <td className="py-2 text-right tabular-nums">
+                        {result.leverage ? `${formatNumber(result.leverage, 2)}×` : "--"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CollapsibleSection>
         </CardContent>
       </Card>
 
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Esta calculadora no se conecta a tu cuenta ni puede conocer el maintenance margin vigente, position limit
-        tier, funding futuro, slippage o cambios de reglas -- salvo el initial margin/funding, que se prefiltran con
-        los últimos valores sincronizados de Coinbase para el producto elegido, pero pueden quedar desactualizados si
-        Coinbase los cambia. La liquidación real de Coinbase se basa en la salud total de margen del portafolio y
-        puede diferir de esta aproximación. Usa el Margin Ratio y el liquidation price estimate de Coinbase como
-        fuente operativa final.
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        Esto es una estimación, no la liquidación real de Coinbase.
+        <InfoHint label="Límites de esta calculadora">
+          Esta calculadora no se conecta a tu cuenta ni puede conocer el maintenance margin vigente, position
+          limit tier, funding futuro, slippage o cambios de reglas. El initial margin y el funding se prefiltran
+          con los últimos valores sincronizados de Coinbase para el producto elegido, pero pueden quedar
+          desactualizados si Coinbase los cambia. La liquidación real se basa en la salud total de margen de tu
+          portafolio. Usa el Margin Ratio y el liquidation price estimate de Coinbase como fuente final.
+        </InfoHint>
       </p>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 py-1.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="tabular-nums">{value}</dd>
     </div>
   );
 }

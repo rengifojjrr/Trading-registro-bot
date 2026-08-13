@@ -1,20 +1,131 @@
 import { BookOpen } from "lucide-react";
+import Link from "next/link";
 
+import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { parseTradeFilters } from "@/lib/analytics/filter-params";
+import { fetchAccounts, fetchDistinctProductIds, fetchTradesForTable } from "@/lib/analytics/queries";
+import { requireUser } from "@/lib/auth/require-user";
+import { formatDate, formatSignedMoney, pnlColorClass } from "@/lib/format";
+import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 
-export default function JournalPage() {
+/**
+ * The Diario section used to be a permanent "nothing here yet" placeholder
+ * even for accounts with hundreds of journalled trades -- it was never
+ * wired to real data. It now lists the actual trades and shows, at a
+ * glance, which ones still need writing up, which is the one question this
+ * page exists to answer. Editing still happens on each trade's own page;
+ * this is the index into it.
+ */
+export default async function JournalPage(props: PageProps<"/journal">) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const searchParams = await props.searchParams;
+
+  const [{ count: totalTradeCount }, { data: settings }, accounts, products] = await Promise.all([
+    supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    fetchAccounts(),
+    fetchDistinctProductIds(),
+  ]);
+
+  if (!totalTradeCount) {
+    return (
+      <>
+        <PageHeader title="Diario" description="Tus notas y reflexiones sobre cada operación." />
+        <EmptyState
+          icon={BookOpen}
+          title="El diario se llena junto con tus operaciones"
+          description="Cuando haya operaciones sincronizadas desde Coinbase, aparecerán aquí para que registres estrategia, riesgo, emociones y lecciones en cada una."
+        />
+      </>
+    );
+  }
+
+  const timezone = settings?.timezone || "UTC";
+  const filters = parseTradeFilters(searchParams, timezone);
+  const trades = await fetchTradesForTable(filters);
+
+  const { data: journalRows } = await supabase
+    .from("journal_entries")
+    .select("trade_id, strategy_id, lesson_learned, notes, emotional_state, result_r")
+    .eq("user_id", user.id);
+
+  const journalByTradeId = new Map((journalRows ?? []).map((j) => [j.trade_id, j]));
+
+  // "Written up" means there's something a human actually typed -- a row
+  // that only carries a strategy dropdown value isn't a journal entry in
+  // any useful sense, so it still counts as pending.
+  const isWrittenUp = (tradeId: string) => {
+    const entry = journalByTradeId.get(tradeId);
+    if (!entry) return false;
+    return Boolean(entry.lesson_learned || entry.notes || entry.emotional_state);
+  };
+
+  const pendingCount = trades.filter((t) => !isWrittenUp(t.id)).length;
+
   return (
     <>
       <PageHeader
         title="Diario"
-        description="Sesión, setup, sesgo, gestión de riesgo, resultado en R y evaluación cualitativa de cada operación."
+        description={
+          pendingCount > 0
+            ? `${pendingCount} de ${trades.length} operaciones sin anotar todavía.`
+            : `Las ${trades.length} operaciones del período tienen anotaciones.`
+        }
       />
-      <EmptyState
-        icon={BookOpen}
-        title="El diario se activa junto con las operaciones reconstruidas"
-        description="Los campos objetivos (producto, dirección, horarios, P&L) vienen de Coinbase y no se pueden editar aquí. Los campos subjetivos -- sesión de Tokio/Londres/Nueva York/Sídney, estrategia, sesgo de temporalidad alta, cercanía a soporte/resistencia, riesgo, stop loss, take profit, resultado en R, cumplimiento del plan, calidad de entrada, estado emocional, error cometido, lección aprendida y capturas -- se registran por operación una vez exista al menos una."
-      />
+      <FilterBar accounts={accounts} products={products} />
+
+      {trades.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="Ninguna operación coincide con estos filtros"
+          description="Ajusta o limpia los filtros para ver tus operaciones."
+        />
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col divide-y divide-border pt-2">
+            {trades.map((trade) => {
+              const entry = journalByTradeId.get(trade.id);
+              const writtenUp = isWrittenUp(trade.id);
+              const preview = entry?.lesson_learned || entry?.notes || null;
+
+              return (
+                <Link
+                  key={trade.id}
+                  href={`/trades/${trade.id}`}
+                  className="flex flex-col gap-1 py-3 transition-colors hover:bg-accent/40"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Badge variant="outline">{trade.direction === "LONG" ? "Long" : "Short"}</Badge>
+                      <span className="font-medium">{trade.product_id}</span>
+                      <span className="text-muted-foreground">{formatDate(trade.opened_at, timezone)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {trade.net_pnl !== null ? (
+                        <span className={cn("text-sm tabular-nums", pnlColorClass(trade.net_pnl))}>
+                          {formatSignedMoney(trade.net_pnl)}
+                        </span>
+                      ) : null}
+                      <Badge variant={writtenUp ? "positive" : "warning"}>
+                        {writtenUp ? "Anotada" : "Sin anotar"}
+                      </Badge>
+                    </div>
+                  </div>
+                  {preview ? (
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{preview}</p>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
