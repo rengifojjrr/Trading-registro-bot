@@ -199,6 +199,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
             <TradeChart
               tradeId={trade.id}
               productId={trade.product_id}
+              direction={trade.direction}
+              isOpen={isLiveOpenPosition}
               windowStart={Math.floor(chartWindow.start.getTime() / 1000)}
               windowEnd={Math.floor(chartWindow.end.getTime() / 1000)}
               initialCandles={chartData.candles}

@@ -140,7 +140,45 @@ export function TradesTable({
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* Below md the ten-column table forced a 960px-wide horizontal drag
+          on a ~390px screen. Same rows, same order, rendered as cards --
+          the table itself is simply not shown at that width. */}
+      <ul className="flex flex-col gap-2 md:hidden">
+        {pageRows.length === 0 ? (
+          <li className="rounded-lg border border-border px-3 py-10 text-center text-sm text-muted-foreground">
+            Ningún trade coincide con la búsqueda.
+          </li>
+        ) : (
+          pageRows.map((row) => (
+            <li key={row.id}>
+              <Link
+                href={`/trades/${row.id}`}
+                className="flex flex-col gap-1.5 rounded-lg border border-border p-3 transition-colors hover:bg-accent/40"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline">{row.direction === "LONG" ? "Long" : "Short"}</Badge>
+                    <span className="font-medium">{row.product_id}</span>
+                  </div>
+                  <span className={cn("font-medium tabular-nums", pnlColorClass(row.net_pnl))}>
+                    {formatSignedMoney(row.net_pnl)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span className="tabular-nums">{formatDate(row.opened_at, timezone)}</span>
+                  <Badge variant={row.status === "OPEN" ? "warning" : "outline"}>
+                    {row.status === "OPEN" ? "Abierta" : "Cerrada"}
+                  </Badge>
+                  <span className="tabular-nums">{formatPercent(row.return_pct)}</span>
+                  <span className="tabular-nums">{formatDuration(row.duration_seconds)}</span>
+                </div>
+              </Link>
+            </li>
+          ))
+        )}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
         <table className="w-full min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">

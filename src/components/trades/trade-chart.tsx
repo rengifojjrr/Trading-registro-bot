@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, MousePointer2, Square, Trash2, TrendingUp } from "lucide-react";
+import { Maximize2, Minus, MousePointer2, Square, Trash2, TrendingUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -24,6 +24,7 @@ import { GRANULARITY_LABELS, GRANULARITY_ORDER, isGranularityViable } from "@/li
 import type { DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { formatMoney } from "@/lib/format";
+import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { cn } from "@/lib/utils";
 
 export interface TradeChartCandle {
@@ -67,6 +68,7 @@ const THEME = {
   down: "hsl(0, 72%, 51%)", // --negative
   entry: "hsl(199, 89%, 48%)", // --primary
   exit: "hsl(38, 92%, 50%)", // --warning
+  live: "hsl(215, 20%, 65%)", // --muted-foreground, for the "price right now" line
 };
 
 type ActiveTool = "CURSOR" | PersistedDrawingTool;
@@ -105,6 +107,7 @@ const TOOL_BUTTONS: { tool: ActiveTool; label: string; Icon: typeof MousePointer
 export function TradeChart({
   tradeId,
   productId,
+  direction,
   windowStart,
   windowEnd,
   initialCandles,
@@ -112,11 +115,14 @@ export function TradeChart({
   initialDrawings,
   entry,
   exit,
+  isOpen = false,
   stopLoss = null,
   takeProfit = null,
 }: {
   tradeId: string;
   productId: string;
+  /** Drives which way the entry/exit markers point -- a SHORT entry is a sell, so an up arrow below the bar reads as the opposite of what happened. */
+  direction: "LONG" | "SHORT";
   windowStart: number; // unix seconds
   windowEnd: number; // unix seconds
   initialCandles: TradeChartCandle[];
@@ -124,6 +130,8 @@ export function TradeChart({
   initialDrawings: TradeChartDrawing[];
   entry: TradeChartMarker;
   exit: TradeChartMarker | null;
+  /** Only an open position has a meaningful "price right now" line to draw. */
+  isOpen?: boolean;
   /** From journal_entries -- the trader's own planned level, not something Coinbase reports. Drawn as a dashed reference line when present. */
   stopLoss?: number | null;
   takeProfit?: number | null;
@@ -142,6 +150,19 @@ export function TradeChart({
   const [drawings, setDrawings] = useState(initialDrawings);
   const [activeTool, setActiveTool] = useState<ActiveTool>("CURSOR");
   const [pendingPoint, setPendingPoint] = useState<DrawingPoint | null>(null);
+
+  // Only polled for a still-open position; the hook is called
+  // unconditionally (hooks can't be conditional) but its result is ignored
+  // unless isOpen, and the live line effect below bails out otherwise.
+  const { price: polledPrice } = useCurrentPrice(productId);
+  const livePrice = isOpen ? polledPrice : null;
+
+  function resetView() {
+    chartRef.current?.timeScale().fitContent();
+  }
+
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const dragRef = useRef<{ id: string; startPoint: DrawingPoint; original: TradeChartDrawing } | null>(null);
 
   async function handleGranularityChange(next: string) {
     const nextGranularity = next as CoinbaseCandleGranularity;
@@ -188,6 +209,21 @@ export function TradeChart({
       setDrawings((prev) => [...prev, { id: result.id!, tool, points, color: DRAWING_COLOR }]);
     } catch {
       toast.error("No se pudo guardar el dibujo.");
+    }
+  }
+
+  /** Persists a drag. The optimistic local move already happened during the drag itself. */
+  async function persistMovedDrawing(drawing: TradeChartDrawing) {
+    try {
+      const res = await fetch(`/api/trades/${tradeId}/drawings/${drawing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: drawing.tool, points: drawing.points }),
+      });
+      const result = (await res.json()) as { error: string | null };
+      if (result.error) toast.error(result.error);
+    } catch {
+      toast.error("No se pudo mover el dibujo.");
     }
   }
 
@@ -260,11 +296,16 @@ export function TradeChart({
       })),
     );
 
+    // A LONG is entered by buying (arrow up, drawn under the bar) and exited
+    // by selling; a SHORT is the exact mirror. Previously both directions
+    // rendered the LONG pair, so every short trade's chart pointed the wrong
+    // way.
+    const isLong = direction === "LONG";
     const markers: SeriesMarker<Time>[] = [
       {
         time: entry.time as UTCTimestamp,
-        position: "belowBar",
-        shape: "arrowUp",
+        position: isLong ? "belowBar" : "aboveBar",
+        shape: isLong ? "arrowUp" : "arrowDown",
         color: THEME.entry,
         text: `Entrada ${formatMoney(entry.price)}`,
       },
@@ -272,8 +313,8 @@ export function TradeChart({
     if (exit) {
       markers.push({
         time: exit.time as UTCTimestamp,
-        position: "aboveBar",
-        shape: "arrowDown",
+        position: isLong ? "aboveBar" : "belowBar",
+        shape: isLong ? "arrowDown" : "arrowUp",
         color: THEME.exit,
         text: `Salida ${formatMoney(exit.price)}`,
       });
@@ -338,7 +379,35 @@ export function TradeChart({
     // below, which don't re-run just because the chart did) on an identical-
     // but-new-reference entry/exit would silently break mid-interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, entry.time, entry.price, exit?.time, exit?.price, stopLoss, takeProfit]);
+  }, [candles, direction, entry.time, entry.price, exit?.time, exit?.price, stopLoss, takeProfit]);
+
+  // Live "price right now" line, only for a still-open position. Kept in
+  // its own effect and updated in place via applyOptions rather than
+  // recreating the chart: the price polls every few seconds, and tearing
+  // the chart down that often would fight the drawing interaction below
+  // and reset the user's pan/zoom on every tick.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !isOpen || livePrice === null) return;
+
+    const line = series.createPriceLine({
+      price: livePrice,
+      color: THEME.live,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: "Ahora",
+    });
+    return () => {
+      // The chart may already have been disposed (its own effect's cleanup
+      // runs first on unmount), which makes removePriceLine throw.
+      try {
+        series.removePriceLine(line);
+      } catch {
+        /* chart already disposed */
+      }
+    };
+  }, [isOpen, livePrice, candles]);
 
   // Drawing interaction (click-to-place) + rendering (HLINE price lines,
   // TRENDLINE/RECTANGLE overlay canvas). Re-subscribes whenever drawings,
@@ -393,6 +462,15 @@ export function TradeChart({
         const b = toPixel(p2);
         if (!a || !b) continue;
         drawShape(ctx, drawing.tool, a, b, drawing.color, false);
+        if (drawing.id === selectedDrawingId) {
+          // Endpoint handles, so it's obvious which shape is grabbed.
+          ctx.fillStyle = drawing.color;
+          for (const point of [a, b]) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
       }
 
       if (pendingPoint && hoverPointRef.current && activeTool !== "CURSOR" && activeTool !== "HLINE") {
@@ -434,18 +512,97 @@ export function TradeChart({
       if (pendingPoint) redraw();
     }
 
+    /**
+     * Drag-to-move for existing shapes. Runs on the container in the
+     * capture phase so that, when the pointer actually lands on a drawing,
+     * the event can be stopped before lightweight-charts starts panning the
+     * chart -- otherwise grabbing a shape would scroll the chart instead.
+     * Anywhere that isn't a drawing falls through untouched, so normal
+     * pan/zoom still works everywhere else.
+     */
+    function handlePointerDown(event: PointerEvent) {
+      if (activeTool !== "CURSOR") return;
+      const rect = container!.getBoundingClientRect();
+      const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+
+      // Topmost (most recently drawn) shape wins, matching what's painted.
+      for (let i = drawings.length - 1; i >= 0; i--) {
+        const drawing = drawings[i];
+        let hit = false;
+        if (drawing.tool === "HLINE") {
+          const y = series!.priceToCoordinate((drawing.points as { price: number }).price);
+          hit = y !== null && Math.abs(pointer.y - y) <= HIT_TOLERANCE_PX;
+        } else {
+          const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
+          const a = toPixel(p1);
+          const b = toPixel(p2);
+          hit = Boolean(a && b && hitsShape(drawing.tool, pointer, a, b));
+        }
+        if (!hit) continue;
+
+        const price = series!.coordinateToPrice(pointer.y);
+        const time = chart!.timeScale().coordinateToTime(pointer.x);
+        if (price === null || time === null) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedDrawingId(drawing.id);
+        dragRef.current = {
+          id: drawing.id,
+          startPoint: { time: Number(time), price },
+          original: drawing,
+        };
+        return;
+      }
+      setSelectedDrawingId(null);
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const rect = container!.getBoundingClientRect();
+      const price = series!.coordinateToPrice(event.clientY - rect.top);
+      const time = chart!.timeScale().coordinateToTime(event.clientX - rect.left);
+      if (price === null || time === null) return;
+
+      const moved = translateDrawing(
+        drag.original,
+        Number(time) - drag.startPoint.time,
+        price - drag.startPoint.price,
+      );
+      setDrawings((prev) => prev.map((d) => (d.id === drag.id ? moved : d)));
+    }
+
+    function handlePointerUp() {
+      const drag = dragRef.current;
+      if (!drag) return;
+      dragRef.current = null;
+      // Read the just-updated shape out of state rather than recomputing it.
+      setDrawings((prev) => {
+        const moved = prev.find((d) => d.id === drag.id);
+        if (moved && moved !== drag.original) void persistMovedDrawing(moved);
+        return prev;
+      });
+    }
+
     redraw();
     chart.subscribeClick(handleClick);
     chart.subscribeCrosshairMove(handleCrosshairMove);
     chart.timeScale().subscribeVisibleTimeRangeChange(redraw);
+    container.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
 
     return () => {
       chart.unsubscribeClick(handleClick);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(redraw);
+      container.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- candles isn't read here; re-running when it changes (chart re-init) is handled by chartRef/seriesRef being reassigned first.
-  }, [drawings, activeTool, pendingPoint]);
+  }, [drawings, activeTool, pendingPoint, selectedDrawingId]);
 
   if (candles.length === 0) {
     return (
@@ -498,6 +655,15 @@ export function TradeChart({
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            title="Restablecer vista"
+            aria-label="Restablecer vista"
+            onClick={resetView}
+            className="flex size-7 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Maximize2 className="size-4" aria-hidden />
+          </button>
         </div>
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
       </div>
@@ -521,7 +687,10 @@ export function TradeChart({
             painted underneath the chart's own canvases. */}
         <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
       </div>
-      <p className="text-xs text-muted-foreground">Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase</p>
+      <p className="text-xs text-muted-foreground">
+        Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase
+        {drawings.length > 0 ? " · arrastra un dibujo para moverlo" : ""}
+      </p>
       {drawings.length > 0 ? (
         <div className="flex flex-col gap-1 border-t border-border pt-2">
           <p className="text-xs font-medium text-muted-foreground">Dibujos</p>
@@ -542,6 +711,62 @@ export function TradeChart({
       ) : null}
     </div>
   );
+}
+
+/** Pixel tolerance for grabbing a drawing -- generous enough for a fingertip, not so wide that shapes fight each other. */
+const HIT_TOLERANCE_PX = 8;
+
+function distanceToSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  // Projection of p onto the segment, clamped to its endpoints.
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+function hitsShape(
+  tool: PersistedDrawingTool,
+  pointer: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): boolean {
+  if (tool === "TRENDLINE") return distanceToSegment(pointer, a, b) <= HIT_TOLERANCE_PX;
+  if (tool === "RECTANGLE") {
+    // Anywhere inside counts, so a rectangle is easy to grab rather than
+    // requiring a precise hit on a 1.5px edge.
+    const minX = Math.min(a.x, b.x) - HIT_TOLERANCE_PX;
+    const maxX = Math.max(a.x, b.x) + HIT_TOLERANCE_PX;
+    const minY = Math.min(a.y, b.y) - HIT_TOLERANCE_PX;
+    const maxY = Math.max(a.y, b.y) + HIT_TOLERANCE_PX;
+    return pointer.x >= minX && pointer.x <= maxX && pointer.y >= minY && pointer.y <= maxY;
+  }
+  return false;
+}
+
+/** Shifts every point of a drawing by a delta expressed in data space (time seconds / price), not pixels, so a shape keeps its shape across zoom levels. */
+function translateDrawing(
+  drawing: TradeChartDrawing,
+  deltaTime: number,
+  deltaPrice: number,
+): TradeChartDrawing {
+  if (drawing.tool === "HLINE") {
+    const { price } = drawing.points as { price: number };
+    return { ...drawing, points: { price: price + deltaPrice } };
+  }
+  const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
+  return {
+    ...drawing,
+    points: {
+      p1: { time: p1.time + deltaTime, price: p1.price + deltaPrice },
+      p2: { time: p2.time + deltaTime, price: p2.price + deltaPrice },
+    },
+  };
 }
 
 function drawShape(
