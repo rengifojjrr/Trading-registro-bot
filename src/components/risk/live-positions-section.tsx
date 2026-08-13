@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,12 +23,19 @@ export interface LivePositionData {
   liveMarginRates: LiveMarginRates | null;
 }
 
+const CAPITAL_STORAGE_KEY = "risk.liveCapital";
+const RESERVE_STORAGE_KEY = "risk.liveReserveCash";
+
 /**
  * Coinbase's read-only API this app syncs from has no account-equity/balance
  * endpoint, so "capital" can't be read automatically -- it's a page-local
- * input, never persisted, same limitation the uploaded reference calculator
- * had. Shared across every open-position card below since capital is
- * account-wide, not per-position.
+ * input, same limitation the uploaded reference calculator had. What IS
+ * done here: the last value typed is remembered in this browser
+ * (localStorage, never sent to our server or Coinbase) so returning to this
+ * page doesn't mean retyping it -- restored in an effect (not the initial
+ * state) since localStorage doesn't exist during server-side rendering and
+ * reading it there would cause a hydration mismatch. Shared across every
+ * open-position card below since capital is account-wide, not per-position.
  */
 export function LivePositionsSection({
   positions,
@@ -39,6 +46,29 @@ export function LivePositionsSection({
 }) {
   const [capital, setCapital] = useState("");
   const [reserveCash, setReserveCash] = useState("0");
+
+  useEffect(() => {
+    // Sanctioned exception to the "no setState in an effect" rule: this
+    // hydrates state from a client-only source (localStorage isn't
+    // available during SSR) exactly once on mount, which is the standard
+    // pattern for that -- not the derived-state anti-pattern the rule
+    // otherwise guards against.
+    const storedCapital = localStorage.getItem(CAPITAL_STORAGE_KEY);
+    const storedReserve = localStorage.getItem(RESERVE_STORAGE_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (storedCapital) setCapital(storedCapital);
+    if (storedReserve) setReserveCash(storedReserve);
+  }, []);
+
+  function handleCapitalChange(value: string) {
+    setCapital(value);
+    localStorage.setItem(CAPITAL_STORAGE_KEY, value);
+  }
+
+  function handleReserveChange(value: string) {
+    setReserveCash(value);
+    localStorage.setItem(RESERVE_STORAGE_KEY, value);
+  }
 
   if (positions.length === 0) {
     return (
@@ -57,8 +87,10 @@ export function LivePositionsSection({
         <CardHeader>
           <CardTitle>Capital de la cuenta</CardTitle>
           <CardDescription>
-            Coinbase no expone el balance total de la cuenta por la API de solo lectura que usa esta app -- este
-            valor no se guarda, ingrésalo cada vez que quieras ver tu margen actualizado.
+            Coinbase no expone el balance total de la cuenta por la API de solo lectura que usa esta app, así que
+            este valor no puede leerse automáticamente de tu cuenta real -- pero sí se recuerda en este navegador
+            (no se guarda en Coinbase ni en nuestra base de datos) para que no tengas que escribirlo cada vez.
+            Actualízalo cuando tu capital real cambie.
             {positions.length > 1 ? (
               <>
                 {" "}
@@ -79,7 +111,7 @@ export function LivePositionsSection({
               step="any"
               placeholder="0.00"
               value={capital}
-              onChange={(e) => setCapital(e.target.value)}
+              onChange={(e) => handleCapitalChange(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -90,7 +122,7 @@ export function LivePositionsSection({
               min={0}
               step="any"
               value={reserveCash}
-              onChange={(e) => setReserveCash(e.target.value)}
+              onChange={(e) => handleReserveChange(e.target.value)}
             />
           </div>
         </CardContent>
