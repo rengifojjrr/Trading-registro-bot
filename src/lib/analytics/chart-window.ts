@@ -73,33 +73,91 @@ function candleCountFor(totalSeconds: number, granularity: CoinbaseCandleGranula
 
 /**
  * Whether requesting `granularity` over a window spanning `totalSeconds`
- * stays under Coinbase's per-request candle cap. Exported so the manual
- * granularity selector (components/trades/trade-chart.tsx) can disable
- * options that would silently overrun the cap for the current window --
- * e.g. 1-minute candles across the default ~1-week pre-entry window.
+ * stays under Coinbase's per-request candle cap.
  */
 export function isGranularityViable(totalSeconds: number, granularity: CoinbaseCandleGranularity): boolean {
   return candleCountFor(totalSeconds, granularity) <= MAX_CANDLES_PER_REQUEST;
 }
 
+/** How much of the spare candle budget is spent on pre-entry context (3:1, as above). */
+const PRE_ENTRY_SHARE = 0.75;
+
+/** Share of a too-short budget spent after the close, so the exit isn't glued to the right edge. */
+const TAIL_PADDING_SHARE = 0.1;
+
 /**
- * Picks a time window (trade duration + context padding on both sides,
- * weighted toward pre-entry context, with at least a week of pre-entry
- * context regardless of trade duration) and the finest candle granularity
- * that still fits Coinbase's 350-candle cap -- so a five-minute scalp still
- * gets a full week of hourly context instead of the trade duration itself
- * dictating the whole window.
+ * The window to request for an explicitly chosen granularity.
+ *
+ * This inverts the old relationship, which was the bug behind "no están
+ * funcionando todos los time frames": the window used to be fixed first (at
+ * least a week of pre-entry context) and every granularity that didn't fit
+ * inside it was disabled -- which, at a week-wide window, meant 1m/5m/15m/
+ * 30m were greyed out on *every* trade. Picking a finer candle should zoom
+ * in, exactly like any charting tool, so the granularity now decides the
+ * window.
+ *
+ * Every granularity always returns a window. When the trade is longer than
+ * 300 candles of the chosen size -- a position held for days, viewed at one
+ * minute -- the window shows its most recent slice instead of refusing:
+ * being unable to see the last two hours at 1m just because you've held for
+ * a week is exactly the frustration this is meant to remove. Use
+ * `coversWholeTrade` to tell the user when the entry is out of view.
+ */
+export function windowForGranularity(
+  openedAt: Date,
+  closedAt: Date,
+  granularity: CoinbaseCandleGranularity,
+): ChartWindow {
+  const budgetSeconds = MAX_CANDLES_PER_REQUEST * GRANULARITY_SECONDS[granularity];
+  const durationSeconds = Math.max((closedAt.getTime() - openedAt.getTime()) / 1000, 60);
+
+  if (durationSeconds > budgetSeconds) {
+    const tail = budgetSeconds * TAIL_PADDING_SHARE;
+    const end = new Date(closedAt.getTime() + tail * 1000);
+    return { start: new Date(end.getTime() - budgetSeconds * 1000), end, granularity };
+  }
+
+  const spare = budgetSeconds - durationSeconds;
+  const prePadding = spare * PRE_ENTRY_SHARE;
+  const postPadding = spare - prePadding;
+
+  return {
+    start: new Date(openedAt.getTime() - prePadding * 1000),
+    end: new Date(closedAt.getTime() + postPadding * 1000),
+    granularity,
+  };
+}
+
+/**
+ * Whether this granularity can show the trade end to end. False doesn't
+ * block anything -- it's what the chart uses to say "the entry is outside
+ * this view", so a missing entry marker reads as a zoom level rather than a
+ * bug.
+ */
+export function coversWholeTrade(
+  openedAt: Date,
+  closedAt: Date,
+  granularity: CoinbaseCandleGranularity,
+): boolean {
+  const budgetSeconds = MAX_CANDLES_PER_REQUEST * GRANULARITY_SECONDS[granularity];
+  const durationSeconds = Math.max((closedAt.getTime() - openedAt.getTime()) / 1000, 60);
+  return durationSeconds <= budgetSeconds;
+}
+
+/**
+ * Picks the granularity a trade's chart opens at: the finest one that still
+ * gives roughly a week of pre-entry context, so a five-minute scalp opens
+ * showing the week around it rather than five minutes of noise. The window
+ * itself then comes from windowForGranularity, so the default view and an
+ * explicit re-selection of that same granularity agree instead of jumping.
  */
 export function pickChartWindow(openedAt: Date, closedAt: Date): ChartWindow {
   const durationSeconds = Math.max((closedAt.getTime() - openedAt.getTime()) / 1000, 60);
   const postPadding = Math.min(Math.max(durationSeconds * PADDING_FRACTION, MIN_PADDING_SECONDS), MAX_PADDING_SECONDS);
   const prePadding = Math.max(postPadding * PRE_ENTRY_MULTIPLIER, MIN_PRE_ENTRY_PADDING_SECONDS);
+  const targetSeconds = durationSeconds + prePadding + postPadding;
 
-  const start = new Date(openedAt.getTime() - prePadding * 1000);
-  const end = new Date(closedAt.getTime() + postPadding * 1000);
-  const totalSeconds = (end.getTime() - start.getTime()) / 1000;
+  const granularity = GRANULARITY_ORDER.find((g) => isGranularityViable(targetSeconds, g)) ?? "ONE_DAY";
 
-  const granularity = GRANULARITY_ORDER.find((g) => isGranularityViable(totalSeconds, g)) ?? "ONE_DAY";
-
-  return { start, end, granularity };
+  return windowForGranularity(openedAt, closedAt, granularity);
 }

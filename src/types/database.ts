@@ -748,7 +748,7 @@ export interface Database {
           id: string;
           user_id: string;
           trade_id: string;
-          tool: "HLINE" | "TRENDLINE" | "RECTANGLE";
+          tool: "HLINE" | "VLINE" | "TRENDLINE" | "RECTANGLE" | "FIB";
           points: Json;
           color: string;
           created_at: string;
@@ -757,7 +757,7 @@ export interface Database {
           id?: string;
           user_id: string;
           trade_id: string;
-          tool: "HLINE" | "TRENDLINE" | "RECTANGLE";
+          tool: "HLINE" | "VLINE" | "TRENDLINE" | "RECTANGLE" | "FIB";
           points: Json;
           color?: string;
         }

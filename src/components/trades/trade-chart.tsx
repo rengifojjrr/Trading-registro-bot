@@ -1,13 +1,30 @@
 "use client";
 
-import { Maximize2, Minus, MousePointer2, Square, Trash2, TrendingUp } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  BarChart3,
+  Eye,
+  EyeOff,
+  Maximize2,
+  Minus,
+  MousePointer2,
+  MoveVertical,
+  Ruler,
+  Scaling,
+  Square,
+  Trash2,
+  TrendingUp,
+  Undo2,
+  Waves,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
   LineStyle,
+  PriceScaleMode,
   createChart,
   createSeriesMarkers,
   type IChartApi,
@@ -20,8 +37,8 @@ import {
 } from "lightweight-charts";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GRANULARITY_LABELS, GRANULARITY_ORDER, isGranularityViable } from "@/lib/analytics/chart-window";
-import type { DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
+import { coversWholeTrade, GRANULARITY_LABELS, GRANULARITY_ORDER } from "@/lib/analytics/chart-window";
+import { FIB_LEVELS, type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { formatMoney } from "@/lib/format";
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
@@ -33,6 +50,7 @@ export interface TradeChartCandle {
   high: number;
   low: number;
   close: number;
+  volume: number;
 }
 
 export interface TradeChartMarker {
@@ -48,12 +66,13 @@ interface DrawingPoint {
 export interface TradeChartDrawing {
   id: string;
   tool: PersistedDrawingTool;
-  points: { price: number } | { p1: DrawingPoint; p2: DrawingPoint };
+  points: { price: number } | { time: number } | { p1: DrawingPoint; p2: DrawingPoint };
   color: string;
 }
 
 const CHART_HEIGHT = 360;
 const DRAWING_COLOR = "#a78bfa"; // matches chart_drawings.color's DB default
+const MEASURE_COLOR = "#38bdf8";
 
 // Mirrors the tokens in src/app/globals.css -- lightweight-charts renders
 // to <canvas>, which can't read CSS custom properties, so these are kept as
@@ -71,14 +90,26 @@ const THEME = {
   live: "hsl(215, 20%, 65%)", // --muted-foreground, for the "price right now" line
 };
 
-type ActiveTool = "CURSOR" | PersistedDrawingTool;
+/** MEASURE never persists -- see the migration note; it answers a question you're asking right now. */
+type ActiveTool = "CURSOR" | "MEASURE" | PersistedDrawingTool;
 
 const TOOL_BUTTONS: { tool: ActiveTool; label: string; Icon: typeof MousePointer2 }[] = [
   { tool: "CURSOR", label: "Cursor", Icon: MousePointer2 },
-  { tool: "HLINE", label: "Línea horizontal", Icon: Minus },
+  { tool: "HLINE", label: "Línea horizontal (precio)", Icon: Minus },
+  { tool: "VLINE", label: "Línea vertical (momento)", Icon: MoveVertical },
   { tool: "TRENDLINE", label: "Línea de tendencia", Icon: TrendingUp },
   { tool: "RECTANGLE", label: "Rectángulo", Icon: Square },
+  { tool: "FIB", label: "Retroceso de Fibonacci", Icon: Waves },
+  { tool: "MEASURE", label: "Medir movimiento (no se guarda)", Icon: Ruler },
 ];
+
+/** Tools that need two clicks; the rest resolve on the first one. */
+const TWO_POINT_TOOLS: ActiveTool[] = ["TRENDLINE", "RECTANGLE", "FIB", "MEASURE"];
+
+interface Measurement {
+  p1: DrawingPoint;
+  p2: DrawingPoint;
+}
 
 /**
  * Candlestick chart for the exact product/window a trade happened in, with
@@ -108,8 +139,8 @@ export function TradeChart({
   tradeId,
   productId,
   direction,
-  windowStart,
-  windowEnd,
+  openedAtUnix,
+  closedAtUnix,
   initialCandles,
   initialGranularity,
   initialDrawings,
@@ -123,8 +154,9 @@ export function TradeChart({
   productId: string;
   /** Drives which way the entry/exit markers point -- a SHORT entry is a sell, so an up arrow below the bar reads as the opposite of what happened. */
   direction: "LONG" | "SHORT";
-  windowStart: number; // unix seconds
-  windowEnd: number; // unix seconds
+  /** The trade's own bounds -- what decides which granularities can show it. */
+  openedAtUnix: number;
+  closedAtUnix: number;
   initialCandles: TradeChartCandle[];
   initialGranularity: CoinbaseCandleGranularity;
   initialDrawings: TradeChartDrawing[];
@@ -150,6 +182,19 @@ export function TradeChart({
   const [drawings, setDrawings] = useState(initialDrawings);
   const [activeTool, setActiveTool] = useState<ActiveTool>("CURSOR");
   const [pendingPoint, setPendingPoint] = useState<DrawingPoint | null>(null);
+  const [measurement, setMeasurement] = useState<Measurement | null>(null);
+  const [showVolume, setShowVolume] = useState(false);
+  const [logScale, setLogScale] = useState(false);
+  const [showDrawings, setShowDrawings] = useState(true);
+  const legendRef = useRef<HTMLDivElement>(null);
+
+  // Every timeframe is selectable. This only tracks whether the chosen one
+  // fits the whole trade, so a zoomed-in view can say the entry is off
+  // screen instead of leaving the user hunting for a missing marker.
+  const showsWholeTrade = useMemo(
+    () => coversWholeTrade(new Date(openedAtUnix * 1000), new Date(closedAtUnix * 1000), granularity),
+    [openedAtUnix, closedAtUnix, granularity],
+  );
 
   // Only polled for a still-open position; the hook is called
   // unconditionally (hooks can't be conditional) but its result is ignored
@@ -171,19 +216,22 @@ export function TradeChart({
     const requestId = ++requestIdRef.current;
 
     try {
-      const query = new URLSearchParams({
-        productId,
-        start: String(windowStart),
-        end: String(windowEnd),
-        granularity: nextGranularity,
-      });
+      // Only the trade and the granularity: the route derives the window
+      // from the trade's own timestamps, so a finer candle zooms in instead
+      // of overrunning a fixed window's candle budget.
+      const query = new URLSearchParams({ tradeId, granularity: nextGranularity });
       const res = await fetch(`/api/coinbase/trade-candles?${query.toString()}`);
       const data = (await res.json()) as { candles: TradeChartCandle[] | null };
       if (requestId !== requestIdRef.current) return; // superseded by a newer selection
-      if (data.candles) setCandles(data.candles);
+      if (data.candles && data.candles.length > 0) {
+        setCandles(data.candles);
+      } else {
+        // Say so rather than leaving the previous timeframe's candles on
+        // screen under the new label, which would misrepresent the chart.
+        toast.error("Coinbase no devolvió velas para ese intervalo.");
+      }
     } catch {
-      // Keep showing the last-known candles -- see the route's own
-      // never-throws contract; this only guards the fetch() call itself.
+      toast.error("No se pudieron cargar las velas.");
     } finally {
       if (requestId === requestIdRef.current) setIsLoading(false);
     }
@@ -192,6 +240,7 @@ export function TradeChart({
   function selectTool(tool: ActiveTool) {
     setActiveTool(tool);
     setPendingPoint(null);
+    if (tool !== "MEASURE") setMeasurement(null);
   }
 
   async function saveDrawing(tool: PersistedDrawingTool, points: TradeChartDrawing["points"]) {
@@ -238,6 +287,26 @@ export function TradeChart({
     }
   }
 
+  async function handleClearDrawings() {
+    const previous = drawings;
+    setDrawings([]);
+    setSelectedDrawingId(null);
+    const results = await Promise.all(
+      previous.map((d) =>
+        fetch(`/api/trades/${tradeId}/drawings/${d.id}`, { method: "DELETE" })
+          .then((r) => r.ok)
+          .catch(() => false),
+      ),
+    );
+    // Put back whatever genuinely failed to delete, so the list on screen
+    // keeps matching what's actually stored.
+    const failed = previous.filter((_, i) => !results[i]);
+    if (failed.length > 0) {
+      setDrawings(failed);
+      toast.error(`No se pudieron eliminar ${failed.length} dibujo(s).`);
+    }
+  }
+
   // Escape backs out of whichever tool/pending point is active, same as
   // most chart-annotation tools -- without this, a stray first click on
   // TRENDLINE/RECTANGLE has no way to cancel short of reloading the page.
@@ -267,7 +336,10 @@ export function TradeChart({
         vertLines: { color: THEME.grid },
         horzLines: { color: THEME.grid },
       },
-      rightPriceScale: { borderColor: THEME.grid },
+      rightPriceScale: {
+        borderColor: THEME.grid,
+        mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      },
       timeScale: { borderColor: THEME.grid, timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       // Explicit rather than the library's default (the visiting browser's
@@ -295,6 +367,23 @@ export function TradeChart({
         close: c.close,
       })),
     );
+
+    if (showVolume) {
+      // Its own price scale, pinned to the bottom fifth, so volume never
+      // competes with price for vertical room.
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        priceScaleId: "volume",
+        priceFormat: { type: "volume" },
+      });
+      chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      volumeSeries.setData(
+        candles.map((c) => ({
+          time: c.time as UTCTimestamp,
+          value: c.volume,
+          color: c.close >= c.open ? "rgba(34, 197, 94, 0.5)" : "rgba(220, 38, 38, 0.5)",
+        })),
+      );
+    }
 
     // A LONG is entered by buying (arrow up, drawn under the bar) and exited
     // by selling; a SHORT is the exact mirror. Previously both directions
@@ -355,6 +444,28 @@ export function TradeChart({
       });
     }
 
+    // OHLC readout. Written straight to the DOM instead of through state:
+    // this fires on every pointer move, and a re-render per mouse pixel
+    // would make the whole chart stutter.
+    const candlesByTime = new Map(candles.map((c) => [c.time, c]));
+    function updateLegend(param: MouseEventParams<Time>) {
+      const node = legendRef.current;
+      if (!node) return;
+      const hovered = param.time ? candlesByTime.get(Number(param.time)) : undefined;
+      const shown = hovered ?? candles[candles.length - 1];
+      if (!shown) return;
+      const change = shown.close - shown.open;
+      const changePct = shown.open === 0 ? 0 : (change / shown.open) * 100;
+      const sign = change >= 0 ? "+" : "";
+      node.textContent =
+        `A ${formatMoney(shown.open)}  M ${formatMoney(shown.high)}  ` +
+        `m ${formatMoney(shown.low)}  C ${formatMoney(shown.close)}  ` +
+        `${sign}${changePct.toFixed(2)}%  Vol ${shown.volume.toLocaleString("en-US")}`;
+      node.style.color = change >= 0 ? THEME.up : THEME.down;
+    }
+    updateLegend({} as MouseEventParams<Time>);
+    chart.subscribeCrosshairMove(updateLegend);
+
     chart.timeScale().fitContent();
     chartRef.current = chart;
     seriesRef.current = series;
@@ -368,6 +479,7 @@ export function TradeChart({
 
     return () => {
       resizeObserver.disconnect();
+      chart.unsubscribeCrosshairMove(updateLegend);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -379,7 +491,18 @@ export function TradeChart({
     // below, which don't re-run just because the chart did) on an identical-
     // but-new-reference entry/exit would silently break mid-interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, direction, entry.time, entry.price, exit?.time, exit?.price, stopLoss, takeProfit]);
+  }, [
+    candles,
+    direction,
+    entry.time,
+    entry.price,
+    exit?.time,
+    exit?.price,
+    stopLoss,
+    takeProfit,
+    showVolume,
+    logScale,
+  ]);
 
   // Live "price right now" line, only for a still-open position. Kept in
   // its own effect and updated in place via applyOptions rather than
@@ -421,8 +544,10 @@ export function TradeChart({
     const container = containerRef.current;
     if (!chart || !series || !canvas || !container) return;
 
+    const visibleDrawings = showDrawings ? drawings : [];
+
     for (const line of drawingPriceLinesRef.current) series.removePriceLine(line);
-    drawingPriceLinesRef.current = drawings
+    drawingPriceLinesRef.current = visibleDrawings
       .filter((d) => d.tool === "HLINE")
       .map((d) =>
         series.createPriceLine({
@@ -455,13 +580,36 @@ export function TradeChart({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
-      for (const drawing of drawings) {
+      for (const drawing of visibleDrawings) {
         if (drawing.tool === "HLINE") continue; // rendered via createPriceLine above
+
+        if (drawing.tool === "VLINE") {
+          const x = chart!.timeScale().timeToCoordinate(
+            (drawing.points as { time: number }).time as UTCTimestamp,
+          );
+          if (x !== null) {
+            drawVerticalLine(ctx, x, height, drawing.color);
+            if (drawing.id === selectedDrawingId) {
+              ctx.fillStyle = drawing.color;
+              ctx.beginPath();
+              ctx.arc(x, height / 2, 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          continue;
+        }
+
         const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
         const a = toPixel(p1);
         const b = toPixel(p2);
         if (!a || !b) continue;
-        drawShape(ctx, drawing.tool, a, b, drawing.color, false);
+
+        if (drawing.tool === "FIB") {
+          drawFib(ctx, a, b, p1.price, p2.price, drawing.color, false);
+        } else {
+          drawShape(ctx, drawing.tool, a, b, drawing.color, false);
+        }
+
         if (drawing.id === selectedDrawingId) {
           // Endpoint handles, so it's obvious which shape is grabbed.
           ctx.fillStyle = drawing.color;
@@ -473,10 +621,26 @@ export function TradeChart({
         }
       }
 
-      if (pendingPoint && hoverPointRef.current && activeTool !== "CURSOR" && activeTool !== "HLINE") {
+      // Preview of the shape being placed, between the first click and the second.
+      const hover = hoverPointRef.current;
+      if (pendingPoint && hover && TWO_POINT_TOOLS.includes(activeTool)) {
         const a = toPixel(pendingPoint);
-        const b = toPixel(hoverPointRef.current);
-        if (a && b) drawShape(ctx, activeTool, a, b, DRAWING_COLOR, true);
+        const b = toPixel(hover);
+        if (a && b) {
+          if (activeTool === "FIB") {
+            drawFib(ctx, a, b, pendingPoint.price, hover.price, DRAWING_COLOR, true);
+          } else if (activeTool === "MEASURE") {
+            drawMeasure(ctx, a, b, pendingPoint, hover);
+          } else {
+            drawShape(ctx, activeTool as PersistedDrawingTool, a, b, DRAWING_COLOR, true);
+          }
+        }
+      }
+
+      if (measurement) {
+        const a = toPixel(measurement.p1);
+        const b = toPixel(measurement.p2);
+        if (a && b) drawMeasure(ctx, a, b, measurement.p1, measurement.p2);
       }
     }
 
@@ -492,12 +656,25 @@ export function TradeChart({
         selectTool("CURSOR");
         return;
       }
+      if (activeTool === "VLINE") {
+        void saveDrawing("VLINE", { time: Math.floor(point.time) });
+        selectTool("CURSOR");
+        return;
+      }
 
       if (!pendingPoint) {
         setPendingPoint(point);
         return;
       }
-      void saveDrawing(activeTool, { p1: pendingPoint, p2: point });
+
+      if (activeTool === "MEASURE") {
+        // Stays on screen until dismissed, and never reaches the database.
+        setMeasurement({ p1: pendingPoint, p2: point });
+        setPendingPoint(null);
+        return;
+      }
+
+      void saveDrawing(activeTool as PersistedDrawingTool, { p1: pendingPoint, p2: point });
       selectTool("CURSOR");
     }
 
@@ -526,12 +703,17 @@ export function TradeChart({
       const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
       // Topmost (most recently drawn) shape wins, matching what's painted.
-      for (let i = drawings.length - 1; i >= 0; i--) {
-        const drawing = drawings[i];
+      for (let i = visibleDrawings.length - 1; i >= 0; i--) {
+        const drawing = visibleDrawings[i];
         let hit = false;
         if (drawing.tool === "HLINE") {
           const y = series!.priceToCoordinate((drawing.points as { price: number }).price);
           hit = y !== null && Math.abs(pointer.y - y) <= HIT_TOLERANCE_PX;
+        } else if (drawing.tool === "VLINE") {
+          const x = chart!.timeScale().timeToCoordinate(
+            (drawing.points as { time: number }).time as UTCTimestamp,
+          );
+          hit = x !== null && Math.abs(pointer.x - x) <= HIT_TOLERANCE_PX;
         } else {
           const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
           const a = toPixel(p1);
@@ -601,8 +783,30 @@ export function TradeChart({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- candles isn't read here; re-running when it changes (chart re-init) is handled by chartRef/seriesRef being reassigned first.
-  }, [drawings, activeTool, pendingPoint, selectedDrawingId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    drawings,
+    activeTool,
+    pendingPoint,
+    selectedDrawingId,
+    measurement,
+    showDrawings,
+    // Mirrors the chart-creation effect's deps. Not redundancy: when that
+    // effect tears the chart down and builds a new one, this effect has to
+    // re-attach to it. Without these, the handlers stayed bound to a
+    // destroyed chart, so drawing silently stopped working after changing
+    // timeframe or toggling volume.
+    candles,
+    showVolume,
+    logScale,
+    direction,
+    entry.time,
+    entry.price,
+    exit?.time,
+    exit?.price,
+    stopLoss,
+    takeProfit,
+  ]);
 
   if (candles.length === 0) {
     return (
@@ -611,6 +815,7 @@ export function TradeChart({
       </p>
     );
   }
+
 
   return (
     <div className="flex flex-col gap-2">
@@ -621,18 +826,11 @@ export function TradeChart({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {GRANULARITY_ORDER.map((g) => {
-                // The default window now spans at least a week of pre-entry
-                // context, so a fine granularity like 1-minute would need far
-                // more candles than Coinbase returns from a single request --
-                // disable rather than let it silently fetch a truncated chart.
-                const viable = isGranularityViable(windowEnd - windowStart, g);
-                return (
-                  <SelectItem key={g} value={g} disabled={!viable}>
-                    {GRANULARITY_LABELS[g]}
-                  </SelectItem>
-                );
-              })}
+              {GRANULARITY_ORDER.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {GRANULARITY_LABELS[g]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
@@ -655,15 +853,38 @@ export function TradeChart({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            title="Restablecer vista"
-            aria-label="Restablecer vista"
-            onClick={resetView}
-            className="flex size-7 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Maximize2 className="size-4" aria-hidden />
-          </button>
+          <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
+            <ToggleButton
+              label="Volumen"
+              Icon={BarChart3}
+              pressed={showVolume}
+              onClick={() => setShowVolume((v) => !v)}
+            />
+            <ToggleButton
+              label="Escala logarítmica"
+              Icon={Scaling}
+              pressed={logScale}
+              onClick={() => setLogScale((v) => !v)}
+            />
+            <ToggleButton
+              label={showDrawings ? "Ocultar dibujos" : "Mostrar dibujos"}
+              Icon={showDrawings ? Eye : EyeOff}
+              pressed={!showDrawings}
+              onClick={() => setShowDrawings((v) => !v)}
+              disabled={drawings.length === 0}
+            />
+            <ToggleButton
+              label="Deshacer último dibujo"
+              Icon={Undo2}
+              pressed={false}
+              onClick={() => {
+                const last = drawings[drawings.length - 1];
+                if (last) void handleDeleteDrawing(last.id);
+              }}
+              disabled={drawings.length === 0}
+            />
+            <ToggleButton label="Restablecer vista" Icon={Maximize2} pressed={false} onClick={resetView} />
+          </div>
         </div>
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
       </div>
@@ -671,12 +892,20 @@ export function TradeChart({
         <p className="text-xs text-primary">
           {activeTool === "HLINE"
             ? "Haz clic en el gráfico para colocar la línea horizontal."
-            : pendingPoint
-              ? "Haz clic de nuevo para completar el dibujo (Esc para cancelar)."
-              : "Haz clic para el primer punto (Esc para cancelar)."}
+            : activeTool === "VLINE"
+              ? "Haz clic para marcar un momento en el tiempo."
+              : pendingPoint
+                ? "Haz clic de nuevo para completar (Esc para cancelar)."
+                : activeTool === "MEASURE"
+                  ? "Haz clic en el inicio del movimiento que quieres medir (Esc para salir)."
+                  : "Haz clic para el primer punto (Esc para cancelar)."}
         </p>
       ) : null}
       <div className="relative">
+        <div
+          ref={legendRef}
+          className="pointer-events-none absolute left-2 top-2 z-20 font-mono text-[11px] tabular-nums"
+        />
         <div ref={containerRef} className="w-full" />
         {/* z-10: lightweight-charts' own internal canvases set explicit
             z-index (1/2) on themselves; since their non-positioned parent
@@ -687,13 +916,36 @@ export function TradeChart({
             painted underneath the chart's own canvases. */}
         <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
       </div>
-      <p className="text-xs text-muted-foreground">
-        Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase
-        {drawings.length > 0 ? " · arrastra un dibujo para moverlo" : ""}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase
+          {drawings.length > 0 ? " · arrastra un dibujo para moverlo" : ""}
+          {showsWholeTrade
+            ? ""
+            : " · a este intervalo solo cabe el tramo final de la operación, así que la entrada queda fuera de la vista"}
+        </p>
+        {measurement ? (
+          <button
+            type="button"
+            onClick={() => setMeasurement(null)}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Quitar medición
+          </button>
+        ) : null}
+      </div>
       {drawings.length > 0 ? (
         <div className="flex flex-col gap-1 border-t border-border pt-2">
-          <p className="text-xs font-medium text-muted-foreground">Dibujos</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">Dibujos</p>
+            <button
+              type="button"
+              onClick={handleClearDrawings}
+              className="text-xs text-muted-foreground transition-colors hover:text-negative"
+            >
+              Eliminar todos
+            </button>
+          </div>
           {drawings.map((d) => (
             <div key={d.id} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground">{describeDrawing(d)}</span>
@@ -711,6 +963,147 @@ export function TradeChart({
       ) : null}
     </div>
   );
+}
+
+function ToggleButton({
+  label,
+  Icon,
+  pressed,
+  onClick,
+  disabled = false,
+}: {
+  label: string;
+  Icon: typeof MousePointer2;
+  pressed: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex size-7 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        pressed
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <Icon className="size-4" aria-hidden />
+    </button>
+  );
+}
+
+function drawVerticalLine(ctx: CanvasRenderingContext2D, x: number, height: number, color: string): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, height);
+  ctx.stroke();
+}
+
+/**
+ * Fibonacci retracement: p1 is the 0% anchor and p2 the 100% one, so
+ * dragging bottom-to-top and top-to-bottom give the orientation you'd
+ * expect for a rally and a sell-off respectively.
+ */
+function drawFib(
+  ctx: CanvasRenderingContext2D,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  priceA: number,
+  priceB: number,
+  color: string,
+  dashed: boolean,
+): void {
+  const left = Math.min(a.x, b.x);
+  const right = Math.max(a.x, b.x);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash(dashed ? [4, 4] : []);
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.fillStyle = color;
+  ctx.textBaseline = "bottom";
+
+  for (const level of FIB_LEVELS) {
+    // Interpolating in pixels rather than price keeps the levels correct
+    // under a logarithmic scale too, where equal price steps aren't equal
+    // pixel steps.
+    const y = a.y + (b.y - a.y) * level;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+
+    const price = priceA + (priceB - priceA) * level;
+    ctx.fillText(`${(level * 100).toFixed(1)}%  ${formatMoney(price)}`, left + 4, y - 2);
+  }
+
+  ctx.setLineDash([]);
+}
+
+/** The ruler: how far, how much, how long -- the three things you want when eyeballing a move. */
+function drawMeasure(
+  ctx: CanvasRenderingContext2D,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  p1: DrawingPoint,
+  p2: DrawingPoint,
+): void {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  const w = Math.abs(b.x - a.x);
+  const h = Math.abs(b.y - a.y);
+
+  const delta = p2.price - p1.price;
+  const color = delta >= 0 ? "hsl(142, 71%, 45%)" : "hsl(0, 72%, 51%)";
+
+  ctx.fillStyle = `${MEASURE_COLOR}1a`;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+
+  const pct = p1.price === 0 ? 0 : (delta / p1.price) * 100;
+  const sign = delta >= 0 ? "+" : "";
+  const label = `${sign}${formatMoney(delta)}  ${sign}${pct.toFixed(2)}%  ${formatDuration(Math.abs(p2.time - p1.time))}`;
+
+  ctx.font = "11px ui-monospace, monospace";
+  const textWidth = ctx.measureText(label).width;
+  const boxX = x + w / 2 - textWidth / 2 - 6;
+  const boxY = Math.max(0, y - 22);
+
+  ctx.fillStyle = "hsl(222, 44%, 9%)";
+  ctx.fillRect(boxX, boxY, textWidth + 12, 18);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX, boxY, textWidth + 12, 18);
+  ctx.fillStyle = color;
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, boxX + 6, boxY + 9);
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
 }
 
 /** Pixel tolerance for grabbing a drawing -- generous enough for a fingertip, not so wide that shapes fight each other. */
@@ -737,6 +1130,15 @@ function hitsShape(
   b: { x: number; y: number },
 ): boolean {
   if (tool === "TRENDLINE") return distanceToSegment(pointer, a, b) <= HIT_TOLERANCE_PX;
+  if (tool === "FIB") {
+    // Grabbable anywhere in the band the levels span, like the rectangle --
+    // the individual 1px level lines are far too thin to aim at.
+    const minX = Math.min(a.x, b.x) - HIT_TOLERANCE_PX;
+    const maxX = Math.max(a.x, b.x) + HIT_TOLERANCE_PX;
+    const minY = Math.min(a.y, b.y) - HIT_TOLERANCE_PX;
+    const maxY = Math.max(a.y, b.y) + HIT_TOLERANCE_PX;
+    return pointer.x >= minX && pointer.x <= maxX && pointer.y >= minY && pointer.y <= maxY;
+  }
   if (tool === "RECTANGLE") {
     // Anywhere inside counts, so a rectangle is easy to grab rather than
     // requiring a precise hit on a 1.5px edge.
@@ -758,6 +1160,11 @@ function translateDrawing(
   if (drawing.tool === "HLINE") {
     const { price } = drawing.points as { price: number };
     return { ...drawing, points: { price: price + deltaPrice } };
+  }
+  if (drawing.tool === "VLINE") {
+    // A vertical line marks a moment, so only the time component moves.
+    const { time } = drawing.points as { time: number };
+    return { ...drawing, points: { time: Math.round(time + deltaTime) } };
   }
   const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
   return {
@@ -804,7 +1211,12 @@ function describeDrawing(d: TradeChartDrawing): string {
   if (d.tool === "HLINE") {
     return `Línea horizontal @ ${formatMoney((d.points as { price: number }).price)}`;
   }
+  if (d.tool === "VLINE") {
+    const { time } = d.points as { time: number };
+    return `Línea vertical @ ${new Date(time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  }
   const { p1, p2 } = d.points as { p1: DrawingPoint; p2: DrawingPoint };
-  const label = d.tool === "TRENDLINE" ? "Línea de tendencia" : "Rectángulo";
+  const label =
+    d.tool === "TRENDLINE" ? "Línea de tendencia" : d.tool === "FIB" ? "Fibonacci" : "Rectángulo";
   return `${label}: ${formatMoney(p1.price)} → ${formatMoney(p2.price)}`;
 }

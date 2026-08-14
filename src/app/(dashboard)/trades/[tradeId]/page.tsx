@@ -44,10 +44,9 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
   const wantsChart = trade.source === "COINBASE_SYNC" && trade.entry_wap !== null;
   const chartOpenedAt = new Date(trade.opened_at);
   const chartClosedAt = trade.closed_at ? new Date(trade.closed_at) : new Date();
-  // Computed from the exact same Date instances passed to fetchTradeCandles
-  // below, which picks this same window internally -- so the client's
-  // manual granularity selector (see trade-chart.tsx) always re-fetches the
-  // identical [start, end] range the server originally rendered.
+  // Only the starting granularity is needed here: the client sends the
+  // trade id when the timeframe changes and the route derives the window
+  // from the trade itself, so there's no window to keep in sync.
   const chartWindow = wantsChart ? pickChartWindow(chartOpenedAt, chartClosedAt) : null;
 
   const [
@@ -216,8 +215,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
               productId={trade.product_id}
               direction={trade.direction}
               isOpen={isLiveOpenPosition}
-              windowStart={Math.floor(chartWindow.start.getTime() / 1000)}
-              windowEnd={Math.floor(chartWindow.end.getTime() / 1000)}
+              openedAtUnix={Math.floor(chartOpenedAt.getTime() / 1000)}
+              closedAtUnix={Math.floor(chartClosedAt.getTime() / 1000)}
               initialCandles={chartData.candles}
               initialGranularity={chartWindow.granularity}
               initialDrawings={(chartDrawingRows ?? []).map((d) => ({

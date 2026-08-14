@@ -12,6 +12,7 @@ export interface TradeChartCandle {
   high: number;
   low: number;
   close: number;
+  volume: number;
 }
 
 export interface TradeChartData {
@@ -32,6 +33,9 @@ export function mapCoinbaseCandles(candles: CoinbaseCandle[]): TradeChartCandle[
       high: Number(c.high),
       low: Number(c.low),
       close: Number(c.close),
+      // Coerced here rather than at the chart: a candle Coinbase returns
+      // without volume must render as a zero bar, not NaN.
+      volume: Number(c.volume) || 0,
     }))
     .sort((a, b) => a.time - b.time);
 }

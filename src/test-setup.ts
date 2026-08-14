@@ -44,6 +44,17 @@ if (!("DOMRect" in globalThis)) {
   } as unknown as typeof DOMRect;
 }
 
+// Pointer capture and scrollIntoView are likewise absent from jsdom, and
+// Radix's Select calls them while opening its listbox -- without these,
+// clicking a <Select> throws before any option is ever rendered.
+if (typeof Element !== "undefined") {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (!proto.hasPointerCapture) proto.hasPointerCapture = () => false;
+  if (!proto.setPointerCapture) proto.setPointerCapture = () => {};
+  if (!proto.releasePointerCapture) proto.releasePointerCapture = () => {};
+  if (!proto.scrollIntoView) proto.scrollIntoView = () => {};
+}
+
 // Without this every rendered component stays in the document across
 // tests, so a getByText that should match one node starts matching several
 // and tests fail for reasons unrelated to what they're checking.
