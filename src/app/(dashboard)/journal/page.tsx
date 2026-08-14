@@ -2,6 +2,7 @@ import { BookOpen } from "lucide-react";
 import Link from "next/link";
 
 import { FilterBar } from "@/components/dashboard/filter-bar";
+import { TagManager, type ManagedTag } from "@/components/journal/tag-manager";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -51,10 +52,26 @@ export default async function JournalPage(props: PageProps<"/journal">) {
   const filters = parseTradeFilters(searchParams, timezone);
   const trades = await fetchTradesForTable(filters);
 
-  const { data: journalRows } = await supabase
-    .from("journal_entries")
-    .select("trade_id, strategy_id, lesson_learned, notes, emotional_state, result_r")
-    .eq("user_id", user.id);
+  const [{ data: journalRows }, { data: tagRows }, { data: tagUsage }] = await Promise.all([
+    supabase
+      .from("journal_entries")
+      .select("trade_id, strategy_id, lesson_learned, notes, emotional_state, result_r")
+      .eq("user_id", user.id),
+    supabase.from("tags").select("id, name").eq("user_id", user.id).order("name", { ascending: true }),
+    supabase.from("trade_tags").select("tag_id").eq("user_id", user.id),
+  ]);
+
+  // Counted in JS rather than a grouped query: PostgREST has no
+  // group-by shorthand, and the tag/trade_tag counts here are small.
+  const usageByTagId = new Map<string, number>();
+  for (const row of tagUsage ?? []) {
+    usageByTagId.set(row.tag_id, (usageByTagId.get(row.tag_id) ?? 0) + 1);
+  }
+  const managedTags: ManagedTag[] = (tagRows ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    usageCount: usageByTagId.get(t.id) ?? 0,
+  }));
 
   const journalByTradeId = new Map((journalRows ?? []).map((j) => [j.trade_id, j]));
 
@@ -85,6 +102,8 @@ export default async function JournalPage(props: PageProps<"/journal">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
+
+      <TagManager tags={managedTags} />
 
       {trades.length === 0 ? (
         <EmptyState

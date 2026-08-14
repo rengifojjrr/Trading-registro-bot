@@ -1,4 +1,5 @@
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
+import { FillCorrections, type ActiveOverride } from "@/components/trades/fill-corrections";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
@@ -25,7 +26,17 @@ export interface FillHistoryRow {
  * own size/commission when that fill was split across two trades (a
  * position reversal crossing through zero, see docs/RECONCILIATION_RULES.md).
  */
-export function FillHistoryTable({ fills, timezone }: { fills: FillHistoryRow[]; timezone: string }) {
+export function FillHistoryTable({
+  fills,
+  timezone,
+  tradeId,
+  overrides,
+}: {
+  fills: FillHistoryRow[];
+  timezone: string;
+  tradeId: string;
+  overrides: ActiveOverride[];
+}) {
   return (
     <Card>
       <CardContent className="pt-5">
@@ -88,6 +99,12 @@ export function FillHistoryTable({ fills, timezone }: { fills: FillHistoryRow[];
             </table>
             </div>
           )}
+
+          <FillCorrections
+            tradeId={tradeId}
+            fillIds={fills.map((f) => f.raw_fill_id)}
+            overrides={overrides}
+          />
         </CollapsibleSection>
       </CardContent>
     </Card>

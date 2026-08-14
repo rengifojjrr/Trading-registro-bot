@@ -160,6 +160,21 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
           .in("entry_id", rawFillIds)
       : { data: [] };
 
+  // Active grouping corrections for this product -- shown next to the
+  // fill list so a correction and the thing it corrects are in one place.
+  const { data: overrideRows } = await supabase
+    .from("trade_grouping_overrides")
+    .select("id, anchor_fill_id, note")
+    .eq("user_id", user.id)
+    .eq("product_id", trade.product_id)
+    .eq("is_active", true);
+
+  const activeOverrides = (overrideRows ?? []).map((o) => ({
+    id: o.id,
+    anchorFillId: o.anchor_fill_id,
+    note: o.note,
+  }));
+
   const rawFillsById = new Map((rawFills ?? []).map((f) => [f.entry_id, f]));
   const fillRows: FillHistoryRow[] = (tradeFills ?? []).map((tf) => ({
     id: tf.id,
@@ -221,7 +236,12 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         </Card>
       ) : null}
 
-      <FillHistoryTable fills={fillRows} timezone={timezone} />
+      <FillHistoryTable
+        fills={fillRows}
+        timezone={timezone}
+        tradeId={trade.id}
+        overrides={activeOverrides}
+      />
 
       <JournalForm
         tradeId={trade.id}

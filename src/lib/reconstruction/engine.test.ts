@@ -332,3 +332,63 @@ describe("reconstructTrades -- idempotency and isolation", () => {
     expect(trades[0].exitCommissions).toBe("2");
   });
 });
+
+describe("reconstructTrades -- grouping overrides", () => {
+  it("EXCLUDE_FILL leaves the fill out entirely, changing the trades that remain", () => {
+    const fills = [
+      fill({ id: "x1", side: "BUY", price: 100, size: 1, minutesOffset: 0 }),
+      fill({ id: "x2", side: "BUY", price: 120, size: 1, minutesOffset: 1 }),
+      fill({ id: "x3", side: "SELL", price: 130, size: 1, minutesOffset: 2 }),
+    ];
+
+    const excluded: GroupingOverrideInput = {
+      id: "ov-1",
+      overrideType: "EXCLUDE_FILL",
+      anchorFillId: "x2",
+      payload: {},
+      isActive: true,
+    };
+
+    const result = reconstructTrades(fills, [excluded]);
+    // x1 opens 1 and x3 closes it: one clean round trip, x2 gone.
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].status).toBe("CLOSED");
+    expect(result.trades[0].totalEntryQty).toBe("1");
+  });
+
+  it("an inactive override is ignored, so a correction can be undone without losing its record", () => {
+    const fills = [
+      fill({ id: "y1", side: "BUY", price: 100, size: 1, minutesOffset: 0 }),
+      fill({ id: "y2", side: "BUY", price: 120, size: 1, minutesOffset: 1 }),
+    ];
+    const inactive: GroupingOverrideInput = {
+      id: "ov-2",
+      overrideType: "EXCLUDE_FILL",
+      anchorFillId: "y2",
+      payload: {},
+      isActive: false,
+    };
+
+    expect(reconstructTrades(fills, [inactive]).trades[0].totalEntryQty).toBe("2");
+  });
+
+  it("reports SPLIT/MERGE/REASSIGN as unsupported instead of pretending to apply them", () => {
+    // Deliberately not implemented, and deliberately not offered in the UI:
+    // cutting one continuous position into two trades would leave the
+    // second piece holding contracts it has no entry fill for, so its exit
+    // quantity would exceed its entry quantity and its P&L would be
+    // fiction. Doing it honestly requires per-lot (FIFO/LIFO) accounting,
+    // which is a whole-app accounting decision rather than a per-trade
+    // correction. Surfacing them as unsupported keeps that explicit.
+    const result = reconstructTrades(
+      [fill({ id: "z1", side: "BUY", price: 100, size: 1 })],
+      [
+        { id: "ov-split", overrideType: "SPLIT", anchorFillId: "z1", payload: {}, isActive: true },
+        { id: "ov-merge", overrideType: "MERGE", anchorFillId: "z1", payload: {}, isActive: true },
+      ],
+    );
+
+    expect(result.unsupportedOverrideIds).toEqual(["ov-split", "ov-merge"]);
+    expect(result.trades).toHaveLength(1);
+  });
+});
