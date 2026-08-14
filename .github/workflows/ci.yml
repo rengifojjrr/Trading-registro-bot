@@ -35,3 +35,64 @@ jobs:
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_not_real
           NEXT_PUBLIC_APP_URL: http://localhost:3000
           CRON_SECRET: ci-placeholder-secret-not-real-at-least-16-chars
+
+  # End-to-end tests need a real Supabase project: nearly every page goes
+  # through auth middleware and RLS, so a run against a placeholder project
+  # would only prove that a broken database renders an error page. Rather
+  # than fail on forks and clones that have no secrets, this job checks for
+  # them and skips its own steps -- `verify` above is the gate that must
+  # always pass.
+  #
+  # To enable it, set these repository secrets (in GitHub's own settings UI,
+  # never in a file): E2E_SUPABASE_URL, E2E_SUPABASE_PUBLISHABLE_KEY,
+  # E2E_SUPABASE_SERVICE_ROLE_KEY. Point them at a project you are willing
+  # to have test accounts created and deleted in.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: ¿Hay credenciales para e2e?
+        id: creds
+        env:
+          SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SERVICE_ROLE_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::e2e omitido: faltan los secretos E2E_SUPABASE_*."
+          fi
+
+      - if: steps.creds.outputs.ready == 'true'
+        run: npm ci
+
+      - if: steps.creds.outputs.ready == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - if: steps.creds.outputs.ready == 'true'
+        run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.E2E_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+          CRON_SECRET: ci-placeholder-secret-not-real-at-least-16-chars
+          E2E_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Uploaded on failure only: the report contains screenshots and traces
+      # of a real (throwaway) account's screens, so there is no reason to
+      # publish it on green runs.
+      - if: failure() && steps.creds.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

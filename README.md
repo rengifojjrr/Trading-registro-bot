@@ -77,6 +77,30 @@ npm run build       # build de producción; también corre la verificación de t
 
 La suite actual cubre la firma de JWT de Coinbase (`src/lib/coinbase/jwt.test.ts`), el adaptador simulado (`src/lib/coinbase/venues/mock.test.ts`) y el clasificador de sesión con casos de cambio de horario de verano, incluyendo el caso de Sídney (hemisferio sur, DST invertido) (`src/lib/sessions/classify.test.ts`).
 
+### Pruebas end-to-end
+
+```bash
+npm run test:e2e     # navegador real, escritorio y móvil
+npm run test:e2e:ui  # modo interactivo
+```
+
+Estas pruebas manejan la aplicación real contra un proyecto Supabase real: casi todas las páginas pasan por el middleware de autenticación y por RLS, así que correrlas contra un proyecto falso solo demostraría que una base de datos rota devuelve una página de error. **Sin credenciales no fallan: se reportan como omitidas**, de modo que `npm test` sigue en verde para quien no tenga acceso al proyecto.
+
+Hay dos formas de darles una cuenta:
+
+| Variables | Qué hace la suite |
+|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | Crea un usuario desechable al arrancar y **lo borra al terminar**, incluso si las pruebas fallan. Es lo que usa CI. |
+| `E2E_USER_EMAIL` + `E2E_USER_PASSWORD` | Inicia sesión con una cuenta que tú creaste. Nunca crea ni borra nada. Úsalo si no quieres darle acceso de servicio a un runner de pruebas. |
+
+La limpieza consiste en borrar el usuario de `auth.users`: todas las tablas de la aplicación lo referencian con `on delete cascade`, así que sus operaciones, fills e importaciones se van con él.
+
+Con la segunda opción, las dos pruebas que **importan** un CSV se omiten con un mensaje explícito, porque escribir requiere la clave de servicio en el servidor.
+
+Variables opcionales: `E2E_BASE_URL` para correr contra un servidor ya levantado (si no, la suite hace `build` + `start`), y `PLAYWRIGHT_CHROMIUM_PATH` para entornos que ya traen su propio Chromium.
+
+En CI el job `e2e` comprueba si existen los secretos `E2E_SUPABASE_*` y se salta sus pasos si no están; el job `verify` (tipos, lint, unitarias, build) siempre tiene que pasar.
+
 ## Registrar la integración con Coinbase (Fase 2 -- todavía no requerido)
 
 Cuando llegue esa fase:
