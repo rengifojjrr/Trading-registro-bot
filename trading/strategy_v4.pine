@@ -1,0 +1,184 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════════
+//  BTC DC Breakout L+S — v4 "auditable"
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Misma lógica de señal que la versión del audit (DC + EMA200 4H / DC cierres +
+//  Daily EMA50). NO cambia el edge. Lo que cambia es que hace medibles los cinco
+//  supuestos que el audit da por ciertos sin haberlos probado.
+//
+//  Cada corrección es un TOGGLE, con el default puesto en el comportamiento
+//  CORRECTO. Para reproducir los números del audit, pon los cinco en "legacy".
+//
+//   1. i_freeze_stops   Congela SL/TP en la entrada. El audit dice que los stops
+//                       son fijos; el código los reemitía cada barra con el ATR
+//                       vivo, así que flotaban. OFF = comportamiento del audit.
+//   2. i_cost_side      Coste total por lado (comisión + slippage + funding).
+//                       El audit usaba 0.06% + slippage=2 TICKS (≈ $0.02 ≈ 0).
+//   3. margin_long/short Apalancamiento real simulado por TradingView, con margin
+//                       calls. El audit lo extrapoló a mano, método que no puede
+//                       ver una liquidación intra-trade.
+//   4. i_nonrepaint     Filtro diario sobre la vela diaria CERRADA.
+//   5. i_use_win        Ventana de fechas para walk-forward / out-of-sample.
+//
+//  Ver trading/ANALISIS.md §3 y §6 para el porqué de cada uno.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+strategy(
+   title                   = "BTC DC Breakout L+S — v4 auditable",
+   shorttitle              = "DC_LS_v4",
+   overlay                 = true,
+   initial_capital         = 10000,
+   default_qty_type        = strategy.percent_of_equity,
+   default_qty_value       = input.float(100, "Tamaño posición (% equity, notional)",
+                               minval = 1, maxval = 500, group = "① Apalancamiento",
+                               tooltip = "100 = 1x. Para 2x pon 200 AQUÍ y 50 en 'Margen'. " +
+                                         "Cambiar sólo el margen no apalanca nada."),
+   margin_long             = input.float(100, "Margen requerido LARGO (%)",
+                               minval = 1, maxval = 100, group = "① Apalancamiento",
+                               tooltip = "100 = 1x · 50 = 2x · 33.3 = 3x. Con esto TradingView " +
+                                         "SÍ simula margin calls (el audit afirma que no se puede)."),
+   margin_short            = input.float(100, "Margen requerido CORTO (%)",
+                               minval = 1, maxval = 100, group = "① Apalancamiento"),
+   commission_type         = strategy.commission.percent,
+   commission_value        = input.float(0.06, "② Coste por lado (%)",
+                               minval = 0, step = 0.01, group = "② Costes",
+                               tooltip = "Comisión + slippage + funding prorrateado, TODO junto.\n" +
+                                         "0.06  = sólo comisión (lo que usó el audit)\n" +
+                                         "0.16  = comisión + ~10 bps de slippage de ruptura\n" +
+                                         "0.20+ = lo anterior + funding del perp (~4.5 días de hold)"),
+   slippage                = 0,
+   pyramiding              = 0,
+   calc_on_order_fills     = false,
+   process_orders_on_close = false)
+
+// ─── LARGO ────────────────────────────────────────────────────────────────────
+i_dc_l  = input.int(12,    "DC Length",  minval = 3,     group = "LONG")
+i_ema_l = input.int(200,   "Trend EMA",  minval = 20,    group = "LONG")
+i_atr_l = input.int(10,    "ATR Length", minval = 5,     group = "LONG")
+i_sl_l  = input.float(2.0, "SL x ATR",   step   = 0.25,  group = "LONG")
+i_rr_l  = input.float(2.5, "TP R:R",     step   = 0.25,  group = "LONG")
+
+// ─── CORTO ────────────────────────────────────────────────────────────────────
+i_en_s  = input.bool(true, "Enable Shorts",                   group = "SHORT")
+i_dc_s  = input.int(4,     "DC Length",   minval = 2,         group = "SHORT")
+i_atr_s = input.int(10,    "ATR Length",  minval = 5,         group = "SHORT")
+i_sl_s  = input.float(1.5, "SL x ATR",    step   = 0.25,      group = "SHORT")
+i_rr_s  = input.float(4.0, "TP R:R",      step   = 0.25,      group = "SHORT")
+i_dema  = input.int(50,    "Daily EMA (macro)", minval = 20,  group = "SHORT")
+
+i_nonrepaint = input.bool(true, "④ Filtro diario NO repintante",
+     group   = "SHORT",
+     tooltip = "ON  = usa la vela diaria CERRADA (ta.ema(...)[1]). Honesto.\n" +
+               "OFF = usa la diaria en formación. Es lo que hacía el audit.\n\n" +
+               "macro_bear dispara el 100% de los cortos, y los cortos son el 32% del " +
+               "P&L declarado. Compara ambos: si los cortos se caen con ON, el edge era artefacto.")
+
+// ─── ③ STOPS ──────────────────────────────────────────────────────────────────
+i_freeze_stops = input.bool(true, "③ Congelar SL/TP en la entrada",
+     group   = "③ Stops",
+     tooltip = "ON  = el SL/TP se fijan con el ATR de la barra de señal y NO se mueven.\n" +
+               "OFF = se recalculan cada barra con el ATR vivo → el stop se aleja si sube " +
+               "la volatilidad. Esto último es lo que se backtesteó en el audit, pese a que " +
+               "el texto dice 'stops fijos'.")
+
+i_protect_first = input.bool(true, "Proteger desde la barra de entrada",
+     group   = "③ Stops",
+     tooltip = "El código original emitía el exit recién al CIERRE de la barra de llenado: " +
+               "la posición quedaba desprotegida durante esa barra.")
+
+// ─── ⑤ VENTANA (walk-forward) ─────────────────────────────────────────────────
+i_use_win = input.bool(false, "⑤ Limitar ventana de backtest", group = "⑤ Ventana")
+i_from    = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Desde", group = "⑤ Ventana")
+i_to      = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Hasta", group = "⑤ Ventana",
+     tooltip = "Protocolo: optimiza SÓLO en Dic 2023–Dic 2024, congela los parámetros, " +
+               "y recién entonces corre 2025–2026. Si el out-of-sample no aguanta, " +
+               "los parámetros estaban ajustados al ruido.")
+
+in_window = not i_use_win or (time >= i_from and time <= i_to)
+
+// ═══ CÁLCULOS ═════════════════════════════════════════════════════════════════
+dc_upper = ta.highest(high,  i_dc_l)[1]      // ruptura de máximos
+dc_lower = ta.lowest(close,  i_dc_s)[1]      // ruptura de CIERRES (no lows) — ver audit §5.5
+ema_l    = ta.ema(close, i_ema_l)
+atr_l    = ta.atr(i_atr_l)
+atr_s    = ta.atr(i_atr_s)
+
+daily_ema = request.security(syminfo.tickerid, "D",
+     i_nonrepaint ? ta.ema(close, i_dema)[1] : ta.ema(close, i_dema),
+     lookahead = barmerge.lookahead_off)
+
+macro_bear = close < daily_ema
+
+// ═══ SEÑALES ══════════════════════════════════════════════════════════════════
+no_pos    = strategy.position_size == 0
+long_sig  = close > dc_upper and close > ema_l
+short_sig = i_en_s and close < dc_lower and macro_bear
+
+// ═══ ENTRADAS ═════════════════════════════════════════════════════════════════
+if long_sig and no_pos and in_window
+    strategy.entry("L", strategy.long)
+    if i_protect_first
+        d0 = atr_l * i_sl_l
+        strategy.exit("LX", "L", stop = close - d0, limit = close + d0 * i_rr_l)
+
+if short_sig and no_pos and in_window
+    strategy.entry("S", strategy.short)
+    if i_protect_first
+        d0 = atr_s * i_sl_s
+        strategy.exit("SX", "S", stop = close + d0, limit = close - d0 * i_rr_s)
+
+// ═══ NIVELES CONGELADOS EN LA ENTRADA ═════════════════════════════════════════
+var float frozen_sl = na
+var float frozen_tp = na
+
+new_long  = strategy.position_size > 0 and nz(strategy.position_size[1]) <= 0
+new_short = strategy.position_size < 0 and nz(strategy.position_size[1]) >= 0
+
+if new_long
+    // ATR de la barra de SEÑAL: la entrada se llena en la apertura de la siguiente
+    dl = atr_l[1] * i_sl_l
+    frozen_sl := strategy.position_avg_price - dl
+    frozen_tp := strategy.position_avg_price + dl * i_rr_l
+
+if new_short
+    ds = atr_s[1] * i_sl_s
+    frozen_sl := strategy.position_avg_price + ds
+    frozen_tp := strategy.position_avg_price - ds * i_rr_s
+
+if strategy.position_size == 0
+    frozen_sl := na
+    frozen_tp := na
+
+// ═══ SALIDAS ══════════════════════════════════════════════════════════════════
+float shown_sl = na
+float shown_tp = na
+
+if strategy.position_size > 0
+    dyn_sl = strategy.position_avg_price - atr_l * i_sl_l
+    dyn_tp = strategy.position_avg_price + atr_l * i_sl_l * i_rr_l
+    shown_sl := i_freeze_stops ? frozen_sl : dyn_sl
+    shown_tp := i_freeze_stops ? frozen_tp : dyn_tp
+    strategy.exit("LX", "L", stop = shown_sl, limit = shown_tp)
+
+if strategy.position_size < 0
+    dyn_sl = strategy.position_avg_price + atr_s * i_sl_s
+    dyn_tp = strategy.position_avg_price - atr_s * i_sl_s * i_rr_s
+    shown_sl := i_freeze_stops ? frozen_sl : dyn_sl
+    shown_tp := i_freeze_stops ? frozen_tp : dyn_tp
+    strategy.exit("SX", "S", stop = shown_sl, limit = shown_tp)
+
+// Cerrar al salir de la ventana, para que el OOS no arrastre una posición abierta
+if i_use_win and time > i_to and strategy.position_size != 0
+    strategy.close_all("fin de ventana")
+
+// ═══ VISUAL ═══════════════════════════════════════════════════════════════════
+plot(ema_l,    "EMA tendencia", color.new(color.orange, 20))
+plot(dc_upper, "DC upper",      color.new(color.teal,   40))
+plot(dc_lower, "DC lower",      color.new(color.maroon, 40))
+plot(shown_sl, "SL", color.new(color.red,   0), style = plot.style_linebr, linewidth = 2)
+plot(shown_tp, "TP", color.new(color.green, 0), style = plot.style_linebr, linewidth = 2)
+bgcolor(macro_bear ? color.new(color.red, 93) : na, title = "Régimen bajista macro")
+
+// ═══ ALERTAS ══════════════════════════════════════════════════════════════════
+alertcondition(long_sig  and no_pos, "Entrada LARGA", "DC_LS v4 · LARGO {{ticker}} @ {{close}}")
+alertcondition(short_sig and no_pos, "Entrada CORTA", "DC_LS v4 · CORTO {{ticker}} @ {{close}}")
