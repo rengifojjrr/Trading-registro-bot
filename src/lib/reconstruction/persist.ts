@@ -45,7 +45,7 @@ export async function persistReconstruction(
     supabase
       .from("raw_fills")
       .select(
-        "entry_id, product_id, side, price, size, commission, sequence_timestamp, trade_time, trade_type, future_legs",
+        "entry_id, product_id, side, price, size, commission, sequence_timestamp, trade_time, trade_type, future_legs, sync_run_id",
       )
       .eq("account_id", params.accountId)
       .eq("product_id", params.productId),
@@ -75,6 +75,13 @@ export async function persistReconstruction(
     tradeType: f.trade_type,
     hasFutureLegs: Array.isArray(f.future_legs) ? f.future_legs.length > 0 : false,
   }));
+
+  // A fill with no sync_run_id was never fetched from Coinbase -- today that
+  // means it was imported from a CSV. Used below to label each trade by where
+  // its fills actually came from, instead of assuming the API.
+  const importedFillIds = new Set(
+    (rawFills ?? []).filter((f) => f.sync_run_id === null).map((f) => f.entry_id),
+  );
 
   const engineOverrides: GroupingOverrideInput[] = (overrideRows ?? []).map((o) => ({
     id: o.id,
@@ -115,6 +122,16 @@ export async function persistReconstruction(
     });
     const sessionComputed = classifySession(trade.openedAt);
 
+    // Only a trade built entirely from imported fills counts as CSV_IMPORT.
+    // If even one fill came from the API, the trade is still checkable
+    // against Coinbase, so it stays COINBASE_SYNC and keeps appearing in
+    // the validation queue.
+    const source =
+      trade.fillAllocations.length > 0 &&
+      trade.fillAllocations.every((a) => importedFillIds.has(a.rawFillId))
+        ? ("CSV_IMPORT" as const)
+        : ("COINBASE_SYNC" as const);
+
     const row = {
       user_id: params.userId,
       account_id: params.accountId,
@@ -140,7 +157,7 @@ export async function persistReconstruction(
       exits_count: trade.exitsCount,
       reconstruction_version: params.algorithmVersion,
       session_computed: sessionComputed,
-      source: "COINBASE_SYNC" as const,
+      source,
     };
 
     const existingId = existingByOpeningFillId.get(trade.openingFillId);
