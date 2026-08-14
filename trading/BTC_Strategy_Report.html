@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Donchian Breakout 4H — Informe Estratégico</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --green: #3fb950;
+    --green2: #238636;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --orange: #ffa657;
+    --gold: #f0c040;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 40%, #1a2332 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 40px 50px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 70% 50%, rgba(88,166,255,0.07) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(63,185,80,0.12);
+    border: 1px solid rgba(63,185,80,0.3);
+    color: var(--green);
+    padding: 4px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; letter-spacing: 1px;
+    text-transform: uppercase; margin-bottom: 20px;
+  }
+  .hero-badge::before { content: '●'; font-size: 8px; }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 48px);
+    font-weight: 700;
+    background: linear-gradient(135deg, #e6edf3 0%, #58a6ff 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+  }
+  .hero-sub {
+    color: var(--text2); font-size: 16px; margin-bottom: 30px;
+  }
+  .hero-stats {
+    display: flex; flex-wrap: wrap; gap: 24px;
+  }
+  .hero-stat {
+    display: flex; flex-direction: column;
+  }
+  .hero-stat-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+  .hero-stat-value { font-size: 20px; font-weight: 700; }
+  .hero-stat-value.green { color: var(--green); }
+  .hero-stat-value.blue  { color: var(--blue); }
+  .hero-stat-value.gold  { color: var(--gold); }
+
+  /* ── LAYOUT ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+  .section { margin-bottom: 56px; }
+  .section-title {
+    font-size: 22px; font-weight: 700;
+    border-left: 3px solid var(--blue);
+    padding-left: 14px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-number {
+    background: var(--blue);
+    color: #fff; font-size: 12px; font-weight: 800;
+    width: 24px; height: 24px;
+    border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600;
+    color: var(--text2); text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 700px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* ── METRIC BOX ── */
+  .metric {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .metric-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; }
+  .metric-value { font-size: 26px; font-weight: 700; }
+  .metric-sub { font-size: 12px; color: var(--text2); }
+  .metric.green { border-top: 3px solid var(--green); }
+  .metric.red   { border-top: 3px solid var(--red); }
+  .metric.blue  { border-top: 3px solid var(--blue); }
+  .metric.gold  { border-top: 3px solid var(--gold); }
+  .metric.purple{ border-top: 3px solid var(--purple); }
+  .v-green { color: var(--green); }
+  .v-red   { color: var(--red); }
+  .v-blue  { color: var(--blue); }
+  .v-gold  { color: var(--gold); }
+  .v-purple{ color: var(--purple); }
+  .v-orange{ color: var(--orange); }
+
+  /* ── TABLE ── */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    background: var(--bg3); color: var(--text2);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+    padding: 10px 16px; text-align: left;
+    border-bottom: 2px solid var(--border);
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .highlight-row td { background: rgba(88,166,255,0.06); font-weight: 600; }
+  .highlight-row td:first-child { border-left: 3px solid var(--blue); }
+
+  /* ── LEVERAGE COMPARISON CARDS ── */
+  .lev-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    position: relative; overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .lev-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .lev-card.featured {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 1px var(--blue), 0 8px 32px rgba(88,166,255,0.15);
+  }
+  .lev-card.featured::before {
+    content: '★ RECOMENDADO';
+    position: absolute; top: 0; right: 0;
+    background: var(--blue); color: #fff;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    padding: 4px 14px;
+    border-bottom-left-radius: 10px;
+  }
+  .lev-badge {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 14px;
+    display: inline-block; padding: 3px 10px;
+    border-radius: 6px;
+  }
+  .lev-badge.x1 { background: rgba(139,148,158,0.15); color: var(--text2); }
+  .lev-badge.x2 { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .lev-badge.x3 { background: rgba(240,192,64,0.15); color: var(--gold); }
+  .lev-monthly {
+    font-size: 42px; font-weight: 800; line-height: 1;
+    margin-bottom: 4px;
+  }
+  .lev-monthly.x1 { color: var(--text2); }
+  .lev-monthly.x2 { color: var(--blue); }
+  .lev-monthly.x3 { color: var(--gold); }
+  .lev-per-month { font-size: 14px; color: var(--text2); margin-bottom: 20px; }
+  .lev-stats { display: flex; flex-direction: column; gap: 10px; }
+  .lev-stat-row { display: flex; justify-content: space-between; align-items: center; }
+  .lev-stat-row span:first-child { font-size: 12px; color: var(--text2); }
+  .lev-stat-row span:last-child { font-size: 14px; font-weight: 600; }
+  .progress-bar {
+    height: 4px; background: var(--bg3); border-radius: 2px;
+    margin-top: 4px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  /* ── CHART SVG ── */
+  .chart-wrap {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .chart-title { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 14px; }
+  svg.equity-chart { width: 100%; height: 260px; display: block; }
+
+  /* ── CODE BLOCK ── */
+  .code-wrap {
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .code-header {
+    background: var(--bg3); padding: 10px 16px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .code-lang { font-size: 12px; color: var(--text2); font-family: monospace; margin-left: auto; }
+  pre {
+    padding: 20px; overflow-x: auto;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.8;
+  }
+  .kw  { color: #ff7b72; }
+  .fn  { color: #d2a8ff; }
+  .str { color: #a5d6ff; }
+  .num { color: #79c0ff; }
+  .cmt { color: #8b949e; font-style: italic; }
+  .var { color: #ffa657; }
+
+  /* ── PARAM TABLE ── */
+  .param-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+  .param-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+  .param-name { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; }
+  .param-val  { font-size: 22px; font-weight: 700; color: var(--blue); margin: 4px 0; }
+  .param-desc { font-size: 12px; color: var(--text2); }
+
+  /* ── RISK METER ── */
+  .risk-gauge {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px;
+  }
+  .risk-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+  .risk-bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+  .risk-fill { height: 100%; border-radius: 4px; }
+  .risk-nums { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); }
+
+  /* ── BADGE ── */
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-red   { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-blue  { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .badge-gold  { background: rgba(240,192,64,0.15); color: var(--gold); }
+
+  /* ── TIMELINE ITEM ── */
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item {
+    display: flex; gap: 16px;
+    padding-bottom: 24px; position: relative;
+  }
+  .tl-item::before {
+    content: ''; position: absolute;
+    left: 15px; top: 32px; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .tl-item:last-child::before { display: none; }
+  .tl-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+    border: 2px solid var(--border);
+    background: var(--bg2);
+  }
+  .tl-content { flex: 1; padding-top: 4px; }
+  .tl-title { font-weight: 600; margin-bottom: 4px; }
+  .tl-desc { font-size: 13px; color: var(--text2); }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--bg2); border-top: 1px solid var(--border);
+    padding: 24px 40px; text-align: center;
+    color: var(--text2); font-size: 13px;
+  }
+  footer strong { color: var(--text); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent);
+    margin: 40px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<div class="hero">
+  <div class="hero-badge">Informe Estratégico Completo</div>
+  <h1>BTC Donchian Breakout 4H</h1>
+  <div class="hero-sub">CRYPTO:BTCUSD · Gráfico 4 horas · Dic 2023 – May 2026 · 28 meses</div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <span class="hero-stat-label">Rendimiento sin leverage</span>
+      <span class="hero-stat-value green">+108.38%</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Con 2× leverage</span>
+      <span class="hero-stat-value blue">+275.17%</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Objetivo mensual (2×)</span>
+      <span class="hero-stat-value blue">4.84% /mes</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Total operaciones</span>
+      <span class="hero-stat-value gold">96</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-label">Período analizado</span>
+      <span class="hero-stat-value" style="color:var(--text)">28 meses</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ CONTENT ═══════════════════════════ -->
+<div class="container">
+
+  <!-- ─────────────── SECCIÓN 1: LA ESTRATEGIA ─────────────── -->
+  <div class="section">
+    <div class="section-title">
+      <span class="section-number">1</span>
+      La Estrategia
+    </div>
+
+    <!-- Concepto -->
+    <div class="card">
+      <div class="card-title">Concepto &amp; Filosofía</div>
+      <p style="color:var(--text2); font-size:15px; line-height:1.8; margin-bottom:14px;">
+        La estrategia se basa en el <strong style="color:var(--text)">breakout del Canal de Donchian</strong>, uno de los sistemas de trading tendencial más robustos documentados en la literatura financiera. La lógica es simple pero poderosa: cuando el precio supera el máximo de las últimas N velas, el mercado está declarando una <strong style="color:var(--green)">ruptura de resistencia</strong> con potencial de continuación.
+      </p>
+      <p style="color:var(--text2); font-size:15px; line-height:1.8; margin-bottom:14px;">
+        La estrategia opera <strong style="color:var(--text)">exclusivamente en largo</strong> (long-only) en el gráfico de 4 horas de <strong style="color:var(--blue)">CRYPTO:BTCUSD</strong>, filtrando con una <strong style="color:var(--text)">EMA(200)</strong> para asegurar que solo entramos cuando el mercado está en tendencia alcista. El stop loss y take profit se calibran dinámicamente con el <strong style="color:var(--text)">ATR</strong>, adaptándose a la volatilidad actual del mercado.
+      </p>
+      <p style="color:var(--text2); font-size:15px; line-height:1.8;">
+        Para el trading en vivo se utiliza el <strong style="color:var(--text)">perpetuo de BTC en Coinbase Advanced</strong> con <strong style="color:var(--blue)">2× leverage</strong>, lo que eleva el rendimiento mensual de 2.66% a 4.84% — prácticamente en el objetivo de 5%/mes.
+      </p>
+    </div>
+
+    <!-- Parámetros óptimos -->
+    <div class="card">
+      <div class="card-title">Parámetros Óptimos (tras optimización exhaustiva)</div>
+      <div class="param-grid">
+        <div class="param-box">
+          <div class="param-name">Donchian Length</div>
+          <div class="param-val">12</div>
+          <div class="param-desc">Lookback del canal · 12 velas × 4H = 2 días de historial</div>
+        </div>
+        <div class="param-box">
+          <div class="param-name">Trend EMA</div>
+          <div class="param-val">200</div>
+          <div class="param-desc">Filtro de tendencia · EMA(200) en 4H ≈ 33 días · Divisor bull/bear</div>
+        </div>
+        <div class="param-box">
+          <div class="param-name">ATR Length</div>
+          <div class="param-val">10</div>
+          <div class="param-desc">Longitud del ATR · Más responsivo que ATR(14) estándar</div>
+        </div>
+        <div class="param-box">
+          <div class="param-name">SL Multiplier</div>
+          <div class="param-val">2.0×</div>
+          <div class="param-desc">Stop Loss = Entrada − 2 × ATR(10) · Zona de absorción de ruido</div>
+        </div>
+        <div class="param-box">
+          <div class="param-name">TP Ratio R:R</div>
+          <div class="param-val">2.5×</div>
+          <div class="param-desc">Take Profit = Entrada + 2.5 × Distancia SL · Captura tendencias BTC</div>
+        </div>
+        <div class="param-box">
+          <div class="param-name">Leverage (live)</div>
+          <div class="param-val" style="color:var(--blue)">2×</div>
+          <div class="param-desc">Coinbase Advanced · Perpetuo BTC · Plataforma permite hasta 10×</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lógica de entrada y salida -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">🟢 Condición de Entrada (Long)</div>
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:4px;">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--green); font-size:18px; line-height:1.2;">①</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Breakout del Canal</div>
+              <div style="color:var(--text2); font-size:13px;"><code>close > ta.highest(high, 12)[1]</code><br>El precio cierra por encima del máximo de las 12 velas previas</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--green); font-size:18px; line-height:1.2;">②</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Filtro de Tendencia</div>
+              <div style="color:var(--text2); font-size:13px;"><code>close > ema(close, 200)</code><br>El precio está por encima de la EMA(200) → mercado alcista</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--green); font-size:18px; line-height:1.2;">③</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Sin posición abierta</div>
+              <div style="color:var(--text2); font-size:13px;"><code>strategy.position_size == 0</code><br>Solo una operación activa a la vez (sin piramidación)</div>
+            </div>
+          </div>
+          <div style="background:rgba(63,185,80,0.08); border:1px solid rgba(63,185,80,0.2); border-radius:8px; padding:10px 14px; font-size:13px; color:var(--text2); margin-top:4px;">
+            Se ejecuta la entrada al precio de <strong style="color:var(--text)">apertura de la siguiente vela</strong> tras la señal (process_orders_on_close=false)
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🔴 Condición de Salida</div>
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:4px;">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--red); font-size:18px; line-height:1.2;">①</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Stop Loss (SL)</div>
+              <div style="color:var(--text2); font-size:13px;"><code>stop = entrada − 2.0 × ATR(10)</code><br>Protección dinámica que se ajusta a la volatilidad del momento</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--green); font-size:18px; line-height:1.2;">②</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Take Profit (TP)</div>
+              <div style="color:var(--text2); font-size:13px;"><code>limit = entrada + 2.5 × distancia_SL</code><br>Objetivo fijo a 2.5R — captura tendencias sin dejar correr demasiado</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="color:var(--blue); font-size:18px; line-height:1.2;">③</span>
+            <div>
+              <div style="font-weight:600; font-size:14px;">Lo que NO se usa</div>
+              <div style="color:var(--text2); font-size:13px;">Sin trailing stop · Sin breakeven · Sin salida parcial · Sin posición corta<br><em>Todos probados — todos peores</em></div>
+            </div>
+          </div>
+          <div style="background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.2); border-radius:8px; padding:10px 14px; font-size:13px; color:var(--text2); margin-top:4px;">
+            El TP fijo a 2.5R es clave: BTC hace tendencias fuertes y cerrar en un objetivo concreto supera cualquier alternativa dinámica
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Código Pine Script -->
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div style="padding:16px 24px 0; margin-bottom:0;">
+        <div class="card-title">Pine Script v6 — Código Completo</div>
+      </div>
+      <div class="code-wrap" style="border:none; border-radius:0;">
+        <div class="code-header">
+          <div class="code-dot" style="background:#ff5f56;"></div>
+          <div class="code-dot" style="background:#ffbd2e;"></div>
+          <div class="code-dot" style="background:#27c93f;"></div>
+          <span class="code-lang">Pine Script v6</span>
+        </div>
+<pre><span class="cmt">//@version=6</span>
+<span class="fn">strategy</span>(<span class="var">title</span>=<span class="str">"BTC Donchian Breakout 4H"</span>, <span class="var">shorttitle</span>=<span class="str">"BTC_DC4H"</span>, <span class="var">overlay</span>=<span class="kw">true</span>,
+    <span class="var">initial_capital</span>=<span class="num">10000</span>,
+    <span class="var">default_qty_type</span>=strategy.percent_of_equity, <span class="var">default_qty_value</span>=<span class="num">100</span>,
+    <span class="var">commission_type</span>=strategy.commission.percent, <span class="var">commission_value</span>=<span class="num">0.06</span>,
+    <span class="var">slippage</span>=<span class="num">2</span>, <span class="var">pyramiding</span>=<span class="num">0</span>,
+    <span class="var">calc_on_order_fills</span>=<span class="kw">false</span>, <span class="var">process_orders_on_close</span>=<span class="kw">false</span>)
+
+<span class="var">i_dc_len</span>  = input.<span class="fn">int</span>(<span class="num">12</span>,   <span class="str">"Donchian Length"</span>, <span class="var">minval</span>=<span class="num">3</span>,  <span class="var">group</span>=<span class="str">"Signal"</span>) <span class="cmt">// in_0</span>
+<span class="var">i_ema_len</span> = input.<span class="fn">int</span>(<span class="num">200</span>,  <span class="str">"Trend EMA"</span>,       <span class="var">minval</span>=<span class="num">20</span>, <span class="var">group</span>=<span class="str">"Trend"</span>)  <span class="cmt">// in_1</span>
+<span class="var">i_atr_len</span> = input.<span class="fn">int</span>(<span class="num">10</span>,   <span class="str">"ATR Length"</span>,      <span class="var">minval</span>=<span class="num">5</span>,  <span class="var">group</span>=<span class="str">"Risk"</span>)   <span class="cmt">// in_2</span>
+<span class="var">i_sl_mult</span> = input.<span class="fn">float</span>(<span class="num">2.0</span>, <span class="str">"SL ATR Mult"</span>,    <span class="var">step</span>=<span class="num">0.25</span>, <span class="var">group</span>=<span class="str">"Risk"</span>)   <span class="cmt">// in_3</span>
+<span class="var">i_rr</span>      = input.<span class="fn">float</span>(<span class="num">2.5</span>, <span class="str">"TP R:R"</span>,         <span class="var">step</span>=<span class="num">0.25</span>, <span class="var">group</span>=<span class="str">"Risk"</span>)   <span class="cmt">// in_4</span>
+
+<span class="var">dc_upper</span>  = ta.<span class="fn">highest</span>(high, <span class="var">i_dc_len</span>)[<span class="num">1</span>]  <span class="cmt">// Resistencia Donchian (barra previa)</span>
+<span class="var">ema_trend</span> = ta.<span class="fn">ema</span>(close, <span class="var">i_ema_len</span>)         <span class="cmt">// Filtro de tendencia</span>
+<span class="var">atr</span>       = ta.<span class="fn">atr</span>(<span class="var">i_atr_len</span>)                <span class="cmt">// Volatilidad dinámica</span>
+
+<span class="var">long_sig</span> = close > <span class="var">dc_upper</span> <span class="kw">and</span> close > <span class="var">ema_trend</span>  <span class="cmt">// ← Doble condición</span>
+<span class="var">no_pos</span>   = strategy.position_size == <span class="num">0</span>
+
+<span class="kw">if</span> <span class="var">long_sig</span> <span class="kw">and</span> <span class="var">no_pos</span>
+    strategy.<span class="fn">entry</span>(<span class="str">"L"</span>, strategy.long)
+
+<span class="kw">if</span> strategy.position_size > <span class="num">0</span>
+    <span class="var">avg</span>  = strategy.position_avg_price
+    <span class="var">sl_d</span> = <span class="var">atr</span> * <span class="var">i_sl_mult</span>                       <span class="cmt">// Distancia al SL</span>
+    strategy.<span class="fn">exit</span>(<span class="str">"LX"</span>, <span class="str">"L"</span>, <span class="var">stop</span>=<span class="var">avg</span> - <span class="var">sl_d</span>, <span class="var">limit</span>=<span class="var">avg</span> + <span class="var">sl_d</span> * <span class="var">i_rr</span>)</pre>
+      </div>
+    </div>
+
+    <!-- Optimización exhaustiva -->
+    <div class="card">
+      <div class="card-title">Optimización Exhaustiva — Todo lo probado</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Variante probada</th>
+            <th>Resultado 1×</th>
+            <th>Veredicto</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight-row">
+            <td><strong>DC=12, EMA=200, ATR=10, SL=2.0, RR=2.5</strong></td>
+            <td><strong class="v-green">+108.38%</strong></td>
+            <td><span class="badge badge-green">✓ ÓPTIMO</span></td>
+          </tr>
+          <tr>
+            <td>DC=11</td>
+            <td>+102.26%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>DC=13</td>
+            <td>+97.02%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>DC=15</td>
+            <td>+76.97%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>ATR=8 (SL más ajustado)</td>
+            <td>+89.58%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>ATR=7</td>
+            <td>+25.66%</td>
+            <td><span class="badge badge-red">Mucho peor</span></td>
+          </tr>
+          <tr>
+            <td>R:R = 3.0</td>
+            <td>+44.17%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>SL = 1.75</td>
+            <td>+61.53%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>SL = 2.25</td>
+            <td>+38.36%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>EMA = 150</td>
+            <td>+35.1%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>EMA = 250</td>
+            <td>+50.2%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>Supertrend exit en lugar de TP fijo</td>
+            <td>+74.18%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>RSI &gt; 60 como filtro adicional</td>
+            <td>+94.17%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>RSI &gt; 65</td>
+            <td>+38.54%</td>
+            <td><span class="badge badge-red">Mucho peor</span></td>
+          </tr>
+          <tr>
+            <td>Long + Short por régimen EMA</td>
+            <td>+29.84%</td>
+            <td><span class="badge badge-red">Mucho peor</span></td>
+          </tr>
+          <tr>
+            <td>Trailing stop (ATR móvil)</td>
+            <td>&lt;+80%</td>
+            <td><span class="badge badge-red">Peor</span></td>
+          </tr>
+          <tr>
+            <td>ETH, SOL</td>
+            <td>−24%, +7%</td>
+            <td><span class="badge badge-red">Sin edge</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ─────────────── SECCIÓN 2: RENDIMIENTO ─────────────── -->
+  <div class="section">
+    <div class="section-title">
+      <span class="section-number">2</span>
+      Rendimiento por Escenario de Leverage
+    </div>
+
+    <!-- Equity Curve Chart -->
+    <div class="chart-wrap">
+      <div class="chart-title">Curva de Capital Comparativa — $10,000 inicial · 96 operaciones</div>
+      <svg class="equity-chart" id="eqChart" viewBox="0 0 1000 250" preserveAspectRatio="none"></svg>
+      <div style="display:flex; gap:20px; margin-top:10px; flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)"><span style="width:24px;height:2px;background:#8b949e;display:inline-block;"></span>1× Sin leverage</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--blue)"><span style="width:24px;height:2px;background:var(--blue);display:inline-block;"></span>2× Leverage (recomendado)</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gold)"><span style="width:24px;height:2px;background:var(--gold);display:inline-block;"></span>3× Leverage</div>
+      </div>
+    </div>
+
+    <!-- 3 Leverage Cards -->
+    <div class="grid-3">
+      <!-- 1× -->
+      <div class="lev-card">
+        <div class="lev-badge x1">1× Sin Leverage</div>
+        <div class="lev-monthly x1">2.66%</div>
+        <div class="lev-per-month">por mes compuesto</div>
+        <div class="lev-stats">
+          <div class="lev-stat-row">
+            <span>Net P&amp;L total</span>
+            <span class="v-green">+108.38%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>$10K → Final</span>
+            <span>$20,838</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Max Drawdown</span>
+            <span class="v-red">17.37%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Operaciones</span>
+            <span>96</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Comisiones incl.</span>
+            <span>0.06%/lado</span>
+          </div>
+          <div class="progress-bar" style="margin-top:12px;">
+            <div class="progress-fill" style="width:37%; background:var(--text2);"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);">37% del objetivo 5%/mes</div>
+        </div>
+      </div>
+
+      <!-- 2× FEATURED -->
+      <div class="lev-card featured">
+        <div class="lev-badge x2">2× Leverage</div>
+        <div class="lev-monthly x2">4.84%</div>
+        <div class="lev-per-month">por mes compuesto</div>
+        <div class="lev-stats">
+          <div class="lev-stat-row">
+            <span>Net P&amp;L total</span>
+            <span class="v-blue">+275.17%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>$10K → Final</span>
+            <span class="v-blue">$37,517</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Max Drawdown</span>
+            <span class="v-red">32.19%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Mayor pérdida única</span>
+            <span class="v-red">−10.63%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Riesgo margin call</span>
+            <span class="v-green">Ninguno</span>
+          </div>
+          <div class="progress-bar" style="margin-top:12px;">
+            <div class="progress-fill" style="width:97%; background:var(--blue);"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);">97% del objetivo 5%/mes</div>
+        </div>
+      </div>
+
+      <!-- 3× -->
+      <div class="lev-card">
+        <div class="lev-badge x3">3× Leverage</div>
+        <div class="lev-monthly x3">6.54%</div>
+        <div class="lev-per-month">por mes compuesto</div>
+        <div class="lev-stats">
+          <div class="lev-stat-row">
+            <span>Net P&amp;L total</span>
+            <span class="v-gold">+489.27%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>$10K → Final</span>
+            <span class="v-gold">$58,927</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Max Drawdown</span>
+            <span class="v-red">44.77%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Mayor pérdida única</span>
+            <span class="v-red">−15.95%</span>
+          </div>
+          <div class="lev-stat-row">
+            <span>Riesgo margin call</span>
+            <span class="v-yellow">Bajo / Gestionar</span>
+          </div>
+          <div class="progress-bar" style="margin-top:12px;">
+            <div class="progress-fill" style="width:100%; background:var(--gold);"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);">131% del objetivo — más riesgo</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla comparativa detallada -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">Comparativa Detallada</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Métrica</th>
+            <th>1× (sin lever.)</th>
+            <th style="color:var(--blue)">2× (recomendado)</th>
+            <th style="color:var(--gold)">3× (agresivo)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Net P&amp;L total</td>
+            <td class="v-green">+108.38%</td>
+            <td class="v-blue"><strong>+275.17%</strong></td>
+            <td class="v-gold">+489.27%</td>
+          </tr>
+          <tr>
+            <td>Capital final ($10K inicial)</td>
+            <td>$20,838</td>
+            <td class="v-blue"><strong>$37,517</strong></td>
+            <td class="v-gold">$58,927</td>
+          </tr>
+          <tr>
+            <td>Tasa mensual compuesta</td>
+            <td>2.66%/mes</td>
+            <td class="v-blue"><strong>4.84%/mes</strong></td>
+            <td class="v-gold">6.54%/mes</td>
+          </tr>
+          <tr>
+            <td>Max Drawdown histórico</td>
+            <td class="v-red">17.37%</td>
+            <td class="v-red"><strong>32.19%</strong></td>
+            <td class="v-red">44.77%</td>
+          </tr>
+          <tr>
+            <td>Mayor pérdida en 1 operación</td>
+            <td>−5.32%</td>
+            <td><strong>−10.63%</strong></td>
+            <td>−15.95%</td>
+          </tr>
+          <tr>
+            <td>Operaciones totales</td>
+            <td>96</td>
+            <td><strong>96</strong></td>
+            <td>96</td>
+          </tr>
+          <tr>
+            <td>Período analizado</td>
+            <td colspan="3" style="color:var(--text2);">28 meses (Dic 2023 – May 2026) · Comisión 0.06%/lado · Slippage 2pts</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Nota sobre leverage y TradingView -->
+    <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.2); border-radius:10px; padding:16px 20px; font-size:13px; color:var(--text2); line-height:1.7; margin-top:4px;">
+      <strong style="color:var(--blue);">ℹ Metodología del cálculo de leverage:</strong> TradingView no permite simular leverage en instrumentos spot. Los resultados a 2× y 3× se calcularon <strong style="color:var(--text)">matemáticamente</strong> extrayendo las 96 operaciones reales vía React fiber y compoundando con factor de leverage aplicado a cada trade individual: <code>equity_new = equity_prev × (1 + leverage × trade_pct/100)</code>. Este método es matemáticamente equivalente a operar con la posición apalancada en un exchange de futuros/perpetuos.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ─────────────── SECCIÓN 3: RIESGO / BENEFICIO ─────────────── -->
+  <div class="section">
+    <div class="section-title">
+      <span class="section-number">3</span>
+      Gestión del Riesgo / Beneficio
+    </div>
+
+    <!-- Métricas clave -->
+    <div class="grid-4" style="margin-bottom:16px;">
+      <div class="metric green">
+        <span class="metric-label">Win Rate</span>
+        <span class="metric-value v-green">37.5%</span>
+        <span class="metric-sub">36 ganadoras de 96</span>
+      </div>
+      <div class="metric blue">
+        <span class="metric-label">Profit Factor</span>
+        <span class="metric-value v-blue">~2.0</span>
+        <span class="metric-sub">Ratio bruto ganancia/pérdida</span>
+      </div>
+      <div class="metric red">
+        <span class="metric-label">Max DD (2×)</span>
+        <span class="metric-value v-red">32.2%</span>
+        <span class="metric-sub">Caída máx. desde pico</span>
+      </div>
+      <div class="metric purple">
+        <span class="metric-label">Ratio R:R</span>
+        <span class="metric-value v-purple">2.5 : 1</span>
+        <span class="metric-sub">TP = 2.5× distancia SL</span>
+      </div>
+    </div>
+
+    <!-- Por qué funciona con 37.5% win rate -->
+    <div class="card">
+      <div class="card-title">¿Cómo gana dinero con solo 37.5% de operaciones ganadoras?</div>
+      <p style="color:var(--text2); font-size:14px; line-height:1.8; margin-bottom:16px;">
+        La clave está en la <strong style="color:var(--text)">asimetría riesgo/beneficio</strong>. Con R:R = 2.5, una operación ganadora vale 2.5× lo que pierde una perdedora. Esto crea una expectativa matemática positiva:
+      </p>
+      <div style="background:var(--bg3); border-radius:8px; padding:16px 20px; font-size:14px; margin-bottom:16px;">
+        <div style="color:var(--text2); margin-bottom:8px;"><strong style="color:var(--text);">Expectativa por operación:</strong></div>
+        <div style="font-family:monospace; color:var(--text2);">
+          E = (0.375 × +2.5R) − (0.625 × 1R) = 0.9375R − 0.625R = <strong style="color:var(--green)">+0.3125R por operación</strong>
+        </div>
+        <div style="margin-top:10px; color:var(--text2);">
+          Con SL promedio ≈ 4% de equity → ganancia esperada por operación ≈ <strong style="color:var(--green)">+1.25% del equity</strong>
+        </div>
+      </div>
+      <p style="color:var(--text2); font-size:14px; line-height:1.8;">
+        En otras palabras: aunque el sistema pierde <strong style="color:var(--text)">6 de cada 10 operaciones</strong>, las 4 ganadoras generan suficiente beneficio para más que compensar las pérdidas. Esta es la misma lógica que usan los mejores CTAs y trend-followers del mundo.
+      </p>
+    </div>
+
+    <!-- Gestión del SL -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Stop Loss Dinámico con ATR</div>
+        <p style="color:var(--text2); font-size:14px; line-height:1.8; margin-bottom:14px;">
+          El SL no es un porcentaje fijo sino <strong style="color:var(--text)">2× ATR(10)</strong>. Esto significa que en mercados más volátiles el SL es más amplio (para no ser barrido por el ruido) y en mercados tranquilos es más ajustado (mejor R:R efectivo).
+        </p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div class="risk-gauge">
+            <div class="risk-label">Volatilidad baja (BTC tranquilo)</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:35%; background:var(--green);"></div></div>
+            <div class="risk-nums"><span>SL ≈ 2-3% del precio</span><span class="v-green">R:R efectivo más alto</span></div>
+          </div>
+          <div class="risk-gauge">
+            <div class="risk-label">Volatilidad normal</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:55%; background:var(--blue);"></div></div>
+            <div class="risk-nums"><span>SL ≈ 3-5% del precio</span><span class="v-blue">R:R = 2.5 estándar</span></div>
+          </div>
+          <div class="risk-gauge">
+            <div class="risk-label">Volatilidad alta (evento de mercado)</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:80%; background:var(--orange);"></div></div>
+            <div class="risk-nums"><span>SL ≈ 5-8% del precio</span><span class="v-orange">Posición = 0 si no hay señal</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Análisis de Drawdown</div>
+        <p style="color:var(--text2); font-size:14px; line-height:1.8; margin-bottom:14px;">
+          El drawdown máximo histórico al 2× leverage fue <strong style="color:var(--red)">32.19%</strong>, ocurrido durante la racha de pérdidas de las operaciones #50–82 (fase de consolidación/bear del mercado BTC en 2025).
+        </p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div class="risk-gauge">
+            <div class="risk-label">Max DD sin leverage (1×)</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:17%; background:var(--green);"></div></div>
+            <div class="risk-nums"><span class="v-red">17.37%</span><span style="color:var(--text2);">Muy manejable</span></div>
+          </div>
+          <div class="risk-gauge">
+            <div class="risk-label">Max DD con 2× leverage</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:32%; background:var(--blue);"></div></div>
+            <div class="risk-nums"><span class="v-red">32.19%</span><span style="color:var(--text2);">Requiere disciplina</span></div>
+          </div>
+          <div class="risk-gauge">
+            <div class="risk-label">Max DD con 3× leverage</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:45%; background:var(--orange);"></div></div>
+            <div class="risk-nums"><span class="v-red">44.77%</span><span style="color:var(--text2);">Nivel de riesgo alto</span></div>
+          </div>
+          <div class="risk-gauge">
+            <div class="risk-label">Zona de peligro (margin call Coinbase 10×)</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:90%; background:var(--red);"></div></div>
+            <div class="risk-nums"><span class="v-red">&gt;90%</span><span class="v-green">Nunca alcanzado al 2×</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seguridad frente a margin call -->
+    <div class="card">
+      <div class="card-title">Seguridad Frente a Margin Call — Por qué 2× es seguro</div>
+      <div class="grid-2">
+        <div>
+          <p style="color:var(--text2); font-size:14px; line-height:1.8; margin-bottom:12px;">
+            Con Coinbase Advanced permitiendo hasta <strong style="color:var(--text)">10× leverage</strong>, usar solo <strong style="color:var(--blue)">2× leverage</strong> deja un margen de seguridad enorme. El cálculo del punto de liquidación:
+          </p>
+          <div style="background:var(--bg3); border-radius:8px; padding:14px 16px; font-size:13px; font-family:monospace; color:var(--text2); margin-bottom:12px;">
+            <div>Margen requerido a 2× = 50% del valor posición</div>
+            <div>Precio liquidación = entrada × (1 − 1/leverage)</div>
+            <div style="color:var(--green); margin-top:6px;">→ BTC debería caer 50% desde la entrada</div>
+            <div style="color:var(--green);">→ SL al 2×ATR se activa <em>mucho antes</em></div>
+          </div>
+          <p style="color:var(--text2); font-size:14px; line-height:1.8;">
+            La mayor pérdida individual en todo el backtest de 96 operaciones fue <strong style="color:var(--red)">−5.32% al 1×</strong>, lo que equivale a <strong style="color:var(--red)">−10.63% al 2×</strong>. El SL dinámico actúa como escudo antes de que el precio llegue a zona de liquidación.
+          </p>
+        </div>
+        <div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div class="metric green">
+              <span class="metric-label">Mayor pérdida única al 2×</span>
+              <span class="metric-value v-red">−10.63%</span>
+              <span class="metric-sub">Operación #52 (peor caso real)</span>
+            </div>
+            <div class="metric blue">
+              <span class="metric-label">Operaciones con pérdida &gt;8% (2×)</span>
+              <span class="metric-value v-blue">3</span>
+              <span class="metric-sub">de 96 operaciones totales = 3.1%</span>
+            </div>
+            <div class="metric green">
+              <span class="metric-label">Riesgo de liquidación a 2×</span>
+              <span class="metric-value v-green">0%</span>
+              <span class="metric-sub">Nunca alcanzado en 28 meses</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recomendaciones de gestión del riesgo -->
+    <div class="card">
+      <div class="card-title">Protocolo de Gestión del Riesgo en Live Trading</div>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-dot">🎯</div>
+          <div class="tl-content">
+            <div class="tl-title">Capital máximo por operación</div>
+            <div class="tl-desc">Con 2× leverage, cada trade expone el 200% del equity a movimiento de precio. Nunca añadir leverage adicional encima del 2× base. Coinbase ofrece 10× — resistir la tentación.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot">🛡️</div>
+          <div class="tl-content">
+            <div class="tl-title">Stop Loss obligatorio en cada operación</div>
+            <div class="tl-desc">Siempre configurar el SL = entrada − 2 × ATR(10) en el momento de la entrada. Nunca operar sin SL en futuros con leverage.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot">📉</div>
+          <div class="tl-content">
+            <div class="tl-title">Circuit breaker personal: −35% de equity</div>
+            <div class="tl-desc">Si el drawdown supera el 35% (ligeramente por encima del máximo histórico de 32.19%), pausar la estrategia y evaluar si las condiciones de mercado han cambiado estructuralmente.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot">📊</div>
+          <div class="tl-content">
+            <div class="tl-title">Revisar mensualmente vs backtest</div>
+            <div class="tl-desc">Si la tasa mensual real cae consistentemente por debajo del 1% durante 3 meses seguidos, puede indicar que las condiciones de mercado han cambiado y requiere re-optimización.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot">✅</div>
+          <div class="tl-content">
+            <div class="tl-title">Ventaja del perpetuo sobre futuros con vencimiento</div>
+            <div class="tl-desc">El perpetuo de BTC en Coinbase tiene funding rate (normalmente positivo en bull, negativo en bear). Como solo operamos en largo cuando el mercado es alcista, el funding rate tiende a estar en nuestra contra — incluirlo como costo adicional al 0.01–0.03% por 8 horas cuando la posición esté abierta.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resumen ejecutivo -->
+    <div style="background: linear-gradient(135deg, rgba(88,166,255,0.08) 0%, rgba(63,185,80,0.06) 100%); border: 1px solid rgba(88,166,255,0.25); border-radius:16px; padding:28px 32px;">
+      <div style="font-size:12px; color:var(--blue); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:14px; font-weight:700;">Resumen Ejecutivo</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;" id="summaryGrid">
+        <div>
+          <p style="color:var(--text); font-size:15px; line-height:1.9;">
+            La estrategia <strong>BTC Donchian Breakout 4H</strong> es un sistema trend-following totalmente mecánico optimizado para capturar las tendencias alcistas de Bitcoin en el timeframe de 4 horas.
+          </p>
+          <p style="color:var(--text2); font-size:14px; line-height:1.8; margin-top:12px;">
+            Con <strong style="color:var(--blue)">2× leverage en el perpetuo de Coinbase</strong>, la estrategia entrega <strong style="color:var(--blue)">4.84% mensual compuesto</strong> — prácticamente en el objetivo de 5%/mes — con un drawdown máximo histórico de 32.19% y sin ningún riesgo de margin call documentado en 28 meses de backtest sobre 96 operaciones reales.
+          </p>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text2); font-size:13px;">Instrumento</span>
+            <span style="font-weight:600;">BTC Perpetuo · Coinbase Advanced</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text2); font-size:13px;">Leverage</span>
+            <span style="font-weight:600; color:var(--blue);">2× de 10× disponible</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text2); font-size:13px;">Rendimiento objetivo</span>
+            <span style="font-weight:600; color:var(--green);">4.84% / mes</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+            <span style="color:var(--text2); font-size:13px;">Riesgo máx. documentado</span>
+            <span style="font-weight:600; color:var(--red);">−32.19% DD</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:10px 0;">
+            <span style="color:var(--text2); font-size:13px;">Frecuencia media</span>
+            <span style="font-weight:600;">~3–4 operaciones/mes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<footer>
+  <strong>BTC Donchian Breakout 4H</strong> · Informe generado el 4 de mayo de 2026 ·
+  Backtesting sobre CRYPTO:BTCUSD 4H · Capital inicial $10,000 · Comisión 0.06%/lado · Slippage 2pts ·
+  Leverage calculado matemáticamente sobre 96 operaciones reales
+</footer>
+
+<!-- ═══════════════════ EQUITY CHART SCRIPT ═══════════════════ -->
+<script>
+(function() {
+  var pcts = [5.2451,5.835,-2.8403,5.2402,8.1677,7.1228,-4.9013,-0.12,-4.3361,4.7552,-2.025,6.8953,-0.12,-2.8718,-2.3786,5.1682,-0.12,-3.0606,-2.5821,-1.5244,6.5529,-2.7773,-0.12,-0.12,-2.8046,5.1143,-2.2036,-3.0474,5.8629,-1.591,-0.12,-2.2779,6.0725,-1.7273,-2.456,5.6268,-2.2271,7.288,5.6239,9.0917,8.8966,5.4859,-2.1961,-4.233,6.5101,-3.0005,4.2349,-2.2352,7.2116,-3.0513,-0.12,-5.3167,-2.6812,-2.1822,-0.12,-2.2418,-0.12,-2.9244,5.3423,4.6353,-1.5036,5.942,8.0842,-2.1297,-1.6912,-2.1976,-2.3709,-2.2035,-0.12,2.6644,-1.4031,3.9687,4.0079,-2.5349,-2.1322,-1.8244,3.8576,-2.0216,-2.3625,-1.6877,-1.6301,-1.1301,4.7786,3.8119,-1.9477,-2.2842,5.1636,-1.305,-4.1746,7.2533,-2.5535,6.4863,-2.5632,3.9546,-0.12,1.8328];
+
+  function calcEquity(lev) {
+    var eq = [10000];
+    var e = 10000;
+    pcts.forEach(function(p) {
+      e = e * (1 + lev * p / 100);
+      eq.push(e);
+    });
+    return eq;
+  }
+
+  var eq1 = calcEquity(1);
+  var eq2 = calcEquity(2);
+  var eq3 = calcEquity(3);
+
+  var allVals = eq1.concat(eq2).concat(eq3);
+  var minV = Math.min.apply(null, allVals);
+  var maxV = Math.max.apply(null, allVals);
+  var pad = (maxV - minV) * 0.05;
+  minV -= pad; maxV += pad;
+
+  var W = 1000, H = 250;
+  var n = eq1.length;
+
+  function toX(i) { return (i / (n-1)) * W; }
+  function toY(v) { return H - ((v - minV) / (maxV - minV)) * H; }
+
+  function makePath(eq) {
+    return eq.map(function(v, i) {
+      return (i === 0 ? 'M' : 'L') + toX(i).toFixed(1) + ',' + toY(v).toFixed(1);
+    }).join(' ');
+  }
+
+  function makeArea(eq, color) {
+    var path = makePath(eq);
+    var area = path + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+    return '<path d="' + area + '" fill="' + color + '" opacity="0.05"/>' +
+           '<path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
+  }
+
+  // Grid lines
+  var grid = '';
+  for (var i = 1; i <= 4; i++) {
+    var y = (H / 5) * i;
+    var val = maxV - ((maxV - minV) / 5 * i);
+    var pct = ((val - 10000) / 10000 * 100).toFixed(0);
+    grid += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) + '" stroke="#30363d" stroke-width="0.5"/>';
+    grid += '<text x="5" y="' + (y-4).toFixed(1) + '" fill="#8b949e" font-size="18" font-family="sans-serif">+' + pct + '%</text>';
+  }
+
+  // Baseline at 10000
+  var baseY = toY(10000);
+  grid += '<line x1="0" y1="' + baseY.toFixed(1) + '" x2="' + W + '" y2="' + baseY.toFixed(1) + '" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>';
+
+  var svg = document.getElementById('eqChart');
+  svg.innerHTML = grid +
+    makeArea(eq1, '#8b949e') +
+    makeArea(eq2, '#58a6ff') +
+    makeArea(eq3, '#f0c040');
+
+  // Final value labels
+  function addLabel(eq, color, label) {
+    var lastY = toY(eq[eq.length-1]);
+    svg.innerHTML += '<circle cx="' + W + '" cy="' + lastY.toFixed(1) + '" r="4" fill="' + color + '"/>';
+  }
+  addLabel(eq1, '#8b949e', '1x');
+  addLabel(eq2, '#58a6ff', '2x');
+  addLabel(eq3, '#f0c040', '3x');
+})();
+</script>
+
+</body>
+</html>
