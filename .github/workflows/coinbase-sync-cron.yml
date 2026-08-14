@@ -14,25 +14,75 @@ jobs:
   trigger-cron-routes:
     runs-on: ubuntu-latest
     steps:
-      - name: Coinbase poll sync (/api/cron/sync)
+      # Without this the job ran curl with an empty URL every five minutes,
+      # failed with curl's exit code 3, and GitHub emailed a failure notice
+      # for each one -- roughly 288 "there are errors" emails a day, none of
+      # which pointed at a real problem. An unconfigured deployment is not a
+      # failure: it just has nothing to poll yet.
+      #
+      # To turn the sync on, set these repository secrets in GitHub's own
+      # settings UI (never in a file): APP_URL -- the deployment's base URL,
+      # e.g. https://your-app.vercel.app -- and CRON_SECRET, matching the
+      # value already set in the deployment's environment.
+      - name: ¿Está configurado el cron?
+        id: config
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          status=$(curl -s -o /tmp/sync.log -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/cron/sync")
-          cat /tmp/sync.log
+          if [ -n "$APP_URL" ] && [ -n "$CRON_SECRET" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sincronización omitida: faltan los secretos APP_URL y/o CRON_SECRET."
+          fi
+
+      - name: Coinbase poll sync (/api/cron/sync)
+        if: steps.config.outputs.ready == 'true'
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Quoted, and curl's own exit code checked separately from the HTTP
+          # status: an unreachable host and a 500 are different problems, and
+          # `bash -e` used to abort on the former before the status check
+          # could ever report which it was.
+          set +e
+          status=$(curl -sS -o /tmp/sync.log -w "%{http_code}" --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL%/}/api/cron/sync")
+          curl_exit=$?
+          set -e
+          cat /tmp/sync.log || true
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "::error::No se pudo contactar ${APP_URL%/}/api/cron/sync (curl salió con $curl_exit)."
+            exit 1
+          fi
           if [ "$status" -ge 300 ]; then
-            echo "::error::/api/cron/sync returned HTTP $status"
+            echo "::error::/api/cron/sync respondió HTTP $status"
             exit 1
           fi
 
       - name: Notion outbound queue drain (/api/cron/notion-sync)
-        if: always()
+        # Still runs when the sync step failed, but only when configured --
+        # `always()` on its own would resurrect the empty-URL failure above.
+        if: always() && steps.config.outputs.ready == 'true'
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          status=$(curl -s -o /tmp/notion.log -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/cron/notion-sync")
-          cat /tmp/notion.log
+          set +e
+          status=$(curl -sS -o /tmp/notion.log -w "%{http_code}" --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL%/}/api/cron/notion-sync")
+          curl_exit=$?
+          set -e
+          cat /tmp/notion.log || true
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "::error::No se pudo contactar ${APP_URL%/}/api/cron/notion-sync (curl salió con $curl_exit)."
+            exit 1
+          fi
           if [ "$status" -ge 300 ]; then
-            echo "::error::/api/cron/notion-sync returned HTTP $status"
+            echo "::error::/api/cron/notion-sync respondió HTTP $status"
             exit 1
           fi

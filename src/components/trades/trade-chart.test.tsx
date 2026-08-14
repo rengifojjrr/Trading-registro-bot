@@ -68,7 +68,7 @@ function candle(offsetSeconds: number) {
   };
 }
 
-function renderChart() {
+function renderChart(overrides: { isOpen?: boolean } = {}) {
   return render(
     <TradeChart
       tradeId="11111111-1111-1111-1111-111111111111"
@@ -81,7 +81,7 @@ function renderChart() {
       initialDrawings={[]}
       entry={{ time: OPENED, price: 68000 }}
       exit={null}
-      isOpen
+      isOpen={overrides.isOpen ?? true}
     />,
   );
 }
@@ -120,6 +120,79 @@ describe("TradeChart timeframes", () => {
     // 2 days can't fit in 300 one-minute candles, so the chart shows the
     // most recent slice and has to say so.
     expect(await screen.findByText(/la entrada queda fuera de la vista/)).toBeTruthy();
+  });
+});
+
+describe("TradeChart live refresh", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function mockCandleFetch() {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      void url;
+      return {
+        json: async () => ({ candles: [candle(0), candle(3600), candle(7200), candle(10800)] }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("keeps re-fetching candles while the position is open", async () => {
+    // The reported bug: candles were fetched once at page load and never
+    // again, so the chart's right edge froze while the "Ahora" line kept
+    // moving -- two different prices for the same instant on one chart.
+    const fetchMock = mockCandleFetch();
+    vi.useFakeTimers();
+    try {
+      renderChart({ isOpen: true });
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/coinbase/trade-candles");
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not poll for a closed trade", async () => {
+    // A finished trade's candles can never change, so polling would be
+    // pure waste against Coinbase's rate limit.
+    const fetchMock = mockCandleFetch();
+    vi.useFakeTimers();
+    try {
+      renderChart({ isOpen: false });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("refreshes without re-framing the view the user set", async () => {
+    const fetchMock = mockCandleFetch();
+    vi.useFakeTimers();
+    try {
+      renderChart({ isOpen: true });
+      timeScale.fitContent.mockClear();
+
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      expect(fetchMock).toHaveBeenCalled();
+      // Re-framing on every refresh would yank a zoomed-in chart back once
+      // a minute.
+      expect(timeScale.fitContent).not.toHaveBeenCalled();
+      // The refreshed candles still reach the existing series.
+      expect(series.setData).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });
 

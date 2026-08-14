@@ -71,6 +71,8 @@ export interface TradeChartDrawing {
 }
 
 const CHART_HEIGHT = 360;
+/** How often an open position's candles are re-fetched. One request a minute is nothing against Coinbase's limits, and it's the granularity at which new candles actually appear. */
+const CANDLE_REFRESH_MS = 60_000;
 const DRAWING_COLOR = "#a78bfa"; // matches chart_drawings.color's DB default
 const MEASURE_COLOR = "#38bdf8";
 
@@ -208,11 +210,23 @@ export function TradeChart({
 
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const dragRef = useRef<{ id: string; startPoint: DrawingPoint; original: TradeChartDrawing } | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  // Read by the crosshair legend and by the chart-creation effect, neither
+  // of which should re-run just because a candle ticked.
+  const candlesRef = useRef(candles);
+  // fitContent() belongs on a new chart or a new timeframe, never on a
+  // routine refresh -- doing it every minute would yank the view back while
+  // the user is zoomed in.
+  const fittedGranularityRef = useRef<CoinbaseCandleGranularity | null>(null);
 
-  async function handleGranularityChange(next: string) {
-    const nextGranularity = next as CoinbaseCandleGranularity;
-    setGranularity(nextGranularity);
-    setIsLoading(true);
+  /**
+   * Fetches the candle set for a granularity. Shared by the timeframe
+   * selector and the background refresh so both go through one path.
+   * `silent` keeps the background refresh from flashing a spinner or
+   * complaining about a blip -- it'll simply try again a minute later.
+   */
+  async function loadCandles(nextGranularity: CoinbaseCandleGranularity, silent = false) {
+    if (!silent) setIsLoading(true);
     const requestId = ++requestIdRef.current;
 
     try {
@@ -222,19 +236,25 @@ export function TradeChart({
       const query = new URLSearchParams({ tradeId, granularity: nextGranularity });
       const res = await fetch(`/api/coinbase/trade-candles?${query.toString()}`);
       const data = (await res.json()) as { candles: TradeChartCandle[] | null };
-      if (requestId !== requestIdRef.current) return; // superseded by a newer selection
+      if (requestId !== requestIdRef.current) return; // superseded by a newer request
       if (data.candles && data.candles.length > 0) {
         setCandles(data.candles);
-      } else {
+      } else if (!silent) {
         // Say so rather than leaving the previous timeframe's candles on
         // screen under the new label, which would misrepresent the chart.
         toast.error("Coinbase no devolvió velas para ese intervalo.");
       }
     } catch {
-      toast.error("No se pudieron cargar las velas.");
+      if (!silent) toast.error("No se pudieron cargar las velas.");
     } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false);
+      if (requestId === requestIdRef.current && !silent) setIsLoading(false);
     }
+  }
+
+  async function handleGranularityChange(next: string) {
+    const nextGranularity = next as CoinbaseCandleGranularity;
+    setGranularity(nextGranularity);
+    await loadCandles(nextGranularity);
   }
 
   function selectTool(tool: ActiveTool) {
@@ -307,6 +327,13 @@ export function TradeChart({
     }
   }
 
+  // Declared before every chart effect on purpose: effects run in
+  // declaration order, so the crosshair legend's closure always reads the
+  // candles from this same commit rather than the previous one.
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
+
   // Escape backs out of whichever tool/pending point is active, same as
   // most chart-annotation tools -- without this, a stray first click on
   // TRENDLINE/RECTANGLE has no way to cancel short of reloading the page.
@@ -323,7 +350,7 @@ export function TradeChart({
   // recreate the whole chart, only the effect below re-renders them.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || candles.length === 0) return;
+    if (!container || candlesRef.current.length === 0) return;
 
     const chart: IChartApi = createChart(container, {
       width: container.clientWidth,
@@ -358,31 +385,20 @@ export function TradeChart({
       wickDownColor: THEME.down,
     });
 
-    series.setData(
-      candles.map((c) => ({
-        time: c.time as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
-
+    // Data itself is pushed by the effect below, not here: candles refresh
+    // while a position is open, and recreating the whole chart on every
+    // refresh would throw away the user's pan/zoom (and their drawings'
+    // event handlers) once a minute.
     if (showVolume) {
       // Its own price scale, pinned to the bottom fifth, so volume never
       // competes with price for vertical room.
-      const volumeSeries = chart.addSeries(HistogramSeries, {
+      volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
         priceScaleId: "volume",
         priceFormat: { type: "volume" },
       });
       chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-      volumeSeries.setData(
-        candles.map((c) => ({
-          time: c.time as UTCTimestamp,
-          value: c.volume,
-          color: c.close >= c.open ? "rgba(34, 197, 94, 0.5)" : "rgba(220, 38, 38, 0.5)",
-        })),
-      );
+    } else {
+      volumeSeriesRef.current = null;
     }
 
     // A LONG is entered by buying (arrow up, drawn under the bar) and exited
@@ -447,12 +463,14 @@ export function TradeChart({
     // OHLC readout. Written straight to the DOM instead of through state:
     // this fires on every pointer move, and a re-render per mouse pixel
     // would make the whole chart stutter.
-    const candlesByTime = new Map(candles.map((c) => [c.time, c]));
     function updateLegend(param: MouseEventParams<Time>) {
       const node = legendRef.current;
       if (!node) return;
-      const hovered = param.time ? candlesByTime.get(Number(param.time)) : undefined;
-      const shown = hovered ?? candles[candles.length - 1];
+      // Read through the ref so the readout follows refreshed candles
+      // without this closure (and the whole chart) being rebuilt.
+      const current = candlesRef.current;
+      const hovered = param.time ? current.find((c) => c.time === Number(param.time)) : undefined;
+      const shown = hovered ?? current[current.length - 1];
       if (!shown) return;
       const change = shown.close - shown.open;
       const changePct = shown.open === 0 ? 0 : (change / shown.open) * 100;
@@ -466,9 +484,11 @@ export function TradeChart({
     updateLegend({} as MouseEventParams<Time>);
     chart.subscribeCrosshairMove(updateLegend);
 
-    chart.timeScale().fitContent();
     chartRef.current = chart;
     seriesRef.current = series;
+    // A brand new chart has no data yet; the data effect below fills it and
+    // frames it.
+    fittedGranularityRef.current = null;
 
     const resizeObserver = new ResizeObserver((entries) => {
       const first = entries[0];
@@ -483,6 +503,7 @@ export function TradeChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
       drawingPriceLinesRef.current = [];
     };
     // entry/exit are compared by their primitive fields, not object identity --
@@ -492,7 +513,6 @@ export function TradeChart({
     // but-new-reference entry/exit would silently break mid-interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    candles,
     direction,
     entry.time,
     entry.price,
@@ -503,6 +523,74 @@ export function TradeChart({
     showVolume,
     logScale,
   ]);
+
+  // Candle data, pushed into the existing series. Separate from creation
+  // above so a refresh replaces the data without rebuilding the chart --
+  // that's what keeps pan/zoom and drawings intact while a position is open.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || candles.length === 0) return;
+
+    series.setData(
+      candles.map((c) => ({
+        time: c.time as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      })),
+    );
+
+    volumeSeriesRef.current?.setData(
+      candles.map((c) => ({
+        time: c.time as UTCTimestamp,
+        value: c.volume,
+        color: c.close >= c.open ? "rgba(34, 197, 94, 0.5)" : "rgba(220, 38, 38, 0.5)",
+      })),
+    );
+
+    // Frame the data on a new chart or a new timeframe only. A background
+    // refresh must leave the view exactly where the user put it.
+    if (fittedGranularityRef.current !== granularity) {
+      chartRef.current?.timeScale().fitContent();
+      fittedGranularityRef.current = granularity;
+    }
+  }, [candles, granularity, showVolume, logScale]);
+
+  /**
+   * Keeps an open position's chart current.
+   *
+   * Without this the candles were fetched once, when the page was rendered,
+   * and never again -- so the chart's right edge froze at whatever the price
+   * was on page load while the "Ahora" line kept moving. The two then showed
+   * different prices for the same instant, which is what looked broken.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(() => void loadCandles(granularity, true), CANDLE_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadCandles is stable enough; only the granularity being polled matters.
+  }, [isOpen, granularity, tradeId]);
+
+  /**
+   * Extends the newest candle with the live price between refreshes, so the
+   * right edge tracks the market continuously instead of stepping once a
+   * minute. Costs nothing extra: it reuses the price already being polled
+   * for the "Ahora" line.
+   */
+  useEffect(() => {
+    const series = seriesRef.current;
+    const last = candles[candles.length - 1];
+    if (!series || !isOpen || livePrice === null || !last) return;
+
+    series.update({
+      time: last.time as UTCTimestamp,
+      open: last.open,
+      high: Math.max(last.high, livePrice),
+      low: Math.min(last.low, livePrice),
+      close: livePrice,
+    });
+  }, [isOpen, livePrice, candles]);
 
   // Live "price right now" line, only for a still-open position. Kept in
   // its own effect and updated in place via applyOptions rather than
