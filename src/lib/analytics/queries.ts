@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Database, SessionLabel, TradeSource } from "@/types/database";
 
 import type { TradeExcursion, TradeForBreakdown } from "./breakdowns";
+import type { TradePageParams, TradeSortKey } from "./trade-sort";
 import type { TradeForStats } from "./stats";
 
 export interface TradeFilters {
@@ -145,14 +146,63 @@ export async function fetchTradesForStats(filters: TradeFilters = {}) {
   }));
 }
 
-/** Richer columns for the trades table. */
+/** Richer columns for the trades table. Unpaginated -- used by exports and the journal index, which need every matching row. */
 export async function fetchTradesForTable(filters: TradeFilters = {}): Promise<TradeTableRow[]> {
   const supabase = await createClient();
+  const restrictedIds = await resolveJournalFilters(filters);
+  if (restrictedIds !== null && restrictedIds.length === 0) return [];
+
   let query = supabase.from("trades").select(TABLE_COLUMNS);
   query = applyFilters(query, filters);
+  query = applyIdRestriction(query, restrictedIds);
   const { data, error } = await query.order("opened_at", { ascending: false });
   if (error) throw new Error(`fetchTradesForTable: ${error.message}`);
   return (data ?? []) as unknown as TradeTableRow[];
+}
+
+export type { TradePageParams, TradeSortKey };
+
+export interface TradePage {
+  rows: TradeTableRow[];
+  /** Total matching rows, not just this page -- for the "N operaciones" count and page numbers. */
+  total: number;
+}
+
+/**
+ * One page of trades, sorted and counted by Postgres.
+ *
+ * Previously the page fetched every matching row and sorted/paginated in
+ * the browser, which is fine for hundreds of trades but grows without
+ * bound: with years of history every page load transfers the whole
+ * history to render 25 rows.
+ */
+export async function fetchTradesPage(
+  filters: TradeFilters,
+  params: TradePageParams,
+): Promise<TradePage> {
+  const supabase = await createClient();
+  const restrictedIds = await resolveJournalFilters(filters);
+  if (restrictedIds !== null && restrictedIds.length === 0) return { rows: [], total: 0 };
+
+  let query = supabase.from("trades").select(TABLE_COLUMNS, { count: "exact" });
+  query = applyFilters(query, filters);
+  query = applyIdRestriction(query, restrictedIds);
+
+  if (params.search) {
+    // ilike rather than a text-search index: product ids are short and
+    // few, and this keeps the query honest about what it actually
+    // searches (see the placeholder on the input).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query = (query as any).ilike("product_id", `%${params.search}%`);
+  }
+
+  const from = params.page * params.pageSize;
+  const { data, error, count } = await query
+    .order(params.sortKey, { ascending: params.sortDir === "asc", nullsFirst: false })
+    .range(from, from + params.pageSize - 1);
+
+  if (error) throw new Error(`fetchTradesPage: ${error.message}`);
+  return { rows: (data ?? []) as unknown as TradeTableRow[], total: count ?? 0 };
 }
 
 const OPEN_POSITION_COLUMNS =

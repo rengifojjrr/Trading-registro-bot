@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 
 import type { TradeFilters } from "./queries";
+import { TRADE_SORT_KEYS, type TradePageParams, type TradeSortKey } from "./trade-sort";
 import type { SessionLabel } from "@/types/database";
 
 export function pickSearchParam(value: string | string[] | undefined): string | undefined {
@@ -50,6 +51,34 @@ export function parseTradeFilters(
     tagId: pickSearchParam(searchParams.tagId),
     dateFrom,
     dateTo,
+  };
+}
+
+export const DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * Reads table paging/sorting out of the URL. Everything is validated
+ * against an allowlist rather than trusted: the sort key is interpolated
+ * into an ORDER BY, and page/pageSize are used as an offset, so a crafted
+ * URL must never be able to steer either.
+ */
+export function parseTradePageParams(
+  searchParams: Record<string, string | string[] | undefined>,
+): TradePageParams {
+  const rawSort = pickSearchParam(searchParams.sort);
+  const sortKey = (TRADE_SORT_KEYS as readonly string[]).includes(rawSort ?? "")
+    ? (rawSort as TradeSortKey)
+    : "opened_at";
+
+  const rawPage = pickNumberParam(searchParams.page);
+  const page = rawPage !== undefined && Number.isInteger(rawPage) && rawPage >= 0 ? rawPage : 0;
+
+  return {
+    page,
+    pageSize: DEFAULT_PAGE_SIZE,
+    sortKey,
+    sortDir: pickSearchParam(searchParams.dir) === "asc" ? "asc" : "desc",
+    search: pickSearchParam(searchParams.q),
   };
 }
 

@@ -4,10 +4,12 @@ import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TradesTable } from "@/components/trades/trades-table";
-import { parseTradeFilters } from "@/lib/analytics/filter-params";
-import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForTable } from "@/lib/analytics/queries";
+import { parseTradeFilters, parseTradePageParams } from "@/lib/analytics/filter-params";
+import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesPage } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
+
+import { fetchTradesForExport } from "./actions";
 
 export default async function TradesPage(props: PageProps<"/trades">) {
   const user = await requireUser();
@@ -40,7 +42,8 @@ export default async function TradesPage(props: PageProps<"/trades">) {
 
   const timezone = settings?.timezone || "UTC";
   const filters = parseTradeFilters(searchParams, timezone);
-  const rows = await fetchTradesForTable(filters);
+  const pageParams = parseTradePageParams(searchParams);
+  const { rows, total } = await fetchTradesPage(filters, pageParams);
   const accountsById = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
 
   return (
@@ -55,14 +58,28 @@ export default async function TradesPage(props: PageProps<"/trades">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
-      {rows.length === 0 ? (
+      {total === 0 ? (
         <EmptyState
           icon={SearchX}
-          title="Ningún trade coincide con estos filtros"
+          title="Ninguna operación coincide"
           description="Ajusta o limpia los filtros para ver tus operaciones."
         />
       ) : (
-        <TradesTable rows={rows} accountsById={accountsById} timezone={timezone} />
+        <TradesTable
+          rows={rows}
+          total={total}
+          page={pageParams.page}
+          pageSize={pageParams.pageSize}
+          sortKey={pageParams.sortKey}
+          sortDir={pageParams.sortDir}
+          search={pageParams.search ?? ""}
+          accountsById={accountsById}
+          timezone={timezone}
+          onExport={async () => {
+            "use server";
+            return fetchTradesForExport(searchParams);
+          }}
+        />
       )}
     </>
   );
