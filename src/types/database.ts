@@ -883,6 +883,25 @@ export interface Database {
         }
       >;
 
+      trade_verifications: Table<
+        {
+          id: string;
+          user_id: string;
+          trade_id: string;
+          matches: boolean;
+          note: string | null;
+          verified_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          trade_id: string;
+          matches: boolean;
+          note?: string | null;
+          verified_at?: string;
+        }
+      >;
+
       notifications: Table<
         {
           id: string;

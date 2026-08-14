@@ -53,6 +53,7 @@ export function SettingsForm({
   connectionSlot,
   notionMappingsSlot,
   backupSlot,
+  autoSyncSlot,
 }: {
   settings: AppSettingsRow;
   /** Coinbase connection status + manual sync trigger; rendered inside the General tab. */
@@ -61,6 +62,8 @@ export function SettingsForm({
   notionMappingsSlot?: ReactNode;
   /** Full-data download; rendered inside the Integraciones tab. */
   backupSlot?: ReactNode;
+  /** Auto-sync switch; saves on its own, so it sits outside this form's submit. */
+  autoSyncSlot?: ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(updateSettings, initialState);
   const [activeTab, setActiveTab] = useState<TabId>("general");
@@ -98,6 +101,8 @@ export function SettingsForm({
 
       <TabPanel active={activeTab === "general"}>
         {connectionSlot}
+
+        {autoSyncSlot}
 
         <Card>
           <CardHeader>
@@ -272,23 +277,6 @@ export function SettingsForm({
 
         {backupSlot}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Sincronización automática</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <p className="text-muted-foreground">
-              Estado actual:{" "}
-              <span className={settings.auto_sync_enabled ? "text-positive" : "text-warning"}>
-                {settings.auto_sync_enabled ? "activada" : "desactivada"}
-              </span>
-            </p>
-            <p className="text-muted-foreground">
-              Todavía no se puede cambiar desde aquí: se activa solo después de validar manualmente entre 20 y 50
-              operaciones contra Coinbase sin diferencias.
-            </p>
-          </CardContent>
-        </Card>
       </TabPanel>
 
       <div>

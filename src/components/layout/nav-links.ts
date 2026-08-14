@@ -8,6 +8,7 @@ import {
   ListOrdered,
   Settings,
   Shield,
+  ShieldCheck,
   Target,
   Upload,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export const NAV_LINKS: NavLink[] = [
   { href: "/risk", label: "Riesgo", icon: Shield },
   { href: "/strategies", label: "Estrategias", icon: Target },
   { href: "/reports", label: "Reportes", icon: FileText },
+  { href: "/validation", label: "Validación", icon: ShieldCheck },
   { href: "/activity", label: "Actividad", icon: Activity },
   { href: "/settings", label: "Configuración", icon: Settings },
   { href: "/import", label: "Importar", icon: Upload, comingSoon: true },
