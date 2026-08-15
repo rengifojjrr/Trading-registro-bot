@@ -30,6 +30,12 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
     fetchFilterOptions(),
   ]);
 
+  const { data: playbookItems } = await supabase
+    .from("playbook_items")
+    .select("id, strategy_id, label")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true });
+
   const strategies = (allStrategies ?? []).filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name }));
 
   if (strategies.length === 0) {
@@ -45,7 +51,7 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
           description="Crea una y asígnala a tus operaciones desde el diario de cada una. Aquí verás su rendimiento comparado, avisando cuando una conclusión se base en muy pocas operaciones."
           action={<CreateStrategyForm />}
         />
-        <StrategyManager strategies={allStrategies ?? []} />
+        <StrategyManager strategies={allStrategies ?? []} playbookItems={playbookItems ?? []} />
       </>
     );
   }
@@ -73,7 +79,7 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
           <StrategyPerformanceCard key={p.strategyId ?? "none"} performance={p} />
         ))}
       </div>
-      <StrategyManager strategies={allStrategies ?? []} />
+      <StrategyManager strategies={allStrategies ?? []} playbookItems={playbookItems ?? []} />
     </>
   );
 }

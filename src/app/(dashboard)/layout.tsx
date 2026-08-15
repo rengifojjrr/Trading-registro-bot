@@ -1,4 +1,5 @@
 import { DemoDataBanner } from "@/components/layout/demo-data-banner";
+import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { requireUser } from "@/lib/auth/require-user";
@@ -27,6 +28,7 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-svh bg-background">
       <div className="sticky top-0 z-20 hidden h-svh md:block">
+        <KeyboardShortcuts />
         <Sidebar />
       </div>
 

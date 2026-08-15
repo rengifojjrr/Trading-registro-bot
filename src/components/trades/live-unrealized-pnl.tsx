@@ -7,6 +7,7 @@ import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { formatMoney, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { calculateUnrealizedPnl } from "@/lib/pnl/unrealized";
 import { LiveStatus } from "@/components/shared/live-status";
+import { DriftCheck } from "@/components/trades/drift-check";
 import { cn } from "@/lib/utils";
 
 /**
@@ -69,6 +70,12 @@ export function LiveUnrealizedPnl({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {/* The number this app computes, next to the number Coinbase
+            reports for the same position. Everything else in the product
+            computes a figure; this is the only thing that says whether it
+            is right. */}
+        <DriftCheck productId={productId} ours={pnl.grossPnl} />
+
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Precio actual</p>

@@ -11,12 +11,19 @@ import {
   type StrategyFormState,
 } from "@/app/(dashboard)/strategies/actions";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
+import { PlaybookEditor } from "@/components/strategies/playbook-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
+export interface PlaybookItemRow {
+  id: string;
+  strategy_id: string;
+  label: string;
+}
 
 export interface ManagedStrategy {
   id: string;
@@ -32,7 +39,14 @@ const initialState: StrategyFormState = { error: null, success: false };
  * created. Archiving is the primary action and deletion is refused while
  * any trade still references the strategy -- see the server action for why.
  */
-export function StrategyManager({ strategies }: { strategies: ManagedStrategy[] }) {
+export function StrategyManager({
+  strategies,
+  playbookItems = [],
+}: {
+  strategies: ManagedStrategy[];
+  /** Every playbook item across all strategies; grouped per row below. */
+  playbookItems?: PlaybookItemRow[];
+}) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -104,6 +118,13 @@ export function StrategyManager({ strategies }: { strategies: ManagedStrategy[] 
                 ) : strategy.description ? (
                   <p className="text-xs text-muted-foreground">{strategy.description}</p>
                 ) : null}
+
+                <PlaybookEditor
+                  strategyId={strategy.id}
+                  items={playbookItems
+                    .filter((i) => i.strategy_id === strategy.id)
+                    .map((i) => ({ id: i.id, label: i.label }))}
+                />
               </li>
             ))}
           </ul>

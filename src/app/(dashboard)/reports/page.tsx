@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
+import { CommissionCoverageCheck } from "@/components/reports/commission-coverage-check";
 import { EmptyState } from "@/components/shared/empty-state";
 import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
@@ -186,6 +187,11 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               </dl>
             </CardContent>
           </Card>
+
+          {/* The quietest way for a P&L to be wrong is a commission that
+              was never recorded: nothing looks broken, every month just
+              reads slightly better than it was. */}
+          <CommissionCoverageCheck recorded={stats.totalCommissions} />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <BreakdownTable
