@@ -2,6 +2,7 @@ import { Brain } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
+import { BuyAndHoldCard } from "@/components/behaviour/buy-and-hold-card";
 import { CommissionDragCard } from "@/components/behaviour/commission-drag-card";
 import { DailyLimitsCard } from "@/components/behaviour/daily-limits-card";
 import { MistakeCostTable } from "@/components/behaviour/mistake-cost-table";
@@ -9,11 +10,13 @@ import { StreakSizingCard } from "@/components/behaviour/streak-sizing-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  compareToBuyAndHold,
   computeCommissionDrag,
   computeDailyLimitBreaches,
   computeExpectancy,
   computeMistakeCost,
   computeStreakSizing,
+  deriveBuyAndHoldInputs,
 } from "@/lib/analytics/behaviour";
 import { fetchTradesWithBehaviour } from "@/lib/analytics/behaviour-queries";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
@@ -70,6 +73,29 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
     maxDailyLoss: settings?.max_daily_loss ? Number(settings.max_daily_loss) : null,
     maxTradesPerDay: settings?.max_trades_per_day ?? null,
   });
+
+  // Buy-and-hold needs the contract multiplier, and it has to come from the
+  // products table like every other P&L figure in this app -- a hardcoded
+  // multiplier here would quietly disagree with the reconstruction engine.
+  const buyAndHoldInputs = deriveBuyAndHoldInputs(trades);
+  let buyAndHold = null;
+  if (buyAndHoldInputs.available) {
+    const { data: product } = await supabase
+      .from("products")
+      .select("contract_size")
+      .eq("product_id", buyAndHoldInputs.productId)
+      .maybeSingle();
+
+    if (product?.contract_size != null) {
+      buyAndHold = compareToBuyAndHold({
+        tradingNetPnl: buyAndHoldInputs.tradingNetPnl,
+        startPrice: buyAndHoldInputs.startPrice,
+        endPrice: buyAndHoldInputs.endPrice,
+        size: buyAndHoldInputs.size,
+        contractSize: product.contract_size,
+      });
+    }
+  }
 
   return (
     <>
@@ -132,6 +158,7 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
       <MistakeCostTable rows={mistakes} />
       <StreakSizingCard effect={streaks} />
       <CommissionDragCard drag={drag} />
+      <BuyAndHoldCard inputs={buyAndHoldInputs} comparison={buyAndHold} timezone={timezone} />
       <DailyLimitsCard
         days={limits}
         hasLimits={Boolean(settings?.max_daily_loss || settings?.max_trades_per_day)}

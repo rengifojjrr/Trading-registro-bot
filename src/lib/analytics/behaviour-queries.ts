@@ -16,6 +16,8 @@ import type { TradeForStats } from "./stats";
 export interface TradeWithBehaviour extends TradeForStats {
   maxSize: string;
   productId: string;
+  avgEntryPrice: string | null;
+  avgExitPrice: string | null;
   mistakes: MistakeCode[];
 }
 
@@ -32,7 +34,9 @@ export async function fetchTradesWithBehaviour(
   const restrictedIds = await resolveJournalFilters(filters);
   let query = supabase
     .from("trades")
-    .select("id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions, max_size, product_id");
+    .select(
+      "id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions, max_size, product_id, entry_wap, exit_wap",
+    );
   query = applyFilters(query, filters);
   query = applyIdRestriction(query, restrictedIds);
 
@@ -68,6 +72,8 @@ export async function fetchTradesWithBehaviour(
     totalCommissions: t.total_commissions ?? "0",
     maxSize: t.max_size,
     productId: t.product_id,
+    avgEntryPrice: t.entry_wap,
+    avgExitPrice: t.exit_wap,
     mistakes: byTrade.get(t.id) ?? [],
   }));
 }

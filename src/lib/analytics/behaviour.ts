@@ -293,6 +293,82 @@ export interface BuyAndHoldComparison {
  * Uncomfortable on purpose. Activity feels productive, and this is the only
  * figure in the app that asks whether it actually was.
  */
+/** A trade reduced to what the buy-and-hold comparison needs. */
+export interface TradeForBuyAndHold {
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  closedAt: string | null;
+  netPnl: string | null;
+  avgEntryPrice: string | null;
+  avgExitPrice: string | null;
+  maxSize: string;
+  productId: string;
+}
+
+export type BuyAndHoldInputs =
+  | { available: true; startPrice: string; endPrice: string; size: string; tradingNetPnl: string; productId: string; from: string; to: string }
+  | { available: false; reason: string };
+
+/**
+ * Turns a filtered period of trades into the four numbers the comparison
+ * needs, or an explicit reason why the comparison cannot be made.
+ *
+ * The period is defined by the trader's own activity rather than a calendar
+ * range: buy at the price of the first entry, sell at the price of the last
+ * exit. That is the honest counterfactual -- it uses the same instrument,
+ * the same window and the same capital the trader actually committed, so
+ * the only difference left is the activity itself.
+ *
+ * Returns unavailable rather than a number whenever the comparison would be
+ * misleading: a single trade has no period to speak of, and a mix of
+ * instruments has no single price series to hold.
+ */
+export function deriveBuyAndHoldInputs(trades: TradeForBuyAndHold[]): BuyAndHoldInputs {
+  const closed = trades
+    .filter((t) => t.status === "CLOSED" && t.netPnl !== null)
+    .sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+
+  if (closed.length < 2) {
+    return { available: false, reason: "Hacen falta al menos dos operaciones cerradas para definir un período." };
+  }
+
+  const products = new Set(closed.map((t) => t.productId));
+  if (products.size > 1) {
+    return {
+      available: false,
+      reason: "El período mezcla varios instrumentos, así que no hay un solo precio que se pueda mantener. Filtra por producto.",
+    };
+  }
+
+  const first = closed[0];
+  // The last trade to *close*, not the last to open -- the hold has to end
+  // when the activity ended.
+  const last = [...closed].sort((a, b) => (a.closedAt ?? "").localeCompare(b.closedAt ?? "")).at(-1)!;
+
+  if (first.avgEntryPrice === null || last.avgExitPrice === null) {
+    return { available: false, reason: "Falta el precio de entrada o de salida en las operaciones del período." };
+  }
+
+  const size = closed
+    .reduce((acc, t) => acc.plus(t.maxSize), new Decimal(0))
+    .dividedBy(closed.length);
+
+  if (size.isZero()) {
+    return { available: false, reason: "El tamaño medio de la posición es cero." };
+  }
+
+  return {
+    available: true,
+    startPrice: first.avgEntryPrice,
+    endPrice: last.avgExitPrice,
+    size: size.toString(),
+    tradingNetPnl: closed.reduce((acc, t) => acc.plus(t.netPnl ?? 0), new Decimal(0)).toString(),
+    productId: first.productId,
+    from: first.openedAt,
+    to: last.closedAt!,
+  };
+}
+
 export function compareToBuyAndHold(params: {
   tradingNetPnl: string | number;
   /** Price at the start of the compared period. */

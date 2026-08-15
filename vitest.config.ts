@@ -19,6 +19,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // See test-stubs/server-only.ts -- the real package's throw guards a
+      // boundary that Next's bundler enforces at build time and vitest
+      // cannot reproduce.
+      "server-only": fileURLToPath(new URL("./test-stubs/server-only.ts", import.meta.url)),
     },
   },
 });

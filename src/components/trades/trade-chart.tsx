@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Camera,
   Eye,
   EyeOff,
   Maximize2,
@@ -40,6 +41,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { coversWholeTrade, GRANULARITY_LABELS, GRANULARITY_ORDER } from "@/lib/analytics/chart-window";
 import { FIB_LEVELS, type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
+import { uploadTradeScreenshot } from "@/app/(dashboard)/trades/[tradeId]/actions";
 import { formatMoney } from "@/lib/format";
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { cn } from "@/lib/utils";
@@ -254,6 +256,66 @@ export function TradeChart({
 
   function resetView() {
     chartRef.current?.timeScale().fitContent();
+  }
+
+  const [capturing, setCapturing] = useState(false);
+
+  /**
+   * Saves the chart exactly as it looks right now into the trade's
+   * screenshots.
+   *
+   * Capturing on the client rather than rendering the chart server-side:
+   * the interesting image is the one with the user's own drawings,
+   * timeframe and zoom, and that state only exists in this browser. A
+   * server-side render would have to reproduce all of it and would still
+   * miss what the user was actually looking at.
+   *
+   * takeScreenshot() gives back the composed candles, but the markup
+   * overlay is a separate canvas stacked on top, so the two are flattened
+   * here -- otherwise the saved image would be missing precisely the
+   * annotations that made it worth saving.
+   */
+  async function captureChart() {
+    const chart = chartRef.current;
+    if (!chart || capturing) return;
+
+    setCapturing(true);
+    try {
+      const base = chart.takeScreenshot();
+      const flat = document.createElement("canvas");
+      flat.width = base.width;
+      flat.height = base.height;
+      const ctx = flat.getContext("2d");
+      if (!ctx) throw new Error("sin contexto 2d");
+      ctx.drawImage(base, 0, 0);
+
+      const overlay = overlayCanvasRef.current;
+      if (overlay && showDrawings) {
+        ctx.drawImage(overlay, 0, 0, flat.width, flat.height);
+      }
+
+      const blob = await new Promise<Blob | null>((resolve) => flat.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("sin imagen");
+
+      const formData = new FormData();
+      formData.set("tradeId", tradeId);
+      formData.set("file", new File([blob], "grafico.png", { type: "image/png" }));
+      formData.set("caption", `Gráfico ${GRANULARITY_LABELS[granularity]}`);
+      // An open position's chart is still a "before" view -- the outcome
+      // hasn't happened yet. A closed one is "after".
+      formData.set("phase", isOpen ? "BEFORE" : "AFTER");
+
+      const result = await uploadTradeScreenshot({ error: null, success: false }, formData);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Gráfico guardado en las capturas de la operación.");
+      }
+    } catch {
+      toast.error("No se pudo guardar la imagen del gráfico.");
+    } finally {
+      setCapturing(false);
+    }
   }
 
   // Bumped whenever the theme class on <html> changes, so the chart is
@@ -1038,6 +1100,13 @@ export function TradeChart({
               disabled={drawings.length === 0}
             />
             <ToggleButton label="Restablecer vista" Icon={Maximize2} pressed={false} onClick={resetView} />
+            <ToggleButton
+              label="Guardar imagen del gráfico"
+              Icon={Camera}
+              pressed={false}
+              onClick={() => void captureChart()}
+              disabled={capturing}
+            />
           </div>
         </div>
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}

@@ -7,7 +7,9 @@ import {
   computeExpectancy,
   computeMistakeCost,
   computeStreakSizing,
+  deriveBuyAndHoldInputs,
 } from "./behaviour";
+import type { TradeForBuyAndHold } from "./behaviour";
 import type { TradeForStats } from "./stats";
 
 function trade(o: Partial<TradeForStats> & { id: string }): TradeForStats {
@@ -269,5 +271,77 @@ describe("computeDailyLimitBreaches", () => {
       {},
     );
     expect(result[0].date).toBe("2026-03-02");
+  });
+});
+
+describe("deriveBuyAndHoldInputs", () => {
+  function trade(over: Partial<TradeForBuyAndHold> = {}): TradeForBuyAndHold {
+    return {
+      status: "CLOSED",
+      openedAt: "2026-01-01T00:00:00Z",
+      closedAt: "2026-01-02T00:00:00Z",
+      netPnl: "100",
+      avgEntryPrice: "60000",
+      avgExitPrice: "61000",
+      maxSize: "2",
+      productId: "BIT-31JAN26-CDE",
+      ...over,
+    };
+  }
+
+  it("necesita al menos dos operaciones cerradas", () => {
+    const result = deriveBuyAndHoldInputs([trade()]);
+    expect(result.available).toBe(false);
+  });
+
+  it("no compara cuando el período mezcla instrumentos", () => {
+    const result = deriveBuyAndHoldInputs([
+      trade(),
+      trade({ productId: "ETH-31JAN26-CDE", openedAt: "2026-01-03T00:00:00Z" }),
+    ]);
+    expect(result.available).toBe(false);
+    if (!result.available) expect(result.reason).toContain("instrumentos");
+  });
+
+  it("ignora las operaciones abiertas", () => {
+    const result = deriveBuyAndHoldInputs([
+      trade(),
+      trade({ openedAt: "2026-01-03T00:00:00Z", closedAt: "2026-01-04T00:00:00Z" }),
+      trade({ status: "OPEN", closedAt: null, netPnl: null, openedAt: "2026-01-05T00:00:00Z" }),
+    ]);
+    expect(result.available).toBe(true);
+    // Sólo las dos cerradas suman.
+    if (result.available) expect(result.tradingNetPnl).toBe("200");
+  });
+
+  it("toma la entrada de la primera y la salida de la que cierra al final", () => {
+    const result = deriveBuyAndHoldInputs([
+      trade({ openedAt: "2026-01-01T00:00:00Z", closedAt: "2026-01-10T00:00:00Z", avgEntryPrice: "50000", avgExitPrice: "52000" }),
+      trade({ openedAt: "2026-01-02T00:00:00Z", closedAt: "2026-01-03T00:00:00Z", avgEntryPrice: "51000", avgExitPrice: "51500" }),
+    ]);
+    expect(result.available).toBe(true);
+    if (result.available) {
+      expect(result.startPrice).toBe("50000");
+      // Cierra el 10, no el 3, aunque se abrió primero.
+      expect(result.endPrice).toBe("52000");
+      expect(result.to).toBe("2026-01-10T00:00:00Z");
+    }
+  });
+
+  it("promedia el tamaño de las posiciones cerradas", () => {
+    const result = deriveBuyAndHoldInputs([
+      trade({ maxSize: "2" }),
+      trade({ maxSize: "4", openedAt: "2026-01-03T00:00:00Z" }),
+    ]);
+    expect(result.available).toBe(true);
+    if (result.available) expect(result.size).toBe("3");
+  });
+
+  it("no compara sin precio de salida", () => {
+    const result = deriveBuyAndHoldInputs([
+      trade(),
+      trade({ openedAt: "2026-01-03T00:00:00Z", closedAt: "2026-01-04T00:00:00Z", avgExitPrice: null }),
+    ]);
+    expect(result.available).toBe(false);
   });
 });
