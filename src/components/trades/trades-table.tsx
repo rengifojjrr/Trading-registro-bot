@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Rows2, Rows3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
@@ -19,7 +19,13 @@ import {
   formatSignedMoney,
   pnlColorClass,
 } from "@/lib/format";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { cn } from "@/lib/utils";
+
+type Density = "comfortable" | "compact";
+function isDensity(value: string): value is Density {
+  return value === "comfortable" || value === "compact";
+}
 
 /**
  * Sorting, searching and paging all live in the URL and are executed by
@@ -59,6 +65,10 @@ export function TradesTable({
   const searchParams = useSearchParams();
   const [searchDraft, setSearchDraft] = useState(search);
   const [isExporting, setIsExporting] = useState(false);
+  const [density, setDensity] = usePersistedState<Density>("trades.density", "comfortable", isDensity);
+  // One place decides row padding, so the header and the body can never
+  // drift apart and misalign the columns.
+  const cellPadding = density === "compact" ? "px-2 py-1" : "px-3 py-2";
 
   const setParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -159,6 +169,22 @@ export function TradesTable({
           <Download className="size-4" aria-hidden />
           {isExporting ? "Exportando…" : "Exportar CSV"}
         </Button>
+        {/* Desktop only: the mobile view is a card list, where row padding
+            isn't what limits how much fits on screen. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="hidden md:inline-flex"
+          aria-pressed={density === "compact"}
+          onClick={() => setDensity(density === "compact" ? "comfortable" : "compact")}
+        >
+          {density === "compact" ? (
+            <Rows3 className="size-4" aria-hidden />
+          ) : (
+            <Rows2 className="size-4" aria-hidden />
+          )}
+          {density === "compact" ? "Vista cómoda" : "Vista compacta"}
+        </Button>
       </div>
 
       {/* Below md the ten-column table forced a 960px-wide horizontal drag
@@ -203,17 +229,18 @@ export function TradesTable({
         <table className="w-full min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              <SortableHeader label="Apertura" sortKey="opened_at" current={sortKey} dir={sortDir} onSort={toggleSort} />
-              <SortableHeader label="Producto" sortKey="product_id" current={sortKey} dir={sortDir} onSort={toggleSort} />
-              <th className="px-3 py-2 font-medium">Cuenta</th>
-              <th className="px-3 py-2 font-medium">Dirección</th>
-              <th className="px-3 py-2 font-medium">Estado</th>
+              <SortableHeader label="Apertura" sortKey="opened_at" current={sortKey} dir={sortDir} onSort={toggleSort} cellPadding={cellPadding} />
+              <SortableHeader label="Producto" sortKey="product_id" current={sortKey} dir={sortDir} onSort={toggleSort} cellPadding={cellPadding} />
+              <th className={cn(cellPadding, "font-medium")}>Cuenta</th>
+              <th className={cn(cellPadding, "font-medium")}>Dirección</th>
+              <th className={cn(cellPadding, "font-medium")}>Estado</th>
               <SortableHeader
                 label="Tamaño máx"
                 sortKey="max_size"
                 current={sortKey}
                 dir={sortDir}
                 onSort={toggleSort}
+                cellPadding={cellPadding}
                 align="right"
               />
               <SortableHeader
@@ -222,6 +249,7 @@ export function TradesTable({
                 current={sortKey}
                 dir={sortDir}
                 onSort={toggleSort}
+                cellPadding={cellPadding}
                 align="right"
               />
               <SortableHeader
@@ -230,6 +258,7 @@ export function TradesTable({
                 current={sortKey}
                 dir={sortDir}
                 onSort={toggleSort}
+                cellPadding={cellPadding}
                 align="right"
               />
               <SortableHeader
@@ -238,9 +267,10 @@ export function TradesTable({
                 current={sortKey}
                 dir={sortDir}
                 onSort={toggleSort}
+                cellPadding={cellPadding}
                 align="right"
               />
-              <th className="px-3 py-2 font-medium">Sesión</th>
+              <th className={cn(cellPadding, "font-medium")}>Sesión</th>
             </tr>
           </thead>
           <tbody>
@@ -253,29 +283,29 @@ export function TradesTable({
             ) : (
               rows.map((row) => (
                 <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
-                  <td className="px-3 py-2 tabular-nums">
+                  <td className={cn(cellPadding, "tabular-nums")}>
                     <Link href={`/trades/${row.id}`} className="hover:underline">
                       {formatDate(row.opened_at, timezone)}
                     </Link>
                   </td>
-                  <td className="px-3 py-2">{row.product_id}</td>
-                  <td className="px-3 py-2">{accountsById[row.account_id] ?? row.account_id}</td>
-                  <td className="px-3 py-2">
+                  <td className={cellPadding}>{row.product_id}</td>
+                  <td className={cellPadding}>{accountsById[row.account_id] ?? row.account_id}</td>
+                  <td className={cellPadding}>
                     <Badge variant="outline">{row.direction === "LONG" ? "Long" : "Short"}</Badge>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className={cellPadding}>
                     <Badge variant={row.status === "OPEN" ? "warning" : "outline"}>
                       {row.status === "OPEN" ? "Abierta" : "Cerrada"}
                     </Badge>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.max_size, 4)}</td>
-                  <td className={cn("px-3 py-2 text-right font-medium tabular-nums", pnlColorClass(row.net_pnl))}>
+                  <td className={cn(cellPadding, "text-right tabular-nums")}>{formatNumber(row.max_size, 4)}</td>
+                  <td className={cn(cellPadding, "text-right font-medium tabular-nums", pnlColorClass(row.net_pnl))}>
                     {formatSignedMoney(row.net_pnl)}
                   </td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums", pnlColorClass(row.return_pct))}>
+                  <td className={cn(cellPadding, "text-right tabular-nums", pnlColorClass(row.return_pct))}>
                     {formatPercent(row.return_pct)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatDuration(row.duration_seconds)}</td>
+                  <td className={cn(cellPadding, "text-right tabular-nums")}>{formatDuration(row.duration_seconds)}</td>
                   <td className="px-3 py-2 text-muted-foreground">{formatSessionLabel(row.session_effective)}</td>
                 </tr>
               ))
@@ -321,6 +351,7 @@ function SortableHeader({
   dir,
   onSort,
   align = "left",
+  cellPadding,
 }: {
   label: string;
   sortKey: TradeSortKey;
@@ -328,11 +359,13 @@ function SortableHeader({
   dir: "asc" | "desc";
   onSort: (key: TradeSortKey) => void;
   align?: "left" | "right";
+  /** Passed down so a sortable header keeps the same row height as every other cell. */
+  cellPadding: string;
 }) {
   const isActive = current === sortKey;
   const Icon = !isActive ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <th className={cn("px-3 py-2 font-medium", align === "right" && "text-right")}>
+    <th className={cn(cellPadding, "font-medium", align === "right" && "text-right")}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
