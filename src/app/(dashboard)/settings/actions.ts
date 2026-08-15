@@ -138,3 +138,30 @@ export async function setNotionFieldMappingEnabled(internalField: string, enable
 
   revalidatePath("/settings");
 }
+
+/**
+ * Records that the Coinbase key was rotated, after the connection test has
+ * already proved the new one works.
+ *
+ * Stores a date and nothing else -- the key itself stays in the server's
+ * environment variables, where every secret in this project lives. The
+ * point is the reminder: a read-only key is low-risk but not no-risk, and
+ * without a date there is no way to know whether the one in use is three
+ * weeks or three years old.
+ */
+export async function markCoinbaseKeyRotated(): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  await supabase
+    .from("app_settings")
+    .update({ coinbase_key_rotated_at: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  await recordAudit({
+    userId: user.id,
+    action: "COINBASE_KEY_ROTATED",
+    metadata: { note: "El usuario declaró haber rotado la clave. La clave nunca se almacena." },
+  });
+  revalidatePath("/settings");
+}

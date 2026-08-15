@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = [
   "BACKUP_EXPORTED",
   "VERIFIED_FIGURES_CHANGED",
   "RISK_LIMITS_UPDATED",
+  "COINBASE_KEY_ROTATED",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -47,6 +48,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   VERIFICATION_CLEARED: "Revisión borrada",
   AUTO_SYNC_TOGGLED: "Sincronización automática cambiada",
   SETTINGS_UPDATED: "Configuración guardada",
+  COINBASE_KEY_ROTATED: "Clave de Coinbase rotada",
   STRATEGY_CREATED: "Estrategia creada",
   STRATEGY_UPDATED: "Estrategia editada",
   STRATEGY_DELETED: "Estrategia eliminada",

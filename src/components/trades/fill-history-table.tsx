@@ -28,15 +28,20 @@ export interface FillHistoryRow {
  */
 export function FillHistoryTable({
   fills,
+  totalFills,
   timezone,
   tradeId,
   overrides,
 }: {
   fills: FillHistoryRow[];
+  /** Every fill allocated to the trade, which can exceed the number rendered. */
+  totalFills: number;
   timezone: string;
   tradeId: string;
   overrides: ActiveOverride[];
 }) {
+  const hidden = Math.max(totalFills - fills.length, 0);
+
   return (
     <Card>
       <CardContent className="pt-5">
@@ -45,7 +50,13 @@ export function FillHistoryTable({
             until asked for. */}
         <CollapsibleSection
           title="Historial de fills"
-          subtitle={fills.length === 1 ? "1 fill" : `${fills.length} fills`}
+          subtitle={
+            hidden > 0
+              ? `${totalFills} fills (mostrando ${fills.length})`
+              : totalFills === 1
+                ? "1 fill"
+                : `${totalFills} fills`
+          }
         >
           {fills.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin fills asociados.</p>
@@ -99,6 +110,15 @@ export function FillHistoryTable({
             </table>
             </div>
           )}
+
+          {hidden > 0 ? (
+            // Never silently truncated: an audit trail that quietly drops
+            // rows is worse than one that is slow.
+            <p className="text-xs text-muted-foreground">
+              Se muestran los primeros {fills.length} de {totalFills} fills. Descarga la exportación CSV de
+              la operación para verlos todos -- ahí no hay límite.
+            </p>
+          ) : null}
 
           <FillCorrections
             tradeId={tradeId}

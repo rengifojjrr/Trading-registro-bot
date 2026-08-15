@@ -77,6 +77,7 @@ export interface Database {
           target_margin_ratio: number;
           trading_fee_pct: number;
           min_fee_per_contract: number;
+          coinbase_key_rotated_at: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -99,6 +100,7 @@ export interface Database {
           target_margin_ratio?: number;
           trading_fee_pct?: number;
           min_fee_per_contract?: number;
+          coinbase_key_rotated_at?: string | null;
         }
       >;
 

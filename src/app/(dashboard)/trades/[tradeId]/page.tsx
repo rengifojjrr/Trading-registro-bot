@@ -12,6 +12,7 @@ import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
+import { MAX_FILLS_RENDERED } from "@/lib/fills";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
@@ -53,7 +54,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
   const [
     { data: account },
-    { data: tradeFills },
+    { data: tradeFills, count: totalFills },
     { data: journalEntry },
     { data: strategies },
     { data: tradeTags },
@@ -66,9 +67,16 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     supabase.from("accounts").select("name").eq("id", trade.account_id).maybeSingle(),
     supabase
       .from("trade_fills")
-      .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no")
+      .select("id, raw_fill_id, role, allocated_size, allocated_commission, sequence_no", {
+        count: "exact",
+      })
       .eq("trade_id", trade.id)
-      .order("sequence_no", { ascending: true }),
+      .order("sequence_no", { ascending: true })
+      // A scalping session can allocate thousands of fills to one trade,
+      // and this section is folded by default -- shipping all of them into
+      // the payload would cost the whole page for something nobody opened.
+      // The full set is always available through the CSV export.
+      .range(0, MAX_FILLS_RENDERED - 1),
     supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
     supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
@@ -253,6 +261,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
       <FillHistoryTable
         fills={fillRows}
+        totalFills={totalFills ?? fillRows.length}
         timezone={timezone}
         tradeId={trade.id}
         overrides={activeOverrides}
