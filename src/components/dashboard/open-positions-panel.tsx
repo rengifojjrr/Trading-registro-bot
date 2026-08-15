@@ -4,6 +4,7 @@ import { Decimal } from "decimal.js";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
+import { LiveStatus } from "@/components/shared/live-status";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { OpenPositionRow } from "@/lib/analytics/queries";
@@ -44,11 +45,14 @@ export function OpenPositionsPanel({ positions }: { positions: OpenPositionRow[]
 }
 
 function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
-  const { price, status } = useCurrentPrice(position.product_id);
+  const { price, status, ageMs } = useCurrentPrice(position.product_id);
   const openQty = new Decimal(position.total_entry_qty).minus(position.total_exit_qty).toString();
 
+  // A stale price still produces a meaningful P&L -- it's just old, and
+  // the LiveStatus below says so. Hiding the figure entirely would be less
+  // informative than showing it with its age attached.
   const pnl =
-    status === "ok" && price !== null
+    (status === "ok" || status === "stale") && price !== null
       ? calculateUnrealizedPnl({
           direction: position.direction,
           entryWap: position.entry_wap!,
@@ -68,6 +72,7 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
         <Badge variant="outline">{position.direction === "LONG" ? "Long" : "Short"}</Badge>
         <span className="font-medium">{position.product_id}</span>
         <span className="text-muted-foreground">@ {formatMoney(position.entry_wap)}</span>
+        <LiveStatus status={status} ageMs={ageMs} />
       </div>
 
       {status === "unavailable" ? (

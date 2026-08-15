@@ -992,6 +992,8 @@ export interface Database {
           is_read: boolean;
           resolved_at: string | null;
           created_at: string;
+          emailed: boolean;
+          emailed_at: string | null;
         },
         {
           id?: string;
@@ -1013,6 +1015,8 @@ export interface Database {
           last_seen_at?: string;
           is_read?: boolean;
           resolved_at?: string | null;
+          emailed?: boolean;
+          emailed_at?: string | null;
         }
         // No restricted Update override here: the service-role client
         // (lib/notifications/create.ts) legitimately updates
@@ -1048,6 +1052,8 @@ export interface Database {
           duplicate_count?: number;
           error_count?: number;
           status?: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+          emailed?: boolean;
+          emailed_at?: string | null;
         }
       >;
 

@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { formatMoney, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { calculateUnrealizedPnl } from "@/lib/pnl/unrealized";
+import { LiveStatus } from "@/components/shared/live-status";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,7 +31,7 @@ export function LiveUnrealizedPnl({
   contractSize: string;
   entryCommissions: string;
 }) {
-  const { price, status } = useCurrentPrice(productId);
+  const { price, status, ageMs } = useCurrentPrice(productId);
 
   if (status === "unavailable") return null;
 
@@ -57,7 +58,10 @@ export function LiveUnrealizedPnl({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Posición abierta -- en vivo</CardTitle>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          Posición abierta -- en vivo
+          <LiveStatus status={status} ageMs={ageMs} />
+        </CardTitle>
         <CardDescription>
           Se actualiza cada 5s con el precio actual de Coinbase. P&amp;L bruto (solo movimiento de precio) --
           igual que en Coinbase, las comisiones se muestran aparte, no incluye comisiones de salida (todavía no

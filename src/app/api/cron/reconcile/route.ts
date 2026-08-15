@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { persistSnapshots } from "@/lib/analytics/persist-snapshots";
 import { raiseNotification } from "@/lib/notifications/create";
+import { sendPendingAlerts } from "@/lib/notifications/email";
 import { runNightlyReconciliation } from "@/lib/sync/reconciliation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCronRequest } from "@/lib/sync/verify-cron-request";
@@ -76,5 +77,14 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ranFor: results.length, results });
+  // One digest per user per night, after everything else has run -- so a
+  // problem discovered by the reconciliation is included in the same
+  // message rather than arriving separately tomorrow. No-op unless email
+  // is configured.
+  const alerts = [];
+  for (const userId of new Set(userIds)) {
+    alerts.push({ userId, ...(await sendPendingAlerts(userId)) });
+  }
+
+  return NextResponse.json({ ranFor: results.length, results, alerts });
 }

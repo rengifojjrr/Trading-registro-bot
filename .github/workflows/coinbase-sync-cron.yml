@@ -8,6 +8,9 @@ name: Coinbase + Notion sync cron
 on:
   schedule:
     - cron: "*/5 * * * *"
+    # Second schedule purely so the nightly backup step has a firing to
+    # match on -- see its `if:` below.
+    - cron: "0 5 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -60,6 +63,28 @@ jobs:
           fi
           if [ "$status" -ge 300 ]; then
             echo "::error::/api/cron/sync respondió HTTP $status"
+            exit 1
+          fi
+
+      # Nightly, not every five minutes: a backup is only useful once a
+      # day, and writing one every cycle would be 288 copies of the same
+      # data. The route itself is idempotent per day (upsert on the date),
+      # so an extra call is harmless if the schedule ever slips.
+      - name: Respaldo automático (/api/cron/backup)
+        if: always() && steps.config.outputs.ready == 'true' && github.event.schedule == '0 5 * * *'
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set +e
+          status=$(curl -sS -o /tmp/backup.log -w "%{http_code}" --max-time 120 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL%/}/api/cron/backup")
+          curl_exit=$?
+          set -e
+          cat /tmp/backup.log || true
+          if [ "$curl_exit" -ne 0 ] || [ "$status" -ge 300 ]; then
+            echo "::error::El respaldo automático falló (curl $curl_exit, HTTP $status)."
             exit 1
           fi
 

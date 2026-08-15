@@ -36,6 +36,12 @@ jobs:
           NEXT_PUBLIC_APP_URL: http://localhost:3000
           CRON_SECRET: ci-placeholder-secret-not-real-at-least-16-chars
 
+      # A bundle that grows by a third overnight is almost always an import
+      # that pulled a heavy dependency into a client component by accident.
+      # Failing the build is the only moment anyone would notice.
+      - name: Presupuesto de tamaño del cliente
+        run: node scripts/check-bundle-budget.mjs
+
   # End-to-end tests need a real Supabase project: nearly every page goes
   # through auth middleware and RLS, so a run against a placeholder project
   # would only prove that a broken database renders an error page. Rather

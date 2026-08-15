@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { GRANULARITY_LABELS, windowForGranularity } from "@/lib/analytics/chart-window";
 import { requireUser } from "@/lib/auth/require-user";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { serverEnv } from "@/lib/env";
 import { mapCoinbaseCandles } from "@/lib/coinbase/fetch-trade-candles";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
@@ -26,6 +27,16 @@ const VALID_GRANULARITIES = new Set(Object.keys(GRANULARITY_LABELS));
  */
 export async function GET(request: Request) {
   const user = await requireUser();
+
+  // Bounds what one account can pull through this route no matter how many
+  // tabs are polling. See lib/rate-limit.ts.
+  const limit = checkRateLimit(`trade-candles:${user.id}`, { capacity: 20, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Demasiadas peticiones" },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
+  }
 
   const url = new URL(request.url);
   const tradeId = url.searchParams.get("tradeId");

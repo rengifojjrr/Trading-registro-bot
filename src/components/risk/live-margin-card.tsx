@@ -11,6 +11,7 @@ import { formatMoney, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { calculateMarginRatioAtPrice, calculateRiskPriceForPosition, type RiskConstants } from "@/lib/risk/margin";
 import { checkInitialMarginRequirement } from "@/lib/risk/product-margin";
+import { LiveStatus } from "@/components/shared/live-status";
 import { cn } from "@/lib/utils";
 
 import type { LivePositionData } from "./live-positions-section";
@@ -61,7 +62,7 @@ export function LiveMarginCard({
   capital: string;
   reserveCash: string;
 }) {
-  const { price, status } = useCurrentPrice(position.productId);
+  const { price, status, ageMs } = useCurrentPrice(position.productId);
   const hasCapital = new Decimal(capital || 0).gt(0);
 
   const livePositionInput = {
@@ -111,9 +112,12 @@ export function LiveMarginCard({
           {position.displayName ?? position.productId}
           <Badge variant="outline">{position.direction === "LONG" ? "Long" : "Short"}</Badge>
         </CardTitle>
-        <span className="text-xs text-muted-foreground">
-          {position.openQty} contratos @ {formatMoney(position.entryWap)}
-        </span>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-xs text-muted-foreground">
+            {position.openQty} contratos @ {formatMoney(position.entryWap)}
+          </span>
+          <LiveStatus status={status} ageMs={ageMs} />
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">

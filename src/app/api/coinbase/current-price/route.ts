@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { serverEnv } from "@/lib/env";
 import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
 
@@ -12,7 +13,15 @@ import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
  * widget hides itself.
  */
 export async function GET(request: Request) {
-  await requireUser();
+  const user = await requireUser();
+
+  const limit = checkRateLimit(`current-price:${user.id}`, { capacity: 30, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Demasiadas peticiones" },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
+  }
 
   const productId = new URL(request.url).searchParams.get("productId");
   const env = serverEnv();
