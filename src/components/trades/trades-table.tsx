@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Rows2, Rows3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, GitCompare, Rows2, Rows3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
@@ -62,6 +62,18 @@ export function TradesTable({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+
+  // Comparison is a two-trade operation, so the selection is capped at two:
+  // picking a third replaces the older of the pair rather than silently
+  // doing nothing, which is what a user reaching for a third one wants.
+  const [selected, setSelected] = useState<string[]>([]);
+  function toggleSelected(id: string) {
+    setSelected((current) =>
+      current.includes(id)
+        ? current.filter((x) => x !== id)
+        : [...current, id].slice(-2),
+    );
+  }
   const searchParams = useSearchParams();
   const [searchDraft, setSearchDraft] = useState(search);
   const [isExporting, setIsExporting] = useState(false);
@@ -187,6 +199,27 @@ export function TradesTable({
         </Button>
       </div>
 
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {selected.length === 1
+              ? "1 operación seleccionada -- elige otra para comparar."
+              : "2 operaciones seleccionadas."}
+          </span>
+          {selected.length === 2 ? (
+            <Button asChild size="sm">
+              <Link href={`/trades/compare?a=${selected[0]}&b=${selected[1]}`}>
+                <GitCompare className="size-4" aria-hidden />
+                Comparar
+              </Link>
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+            Quitar selección
+          </Button>
+        </div>
+      ) : null}
+
       {/* Below md the ten-column table forced a 960px-wide horizontal drag
           on a ~390px screen. Same rows, same order, rendered as cards --
           the table itself is simply not shown at that width. */}
@@ -229,6 +262,9 @@ export function TradesTable({
         <table className="w-full min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className={cn(cellPadding, "font-medium")}>
+                <span className="sr-only">Comparar</span>
+              </th>
               <SortableHeader label="Apertura" sortKey="opened_at" current={sortKey} dir={sortDir} onSort={toggleSort} cellPadding={cellPadding} />
               <SortableHeader label="Producto" sortKey="product_id" current={sortKey} dir={sortDir} onSort={toggleSort} cellPadding={cellPadding} />
               <th className={cn(cellPadding, "font-medium")}>Cuenta</th>
@@ -276,13 +312,22 @@ export function TradesTable({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">
+                <td colSpan={11} className="px-3 py-10 text-center text-muted-foreground">
                   Ninguna operación coincide.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
                 <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-accent/40">
+                  <td className={cellPadding}>
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={selected.includes(row.id)}
+                      onChange={() => toggleSelected(row.id)}
+                      aria-label={`Seleccionar la operación del ${formatDate(row.opened_at, timezone)} para comparar`}
+                    />
+                  </td>
                   <td className={cn(cellPadding, "tabular-nums")}>
                     <Link href={`/trades/${row.id}`} className="hover:underline">
                       {formatDate(row.opened_at, timezone)}
