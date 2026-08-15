@@ -9,6 +9,8 @@ import {
   Minus,
   MousePointer2,
   MoveVertical,
+  Pause,
+  Play,
   Ruler,
   Scaling,
   Square,
@@ -75,6 +77,8 @@ export interface TradeChartDrawing {
 const CHART_HEIGHT = 360;
 /** How often an open position's candles are re-fetched. One request a minute is nothing against Coinbase's limits, and it's the granularity at which new candles actually appear. */
 const CANDLE_REFRESH_MS = 60_000;
+/** One candle per second: fast enough not to be boring, slow enough to read. */
+const REPLAY_STEP_MS = 1000;
 const DRAWING_COLOR = "#a78bfa"; // matches chart_drawings.color's DB default
 const MEASURE_COLOR = "#38bdf8";
 
@@ -261,6 +265,26 @@ export function TradeChart({
   const [capturing, setCapturing] = useState(false);
 
   /**
+   * Replay: how many candles are revealed. null means replay is off and the
+   * whole trade is visible, which is the normal state.
+   *
+   * The point of a replay is to practise reading the chart without already
+   * knowing how it ended, so while it runs the exit marker and the exit
+   * price line are hidden -- leaving them would hand over the answer before
+   * the question. `replaying` (a boolean) rather than the index goes into
+   * the chart-creation dependencies, so the chart is rebuilt when replay
+   * starts and stops, not once per step.
+   */
+  const [replayIndex, setReplayIndex] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const replaying = replayIndex !== null;
+
+  const visibleCandles = useMemo(
+    () => (replayIndex === null ? candles : candles.slice(0, replayIndex + 1)),
+    [candles, replayIndex],
+  );
+
+  /**
    * Saves the chart exactly as it looks right now into the trade's
    * screenshots.
    *
@@ -318,6 +342,28 @@ export function TradeChart({
     }
   }
 
+  /**
+   * Advances the replay while it is playing.
+   *
+   * Stops on its own at the last candle rather than looping: a replay that
+   * silently restarts makes it impossible to tell "the end" from "the
+   * beginning again".
+   */
+  useEffect(() => {
+    if (!playing || replayIndex === null) return;
+    const id = setInterval(() => {
+      setReplayIndex((current) => {
+        if (current === null) return current;
+        if (current >= candles.length - 1) {
+          setPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, REPLAY_STEP_MS);
+    return () => clearInterval(id);
+  }, [playing, replayIndex, candles.length]);
+
   // Bumped whenever the theme class on <html> changes, so the chart is
   // rebuilt with the new palette. A canvas can't inherit CSS the way the
   // rest of the UI does, so switching to light mode would otherwise leave a
@@ -338,7 +384,7 @@ export function TradeChart({
   // fitContent() belongs on a new chart or a new timeframe, never on a
   // routine refresh -- doing it every minute would yank the view back while
   // the user is zoomed in.
-  const fittedGranularityRef = useRef<CoinbaseCandleGranularity | null>(null);
+  const fittedGranularityRef = useRef<string | null>(null);
 
   /**
    * Fetches the candle set for a granularity. Shared by the timeframe
@@ -538,7 +584,7 @@ export function TradeChart({
         text: `Entrada ${formatMoney(entry.price)}`,
       },
     ];
-    if (exit) {
+    if (exit && !replaying) {
       markers.push({
         time: exit.time as UTCTimestamp,
         position: isLong ? "aboveBar" : "belowBar",
@@ -646,6 +692,7 @@ export function TradeChart({
     showVolume,
     logScale,
     themeVersion,
+    replaying,
   ]);
 
   // Candle data, pushed into the existing series. Separate from creation
@@ -653,10 +700,10 @@ export function TradeChart({
   // that's what keeps pan/zoom and drawings intact while a position is open.
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series || candles.length === 0) return;
+    if (!series || visibleCandles.length === 0) return;
 
     series.setData(
-      candles.map((c) => ({
+      visibleCandles.map((c) => ({
         time: c.time as UTCTimestamp,
         open: c.open,
         high: c.high,
@@ -666,7 +713,7 @@ export function TradeChart({
     );
 
     volumeSeriesRef.current?.setData(
-      candles.map((c) => ({
+      visibleCandles.map((c) => ({
         time: c.time as UTCTimestamp,
         value: c.volume,
         color: withAlpha(c.close >= c.open ? THEME.up : THEME.down, 0.5),
@@ -675,14 +722,18 @@ export function TradeChart({
 
     // Frame the data on a new chart or a new timeframe only. A background
     // refresh must leave the view exactly where the user put it.
-    if (fittedGranularityRef.current !== granularity) {
+    // Keyed on replay too: entering or leaving a replay changes how much
+    // of the trade is on screen, so the view has to be reframed. A routine
+    // refresh still must not, which is what the key comparison protects.
+    const fitKey = `${granularity}:${replaying}`;
+    if (fittedGranularityRef.current !== fitKey) {
       chartRef.current?.timeScale().fitContent();
-      fittedGranularityRef.current = granularity;
+      fittedGranularityRef.current = fitKey;
     }
     // themeVersion: the volume bars carry their colour per-point, so they
     // have to be rewritten when the palette changes -- unlike the candle
     // series, whose colours live in its options.
-  }, [candles, granularity, showVolume, logScale, themeVersion]);
+  }, [visibleCandles, granularity, showVolume, logScale, themeVersion, replaying]);
 
   /**
    * Keeps an open position's chart current.
@@ -1101,6 +1152,22 @@ export function TradeChart({
             />
             <ToggleButton label="Restablecer vista" Icon={Maximize2} pressed={false} onClick={resetView} />
             <ToggleButton
+              label="Reproducir la operación vela a vela"
+              Icon={Play}
+              pressed={replaying}
+              onClick={() => {
+                if (replaying) {
+                  setPlaying(false);
+                  setReplayIndex(null);
+                } else {
+                  // Starts a third of the way in, so there is some context to
+                  // read before the first new candle appears.
+                  setReplayIndex(Math.max(Math.floor(candles.length / 3), 0));
+                }
+              }}
+              disabled={candles.length < 2}
+            />
+            <ToggleButton
               label="Guardar imagen del gráfico"
               Icon={Camera}
               pressed={false}
@@ -1111,6 +1178,48 @@ export function TradeChart({
         </div>
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
       </div>
+
+      {replaying ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setPlaying((v) => !v)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 font-medium text-primary transition-colors hover:bg-accent"
+          >
+            {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
+            {playing ? "Pausa" : "Reproducir"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPlaying(false);
+              setReplayIndex((i) => (i === null ? null : Math.min(i + 1, candles.length - 1)));
+            }}
+            disabled={replayIndex >= candles.length - 1}
+            className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+          >
+            Vela siguiente
+          </button>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {replayIndex + 1} / {candles.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPlaying(false);
+              setReplayIndex(null);
+            }}
+            className="ml-auto rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Salir de la reproducción
+          </button>
+          <p className="w-full text-xs text-muted-foreground">
+            La salida está oculta mientras dura la reproducción: se trata de leer el gráfico sin saber ya
+            cómo terminó.
+          </p>
+        </div>
+      ) : null}
+
       {activeTool !== "CURSOR" ? (
         <p className="text-xs text-primary">
           {activeTool === "HLINE"

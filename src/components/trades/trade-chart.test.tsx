@@ -68,7 +68,7 @@ function candle(offsetSeconds: number) {
   };
 }
 
-function renderChart(overrides: { isOpen?: boolean } = {}) {
+function renderChart(overrides: { isOpen?: boolean; exit?: { time: number; price: number } | null } = {}) {
   return render(
     <TradeChart
       tradeId="11111111-1111-1111-1111-111111111111"
@@ -80,7 +80,7 @@ function renderChart(overrides: { isOpen?: boolean } = {}) {
       initialGranularity="ONE_HOUR"
       initialDrawings={[]}
       entry={{ time: OPENED, price: 68000 }}
-      exit={null}
+      exit={overrides.exit ?? null}
       isOpen={overrides.isOpen ?? true}
     />,
   );
@@ -239,5 +239,44 @@ describe("TradeChart tools", () => {
 
     await user.click(screen.getByRole("button", { name: "Medir movimiento (no se guarda)" }));
     expect(screen.getByText(/inicio del movimiento que quieres medir/)).toBeTruthy();
+  });
+});
+
+describe("TradeChart replay", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reveals only part of the trade and hides the outcome", async () => {
+    const user = userEvent.setup();
+    const { createSeriesMarkers } = await import("lightweight-charts");
+    renderChart({ isOpen: false, exit: { time: CLOSED, price: 69000 } });
+
+    // Before replay, the exit marker is there.
+    const markersBefore = vi.mocked(createSeriesMarkers).mock.calls.at(-1)?.[1] ?? [];
+    expect(markersBefore).toHaveLength(2);
+
+    await user.click(screen.getByLabelText("Reproducir la operación vela a vela"));
+
+    // The whole point: with the outcome on screen there is nothing to
+    // practise, so the exit marker goes away while the replay runs.
+    const markersDuring = vi.mocked(createSeriesMarkers).mock.calls.at(-1)?.[1] ?? [];
+    expect(markersDuring).toHaveLength(1);
+
+    // And only a prefix of the candles is fed to the series.
+    const lastData = series.setData.mock.calls.at(-1)?.[0] ?? [];
+    expect(lastData.length).toBeLessThan(3);
+    expect(screen.getByText("Salir de la reproducción")).toBeInTheDocument();
+  });
+
+  it("steps forward one candle at a time", async () => {
+    const user = userEvent.setup();
+    renderChart({ isOpen: false, exit: { time: CLOSED, price: 69000 } });
+
+    await user.click(screen.getByLabelText("Reproducir la operación vela a vela"));
+    const before = series.setData.mock.calls.at(-1)?.[0]?.length ?? 0;
+
+    await user.click(screen.getByText("Vela siguiente"));
+    const after = series.setData.mock.calls.at(-1)?.[0]?.length ?? 0;
+
+    expect(after).toBe(before + 1);
   });
 });
