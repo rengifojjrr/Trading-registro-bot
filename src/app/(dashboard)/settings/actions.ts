@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
 import { createClient } from "@/lib/supabase/server";
@@ -19,7 +20,19 @@ const schema = z.object({
   target_margin_ratio: z.coerce.number().min(1).max(99),
   trading_fee_pct: z.coerce.number().min(0).max(100),
   min_fee_per_contract: z.coerce.number().min(0),
+  // Self-imposed limits. An empty field means "no limit", which is a
+  // different thing from zero: a max daily loss of 0 would mark every
+  // losing day as a breach.
+  max_daily_loss: emptyToNull(z.coerce.number().positive()),
+  max_trades_per_day: emptyToNull(z.coerce.number().int().positive()),
+  max_risk_per_trade_pct: emptyToNull(z.coerce.number().positive().max(100)),
+  account_size: emptyToNull(z.coerce.number().positive()),
 });
+
+/** Treats "" and null as "not set" rather than failing validation on them. */
+function emptyToNull<T extends z.ZodTypeAny>(inner: T) {
+  return z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), inner.nullable());
+}
 
 export type SettingsState = { error: string | null; success: boolean };
 
@@ -39,6 +52,10 @@ export async function updateSettings(
     target_margin_ratio: formData.get("target_margin_ratio"),
     trading_fee_pct: formData.get("trading_fee_pct"),
     min_fee_per_contract: formData.get("min_fee_per_contract"),
+    max_daily_loss: formData.get("max_daily_loss"),
+    max_trades_per_day: formData.get("max_trades_per_day"),
+    max_risk_per_trade_pct: formData.get("max_risk_per_trade_pct"),
+    account_size: formData.get("account_size"),
   });
 
   if (!parsed.success) {
@@ -66,6 +83,10 @@ export async function updateSettings(
       target_margin_ratio: parsed.data.target_margin_ratio / 100,
       trading_fee_pct: parsed.data.trading_fee_pct / 100,
       min_fee_per_contract: parsed.data.min_fee_per_contract,
+      max_daily_loss: parsed.data.max_daily_loss,
+      max_trades_per_day: parsed.data.max_trades_per_day,
+      max_risk_per_trade_pct: parsed.data.max_risk_per_trade_pct,
+      account_size: parsed.data.account_size,
     })
     .eq("user_id", user.id);
 
@@ -73,7 +94,19 @@ export async function updateSettings(
     return { error: "No se pudo guardar la configuración.", success: false };
   }
 
+  await recordAudit({
+    userId: user.id,
+    action: "SETTINGS_UPDATED",
+    entityType: "app_settings",
+    metadata: {
+      timezone: parsed.data.timezone,
+      maxDailyLoss: parsed.data.max_daily_loss,
+      maxTradesPerDay: parsed.data.max_trades_per_day,
+    },
+  });
+
   revalidatePath("/settings");
+  revalidatePath("/behaviour");
   return { error: null, success: true };
 }
 

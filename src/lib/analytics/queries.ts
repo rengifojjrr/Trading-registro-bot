@@ -37,7 +37,7 @@ export interface TradeFilters {
  * meaningful: it means "a filter was applied and nothing matched", which
  * must produce zero results, not every result.
  */
-async function resolveJournalFilters(filters: TradeFilters): Promise<string[] | null> {
+export async function resolveJournalFilters(filters: TradeFilters): Promise<string[] | null> {
   if (!filters.strategyId && !filters.tagId) return null;
 
   const supabase = await createClient();
@@ -100,7 +100,7 @@ const STATS_COLUMNS = "id, status, opened_at, closed_at, net_pnl, gross_pnl, tot
 const TABLE_COLUMNS =
   "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted";
 
-function applyFilters<T>(query: T, filters: TradeFilters): T {
+export function applyFilters<T>(query: T, filters: TradeFilters): T {
   // Supabase's query builder is fluent (each call returns `this`), so this
   // cast-free chain works despite the generic -- the alternative
   // (threading a wider union type through every .eq/.gte call) hurts
@@ -121,7 +121,7 @@ function applyFilters<T>(query: T, filters: TradeFilters): T {
 }
 
 /** Applies the id restriction from resolveJournalFilters, if any. */
-function applyIdRestriction<T>(query: T, tradeIds: string[] | null): T {
+export function applyIdRestriction<T>(query: T, tradeIds: string[] | null): T {
   if (tradeIds === null) return query;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (query as any).in("id", tradeIds) as T;

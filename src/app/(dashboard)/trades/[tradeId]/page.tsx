@@ -7,6 +7,7 @@ import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-
 import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart, type TradeChartDrawing } from "@/components/trades/trade-chart";
+import { MistakeTagger } from "@/components/trades/mistake-tagger";
 import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
@@ -15,6 +16,7 @@ import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
 import { formatDate } from "@/lib/format";
+import type { MistakeCode } from "@/lib/journal/mistakes";
 import { createClient } from "@/lib/supabase/server";
 
 import { JournalForm } from "./journal-form";
@@ -55,6 +57,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     { data: journalEntry },
     { data: strategies },
     { data: tradeTags },
+    { data: tradeMistakes },
     { data: tradeComments },
     { data: tradeScreenshotRows },
     { data: chartDrawingRows },
@@ -69,6 +72,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     supabase.from("journal_entries").select("*").eq("trade_id", trade.id).maybeSingle(),
     supabase.from("strategies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("trade_tags").select("tag_id").eq("trade_id", trade.id),
+    supabase.from("trade_mistakes").select("mistake_code").eq("trade_id", trade.id),
     supabase
       .from("trade_comments")
       .select("id, body, created_at")
@@ -234,6 +238,18 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
           </CardContent>
         </Card>
       ) : null}
+
+      {/* Structured, countable facts about what went wrong -- separate
+          from the journal's prose on purpose, so lib/analytics/behaviour
+          can rank them by cost. */}
+      <Card>
+        <CardContent className="pt-5">
+          <MistakeTagger
+            tradeId={trade.id}
+            initialCodes={(tradeMistakes ?? []).map((m) => m.mistake_code as MistakeCode)}
+          />
+        </CardContent>
+      </Card>
 
       <FillHistoryTable
         fills={fillRows}

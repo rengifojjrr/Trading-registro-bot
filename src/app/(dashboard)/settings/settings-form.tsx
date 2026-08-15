@@ -25,6 +25,10 @@ type AppSettingsRow = {
   maintenance_margin_rate: number;
   target_margin_ratio: number;
   trading_fee_pct: number;
+  max_daily_loss: string | null;
+  max_trades_per_day: number | null;
+  max_risk_per_trade_pct: string | null;
+  account_size: string | null;
   min_fee_per_contract: number;
 };
 
@@ -245,6 +249,69 @@ export function SettingsForm({
                 min={0}
                 step={0.01}
                 defaultValue={settings.min_fee_per_contract}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Self-imposed limits. This app holds a read-only key and cannot
+            block an order -- these exist so the Comportamiento page can
+            show you which days you broke your own rules. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Tus límites</CardTitle>
+            <CardDescription>
+              Déjalos en blanco si no quieres límite. La aplicación no puede impedir ninguna operación
+              (solo tiene permiso de lectura): sirven para avisarte, después, de qué días te los saltaste.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="max_daily_loss">Pérdida máxima diaria (USD)</Label>
+              <Input
+                id="max_daily_loss"
+                name="max_daily_loss"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="Sin límite"
+                defaultValue={settings.max_daily_loss ?? ""}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="max_trades_per_day">Máximo de operaciones al día</Label>
+              <Input
+                id="max_trades_per_day"
+                name="max_trades_per_day"
+                type="number"
+                min={1}
+                step={1}
+                placeholder="Sin límite"
+                defaultValue={settings.max_trades_per_day ?? ""}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="max_risk_per_trade_pct">Riesgo máximo por operación (%)</Label>
+              <Input
+                id="max_risk_per_trade_pct"
+                name="max_risk_per_trade_pct"
+                type="number"
+                min={0}
+                step={0.1}
+                placeholder="Sin límite"
+                defaultValue={settings.max_risk_per_trade_pct ?? ""}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="account_size">Tamaño de la cuenta (USD)</Label>
+              <Input
+                id="account_size"
+                name="account_size"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="Sin definir"
+                defaultValue={settings.account_size ?? ""}
               />
             </div>
           </CardContent>

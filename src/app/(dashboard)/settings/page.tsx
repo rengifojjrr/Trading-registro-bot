@@ -20,7 +20,7 @@ export default async function SettingsPage() {
       supabase
         .from("app_settings")
         .select(
-          "timezone, active_venue, sync_interval_minutes, reconciliation_hour_local, notion_enabled, auto_sync_enabled, maintenance_margin_rate, target_margin_ratio, trading_fee_pct, min_fee_per_contract",
+          "timezone, active_venue, sync_interval_minutes, reconciliation_hour_local, notion_enabled, auto_sync_enabled, maintenance_margin_rate, target_margin_ratio, trading_fee_pct, min_fee_per_contract, max_daily_loss, max_trades_per_day, max_risk_per_trade_pct, account_size",
         )
         .eq("user_id", user.id)
         .single(),

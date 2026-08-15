@@ -61,6 +61,10 @@ export interface Database {
         {
           user_id: string;
           timezone: string;
+          max_daily_loss: string | null;
+          max_trades_per_day: number | null;
+          max_risk_per_trade_pct: string | null;
+          account_size: string | null;
           sync_interval_minutes: number;
           reconciliation_hour_local: number;
           monthly_report_day: number;
@@ -79,6 +83,10 @@ export interface Database {
         {
           user_id: string;
           timezone?: string;
+          max_daily_loss?: string | number | null;
+          max_trades_per_day?: number | null;
+          max_risk_per_trade_pct?: string | number | null;
+          account_size?: string | number | null;
           sync_interval_minutes?: number;
           reconciliation_hour_local?: number;
           monthly_report_day?: number;
@@ -741,6 +749,62 @@ export interface Database {
           created_at: string;
         },
         { id?: string; user_id: string; trade_id: string; body: string }
+      >;
+
+      playbook_items: Table<
+        {
+          id: string;
+          user_id: string;
+          strategy_id: string;
+          label: string;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          strategy_id: string;
+          label: string;
+          sort_order?: number;
+          is_active?: boolean;
+        }
+      >;
+
+      trade_playbook_checks: Table<
+        {
+          id: string;
+          user_id: string;
+          trade_id: string;
+          playbook_item_id: string;
+          checked: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          trade_id: string;
+          playbook_item_id: string;
+          checked?: boolean;
+        }
+      >;
+
+      trade_mistakes: Table<
+        {
+          id: string;
+          user_id: string;
+          trade_id: string;
+          mistake_code: string;
+          note: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          trade_id: string;
+          mistake_code: string;
+          note?: string | null;
+        }
       >;
 
       chart_drawings: Table<
