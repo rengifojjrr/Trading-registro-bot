@@ -76,21 +76,69 @@ const CANDLE_REFRESH_MS = 60_000;
 const DRAWING_COLOR = "#a78bfa"; // matches chart_drawings.color's DB default
 const MEASURE_COLOR = "#38bdf8";
 
-// Mirrors the tokens in src/app/globals.css -- lightweight-charts renders
-// to <canvas>, which can't read CSS custom properties, so these are kept as
-// literal values. The app has a single fixed dark theme (no light mode), so
-// there's no runtime theme to react to; if globals.css's palette ever
-// changes, update these too.
-const THEME = {
-  background: "hsl(222, 44%, 9%)", // --card
-  text: "hsl(215, 20%, 65%)", // --muted-foreground
-  grid: "hsl(217, 28%, 18%)", // --border
-  up: "hsl(142, 71%, 45%)", // --positive
-  down: "hsl(0, 72%, 51%)", // --negative
-  entry: "hsl(199, 89%, 48%)", // --primary
-  exit: "hsl(38, 92%, 50%)", // --warning
-  live: "hsl(215, 20%, 65%)", // --muted-foreground, for the "price right now" line
+/**
+ * lightweight-charts renders to <canvas>, which cannot read CSS custom
+ * properties -- so the palette is resolved from the live computed styles
+ * instead of being duplicated as literals. That matters now that the app
+ * has a light theme: hardcoded dark values would leave the chart a black
+ * rectangle on a white page, with P&L colours that no longer pass contrast.
+ *
+ * The fallbacks are the dark palette, used only if a token is missing (an
+ * older cached stylesheet, or a test environment with no real CSS).
+ */
+const THEME_FALLBACK = {
+  background: "hsl(222, 44%, 9%)",
+  text: "hsl(215, 20%, 65%)",
+  grid: "hsl(217, 28%, 18%)",
+  up: "hsl(142, 71%, 45%)",
+  down: "hsl(0, 72%, 51%)",
+  entry: "hsl(199, 89%, 48%)",
+  exit: "hsl(38, 92%, 50%)",
+  live: "hsl(215, 20%, 65%)",
 };
+
+type ChartTheme = typeof THEME_FALLBACK;
+
+/**
+ * A translucent variant of a resolved palette token.
+ *
+ * The volume bars have to sit behind the candles without competing with
+ * them, and they have to follow the theme -- a hardcoded green stays green
+ * on a white background even when the P&L colours darken for contrast.
+ * Tokens arrive as whatever form globals.css declares (hex today, hsl in
+ * the fallbacks), so both are handled; anything unrecognised is returned
+ * unchanged, which merely loses the transparency rather than the bar.
+ */
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
+    const n = parseInt(h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const fn = color.trim().match(/^(hsl|rgb)\((.+)\)$/i);
+  if (fn) return `${fn[1].toLowerCase()}a(${fn[2]}, ${alpha})`;
+  return color;
+}
+
+function resolveTheme(): ChartTheme {
+  if (typeof window === "undefined") return THEME_FALLBACK;
+  const styles = getComputedStyle(document.documentElement);
+  const read = (token: string, fallback: string) => styles.getPropertyValue(token).trim() || fallback;
+  return {
+    background: read("--card", THEME_FALLBACK.background),
+    text: read("--muted-foreground", THEME_FALLBACK.text),
+    grid: read("--border", THEME_FALLBACK.grid),
+    up: read("--positive", THEME_FALLBACK.up),
+    down: read("--negative", THEME_FALLBACK.down),
+    entry: read("--primary", THEME_FALLBACK.entry),
+    exit: read("--warning", THEME_FALLBACK.exit),
+    live: read("--muted-foreground", THEME_FALLBACK.live),
+  };
+}
+
+/** Resolved once per chart creation; the effect re-runs when the theme attribute changes. */
+let THEME: ChartTheme = THEME_FALLBACK;
 
 /** MEASURE never persists -- see the migration note; it answers a question you're asking right now. */
 type ActiveTool = "CURSOR" | "MEASURE" | PersistedDrawingTool;
@@ -207,6 +255,17 @@ export function TradeChart({
   function resetView() {
     chartRef.current?.timeScale().fitContent();
   }
+
+  // Bumped whenever the theme class on <html> changes, so the chart is
+  // rebuilt with the new palette. A canvas can't inherit CSS the way the
+  // rest of the UI does, so switching to light mode would otherwise leave a
+  // black rectangle in the middle of a white page.
+  const [themeVersion, setThemeVersion] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeVersion((v) => v + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const dragRef = useRef<{ id: string; startPoint: DrawingPoint; original: TradeChartDrawing } | null>(null);
@@ -351,6 +410,8 @@ export function TradeChart({
   useEffect(() => {
     const container = containerRef.current;
     if (!container || candlesRef.current.length === 0) return;
+
+    THEME = resolveTheme();
 
     const chart: IChartApi = createChart(container, {
       width: container.clientWidth,
@@ -522,6 +583,7 @@ export function TradeChart({
     takeProfit,
     showVolume,
     logScale,
+    themeVersion,
   ]);
 
   // Candle data, pushed into the existing series. Separate from creation
@@ -545,7 +607,7 @@ export function TradeChart({
       candles.map((c) => ({
         time: c.time as UTCTimestamp,
         value: c.volume,
-        color: c.close >= c.open ? "rgba(34, 197, 94, 0.5)" : "rgba(220, 38, 38, 0.5)",
+        color: withAlpha(c.close >= c.open ? THEME.up : THEME.down, 0.5),
       })),
     );
 
@@ -555,7 +617,10 @@ export function TradeChart({
       chartRef.current?.timeScale().fitContent();
       fittedGranularityRef.current = granularity;
     }
-  }, [candles, granularity, showVolume, logScale]);
+    // themeVersion: the volume bars carry their colour per-point, so they
+    // have to be rewritten when the palette changes -- unlike the candle
+    // series, whose colours live in its options.
+  }, [candles, granularity, showVolume, logScale, themeVersion]);
 
   /**
    * Keeps an open position's chart current.
@@ -894,6 +959,7 @@ export function TradeChart({
     exit?.price,
     stopLoss,
     takeProfit,
+    themeVersion,
   ]);
 
   if (candles.length === 0) {

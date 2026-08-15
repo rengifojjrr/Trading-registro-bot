@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
 import Link from "next/link";
 
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
@@ -26,6 +27,7 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="flex items-center gap-1">
+        <ThemeToggle />
         <Button
           variant="ghost"
           size="icon"

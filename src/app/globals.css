@@ -2,9 +2,20 @@
 @import "tw-animate-css";
 
 /*
- * Single dark, professional, low-chroma theme -- deliberately no light mode
- * toggle. Semantic --positive/--negative tokens exist specifically for P&L
- * polarity so charts/tables/badges never hardcode a raw green/red.
+ * Two themes, dark by default. Semantic --positive/--negative tokens exist
+ * specifically for P&L polarity so charts/tables/badges never hardcode a
+ * raw green/red.
+ *
+ * Light mode was added because a chart is genuinely hard to read on a dark
+ * screen in daylight. It is a deliberate choice rather than a copy of the
+ * dark values: the P&L colours are darkened so they keep enough contrast
+ * against white, since a green that reads well on near-black washes out
+ * completely on paper-coloured backgrounds -- and misreading a profit as a
+ * loss is the one mistake this palette must never cause.
+ *
+ * The theme is applied by a data-theme attribute on <html>, set before
+ * first paint by an inline script in layout.tsx, so there is no flash of
+ * the wrong theme and no hydration mismatch.
  */
 :root {
   --background: hsl(222 47% 6%);
@@ -44,6 +55,45 @@
   --warning-foreground: hsl(38 92% 8%);
 
   --radius: 0.625rem;
+}
+
+.theme-light {
+  --background: hsl(210 40% 98%);
+  --foreground: hsl(222 47% 11%);
+
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 47% 11%);
+
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(222 47% 11%);
+
+  --muted: hsl(210 40% 94%);
+  --muted-foreground: hsl(215 16% 42%);
+
+  --border: hsl(214 32% 88%);
+  --input: hsl(214 32% 88%);
+  --ring: hsl(199 89% 40%);
+
+  --primary: hsl(199 89% 40%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  --secondary: hsl(210 40% 94%);
+  --secondary-foreground: hsl(222 47% 11%);
+
+  --accent: hsl(210 40% 92%);
+  --accent-foreground: hsl(222 47% 11%);
+
+  --destructive: hsl(0 72% 45%);
+  --destructive-foreground: hsl(0 0% 100%);
+
+  /* Darker than their dark-theme counterparts on purpose -- see the note
+     above: these must stay unmistakable against white. */
+  --positive: hsl(142 72% 29%);
+  --positive-foreground: hsl(0 0% 100%);
+  --negative: hsl(0 74% 42%);
+  --negative-foreground: hsl(0 0% 100%);
+  --warning: hsl(32 95% 38%);
+  --warning-foreground: hsl(0 0% 100%);
 }
 
 @theme inline {
