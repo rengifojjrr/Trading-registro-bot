@@ -1,6 +1,7 @@
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
 
+import { SavedViews } from "@/components/dashboard/saved-views";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { TagManager, type ManagedTag } from "@/components/journal/tag-manager";
 import { PageHeader } from "@/components/layout/page-header";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForTable } from "@/lib/analytics/queries";
+import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatDate, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
@@ -102,6 +104,8 @@ export default async function JournalPage(props: PageProps<"/journal">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
+
+      <SavedViews views={await fetchSavedViews("/journal")} />
 
       <TagManager tags={managedTags} />
 

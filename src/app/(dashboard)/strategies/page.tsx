@@ -1,5 +1,6 @@
 import { Target } from "lucide-react";
 
+import { SavedViews } from "@/components/dashboard/saved-views";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -9,6 +10,7 @@ import { StrategyPerformanceCard } from "@/components/strategies/strategy-perfor
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
 import { computeStrategyPerformance } from "@/lib/analytics/strategy-report";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForStrategyReport } from "@/lib/analytics/queries";
+import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -74,6 +76,8 @@ export default async function StrategiesPage(props: PageProps<"/strategies">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
+
+      <SavedViews views={await fetchSavedViews("/strategies")} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {performance.map((p) => (
           <StrategyPerformanceCard key={p.strategyId ?? "none"} performance={p} />

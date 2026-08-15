@@ -3,6 +3,7 @@ import { BarChart3 } from "lucide-react";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
 import { ExcursionPanel } from "@/components/analytics/excursion-panel";
 import { RDistributionChart } from "@/components/analytics/r-distribution";
+import { SavedViews } from "@/components/dashboard/saved-views";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -21,6 +22,7 @@ import {
   fetchFilterOptions,
   fetchTradesForBreakdown,
 } from "@/lib/analytics/queries";
+import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -82,6 +84,8 @@ export default async function AnalyticsPage(props: PageProps<"/analytics">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
+
+      <SavedViews views={await fetchSavedViews("/analytics")} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BreakdownTable

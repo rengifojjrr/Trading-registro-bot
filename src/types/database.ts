@@ -57,6 +57,24 @@ export interface Database {
         { id: string; display_name?: string | null }
       >;
 
+      saved_views: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          path: string;
+          query: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          path: string;
+          query?: string;
+        }
+      >;
+
       app_settings: Table<
         {
           user_id: string;

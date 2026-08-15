@@ -1,11 +1,13 @@
 import { ListOrdered, SearchX } from "lucide-react";
 
+import { SavedViews } from "@/components/dashboard/saved-views";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TradesTable } from "@/components/trades/trades-table";
 import { parseTradeFilters, parseTradePageParams } from "@/lib/analytics/filter-params";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesPage } from "@/lib/analytics/queries";
+import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -58,6 +60,8 @@ export default async function TradesPage(props: PageProps<"/trades">) {
         strategies={filterOptions.strategies}
         tags={filterOptions.tags}
       />
+
+      <SavedViews views={await fetchSavedViews("/trades")} />
       {total === 0 ? (
         <EmptyState
           icon={SearchX}
