@@ -1,5 +1,6 @@
 import { Activity as ActivityIcon } from "lucide-react";
 
+import { AuditTrail, type AuditRow } from "@/components/activity/audit-trail";
 import { NotificationsList, type NotificationRow } from "@/components/activity/notifications-list";
 import { PageHeader } from "@/components/layout/page-header";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
@@ -41,7 +42,8 @@ export default async function ActivityPage() {
   const user = await requireUser();
   const supabase = await createClient();
 
-  const [syncStateRes, syncRunsRes, reconciliationRes, notificationsRes, settingsRes] = await Promise.all([
+  const [syncStateRes, syncRunsRes, reconciliationRes, notificationsRes, settingsRes, auditRes] =
+    await Promise.all([
     supabase
       .from("sync_state")
       .select("sync_type, status, last_success_at, last_attempt_at, consecutive_failures")
@@ -65,6 +67,12 @@ export default async function ActivityPage() {
       .order("created_at", { ascending: false })
       .limit(10),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("audit_log")
+      .select("id, action, entity_type, entity_id, metadata, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30),
   ]);
 
   const pollState = syncStateRes.data?.find((s) => s.sync_type === "POLL");
@@ -76,6 +84,7 @@ export default async function ActivityPage() {
   // used the browser's raw locale formatting, so the same event could show
   // a different time here than on the trade it came from.
   const timezone = settingsRes.data?.timezone || "UTC";
+  const auditRows = (auditRes.data ?? []) as AuditRow[];
 
   return (
     <>
@@ -188,6 +197,21 @@ export default async function ActivityPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {/* The record of every deliberate human change. Folded by default:
+          it's what you go looking for when a number surprises you, not
+          something you need in view every day. */}
+      <Card>
+        <CardContent className="pt-5">
+          <CollapsibleSection
+            title="Cambios manuales"
+            subtitle="Correcciones, revisiones y ajustes hechos por ti"
+            badge={auditRows.length > 0 ? String(auditRows.length) : undefined}
+          >
+            <AuditTrail rows={auditRows} timezone={timezone} />
+          </CollapsibleSection>
+        </CardContent>
+      </Card>
     </>
   );
 }

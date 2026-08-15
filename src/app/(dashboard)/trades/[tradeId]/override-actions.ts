@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createClient } from "@/lib/supabase/server";
@@ -62,6 +63,14 @@ export async function excludeFill(
 
   if (error) return { error: "No se pudo excluir el fill." };
 
+  await recordAudit({
+    userId: user.id,
+    action: "FILL_EXCLUDED",
+    entityType: "raw_fill",
+    entityId: rawFillId,
+    metadata: { tradeId, productId: trade.product_id, note: note.trim().slice(0, 500) || null },
+  });
+
   return rebuild(tradeId, trade);
 }
 
@@ -80,6 +89,14 @@ export async function undoOverride(tradeId: string, overrideId: string): Promise
 
   if (error) return { error: "No se pudo deshacer la corrección." };
 
+  await recordAudit({
+    userId: user.id,
+    action: "OVERRIDE_UNDONE",
+    entityType: "trade_grouping_override",
+    entityId: overrideId,
+    metadata: { tradeId, productId: trade.product_id },
+  });
+
   return rebuild(tradeId, trade);
 }
 
@@ -89,8 +106,17 @@ export async function undoOverride(tradeId: string, overrideId: string): Promise
  * changes it produces exactly the same trades.
  */
 export async function recalculateProduct(tradeId: string): Promise<{ error: string | null }> {
-  const { trade } = await loadTradeContext(tradeId);
+  const { user, trade } = await loadTradeContext(tradeId);
   if (!trade) return { error: "Operación no encontrada." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "PRODUCT_RECALCULATED",
+    entityType: "product",
+    entityId: trade.product_id,
+    metadata: { tradeId, triggeredManually: true },
+  });
+
   return rebuild(tradeId, trade);
 }
 

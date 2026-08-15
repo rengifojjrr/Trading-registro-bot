@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -51,6 +52,13 @@ export async function createStrategy(
     return { error: "No se pudo crear la estrategia.", success: false };
   }
 
+  await recordAudit({
+    userId: user.id,
+    action: "STRATEGY_CREATED",
+    entityType: "strategy",
+    metadata: { name: parsed.data.name },
+  });
+
   revalidatePath("/strategies");
   return { error: null, success: true };
 }
@@ -87,6 +95,14 @@ export async function updateStrategy(
     }
     return { error: "No se pudo guardar la estrategia.", success: false };
   }
+
+  await recordAudit({
+    userId: user.id,
+    action: "STRATEGY_UPDATED",
+    entityType: "strategy",
+    entityId: parsed.data.id,
+    metadata: { name: parsed.data.name },
+  });
 
   revalidatePath("/strategies");
   return { error: null, success: true };
@@ -136,6 +152,13 @@ export async function deleteStrategy(strategyId: string): Promise<{ error: strin
 
   const { error } = await supabase.from("strategies").delete().eq("id", strategyId).eq("user_id", user.id);
   if (error) return { error: "No se pudo borrar la estrategia." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "STRATEGY_DELETED",
+    entityType: "strategy",
+    entityId: strategyId,
+  });
 
   revalidatePath("/strategies");
   return { error: null };

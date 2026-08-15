@@ -90,6 +90,24 @@ export default async function DashboardPage(props: PageProps<"/">) {
     return `?${params.toString()}`;
   };
 
+  /**
+   * The same filters that produced these figures, pointed at the trades
+   * list. A KPI you can open and count yourself is a very different thing
+   * from one you have to take on faith -- which matters more here than in
+   * most dashboards, because these are the numbers the whole app exists to
+   * be trusted on.
+   */
+  const tradesHref = (extra: Record<string, string> = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (key === "month" || key === "page" || typeof value !== "string" || value.length === 0) continue;
+      params.set(key, value);
+    }
+    for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    const query = params.toString();
+    return query ? `/trades?${query}` : "/trades";
+  };
+
   const streakLabel =
     stats.currentStreak.type === "NONE"
       ? "--"
@@ -135,6 +153,8 @@ export default async function DashboardPage(props: PageProps<"/">) {
                   : undefined
               }
               description="Ganancia o pérdida de las operaciones cerradas en el período filtrado, después de comisiones. La comparación aparece solo cuando eliges un rango de fechas concreto."
+              provenanceHref={tradesHref({ sort: "net_pnl", dir: "desc" })}
+              provenanceLabel={`Ver las ${stats.closedTradesCount} operaciones`}
             />
             <StatTile
               size="lg"
@@ -142,6 +162,8 @@ export default async function DashboardPage(props: PageProps<"/">) {
               value={stats.winRate === null ? "--" : formatPercent(stats.winRate)}
               sub={`${stats.wins}/${stats.closedTradesCount} cerradas`}
               description="Porcentaje de operaciones cerradas con P&L neto positivo sobre el total de cerradas. Las operaciones en punto de equilibrio no cuentan como ganadas."
+              provenanceHref={tradesHref({ sort: "net_pnl", dir: "desc" })}
+              provenanceLabel="Ver cuáles ganaron"
             />
             <StatTile
               size="lg"
@@ -149,6 +171,8 @@ export default async function DashboardPage(props: PageProps<"/">) {
               value={stats.profitFactor === null ? "--" : formatNumber(stats.profitFactor)}
               tone={stats.profitFactor === null ? "neutral" : stats.profitFactor >= 1 ? "positive" : "negative"}
               description="Suma de ganancias netas dividida entre el valor absoluto de la suma de pérdidas netas. Por encima de 1 ganas más de lo que pierdes. Sin operaciones perdedoras, no está definido."
+              provenanceHref={tradesHref({ sort: "net_pnl", dir: "asc" })}
+              provenanceLabel="Ver las pérdidas"
             />
             <StatTile
               size="lg"
@@ -156,6 +180,8 @@ export default async function DashboardPage(props: PageProps<"/">) {
               value={stats.maxDrawdown === "0" ? formatMoney("0", { currency }) : `-${formatMoney(stats.maxDrawdown, { currency })}`}
               tone={stats.maxDrawdown === "0" ? "neutral" : "negative"}
               description="Mayor caída desde un máximo hasta un mínimo posterior en la curva de capital acumulada del período filtrado."
+              provenanceHref={tradesHref({ sort: "opened_at", dir: "asc" })}
+              provenanceLabel="Ver la secuencia completa"
             />
           </div>
 

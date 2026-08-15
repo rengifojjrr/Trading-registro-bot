@@ -1,8 +1,16 @@
 import "server-only";
 
+import { recordAudit } from "@/lib/audit/log";
+import { raiseNotification } from "@/lib/notifications/create";
 import { calculatePnl } from "@/lib/pnl/calculate";
 import { classifySession } from "@/lib/sessions/classify";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  changedFigures,
+  describeChangedFigures,
+  parseStoredFigures,
+  snapshotFigures,
+} from "@/lib/validation/figures";
 
 import { reconstructTrades } from "./engine";
 import type { GroupingOverrideInput, ReconstructionFillInput } from "./types";
@@ -209,6 +217,8 @@ export async function persistReconstruction(
     }
   }
 
+  await flagVerifiedFiguresThatMoved(params.userId, touchedTradeIds);
+
   return {
     tradesCreated,
     tradesUpdated,
@@ -218,4 +228,85 @@ export async function persistReconstruction(
     orphanedOpeningFillIds,
     touchedTradeIds,
   };
+}
+
+/**
+ * Compares every just-recomputed trade against the figures the user signed
+ * off on, and flags any that moved.
+ *
+ * The verification is not revoked: deciding whether the new number is the
+ * correct one is a judgement call, and silently un-ticking work someone did
+ * would be its own kind of surprise. What this guarantees is that the
+ * change cannot pass unnoticed -- which is the whole point of a journal
+ * that claims to be authoritative.
+ *
+ * Never throws into the caller: a sync that computed the right trades must
+ * not fail because a warning couldn't be written.
+ */
+async function flagVerifiedFiguresThatMoved(userId: string, tradeIds: string[]): Promise<void> {
+  if (tradeIds.length === 0) return;
+
+  try {
+    const supabase = createAdminClient();
+
+    const { data: verifications } = await supabase
+      .from("trade_verifications")
+      .select("trade_id, verified_figures, figures_changed_at")
+      .eq("user_id", userId)
+      .in("trade_id", tradeIds);
+
+    const verified = (verifications ?? []).filter((v) => v.verified_figures !== null);
+    if (verified.length === 0) return;
+
+    const { data: trades } = await supabase
+      .from("trades")
+      .select("id, product_id, net_pnl, entry_wap, exit_wap, max_size, total_commissions")
+      .in(
+        "id",
+        verified.map((v) => v.trade_id),
+      );
+
+    const tradeById = new Map((trades ?? []).map((t) => [t.id, t]));
+
+    for (const verification of verified) {
+      const trade = tradeById.get(verification.trade_id);
+      if (!trade) continue;
+
+      const moved = changedFigures(
+        parseStoredFigures(verification.verified_figures),
+        snapshotFigures(trade),
+      );
+      if (moved.length === 0) continue;
+
+      // Already flagged and not re-verified since: don't renotify on every
+      // five-minute sync for the same unresolved difference.
+      if (verification.figures_changed_at) continue;
+
+      await supabase
+        .from("trade_verifications")
+        .update({ figures_changed_at: new Date().toISOString() })
+        .eq("trade_id", verification.trade_id);
+
+      await raiseNotification({
+        userId,
+        type: "DISCREPANCY",
+        severity: "WARNING",
+        title: "Cambiaron cifras que ya habías verificado",
+        message: `Una operación de ${trade.product_id} que marcaste como coincidente con Coinbase cambió: ${describeChangedFigures(moved)}. Revísala de nuevo para confirmar cuál es la cifra buena.`,
+        relatedEntityType: "trade",
+        relatedEntityId: verification.trade_id,
+        dedupKey: `VERIFIED_FIGURES_CHANGED:${verification.trade_id}`,
+      });
+
+      await recordAudit({
+        userId,
+        action: "VERIFIED_FIGURES_CHANGED",
+        entityType: "trade",
+        entityId: verification.trade_id,
+        metadata: { changed: moved, current: snapshotFigures(trade) },
+      });
+    }
+  } catch (error) {
+    console.error("[persist] no se pudo comprobar las cifras verificadas", error);
+  }
 }

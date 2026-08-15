@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { MAX_IMPORT_ROWS, parseFillRows, type ColumnMapping } from "@/lib/csv/parse-fills";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
@@ -126,12 +127,30 @@ async function runImport(input: unknown): Promise<ImportOutcome> {
       raw_metadata: { declared_by_user: true, declared_via: "CSV_IMPORT" } as unknown as Json,
     });
     if (error) return { ...EMPTY, error: `No se pudo registrar el producto: ${error.message}` };
+
+    // The multiplier was typed by a person, not returned by the exchange --
+    // every P&L for this product depends on it, so it gets its own entry.
+    await recordAudit({
+      userId: user.id,
+      action: "CONTRACT_SIZE_DECLARED",
+      entityType: "product",
+      entityId: productId,
+      metadata: { contractSize: declared, createdProduct: true },
+    });
   } else if (!product.contract_size) {
     const { error } = await admin
       .from("products")
       .update({ contract_size: declared })
       .eq("product_id", productId);
     if (error) return { ...EMPTY, error: `No se pudo guardar el tamaño de contrato: ${error.message}` };
+
+    await recordAudit({
+      userId: user.id,
+      action: "CONTRACT_SIZE_DECLARED",
+      entityType: "product",
+      entityId: productId,
+      metadata: { contractSize: declared, createdProduct: false },
+    });
   }
 
   const parsed = parseFillRows(rows, mapping as ColumnMapping, { productId });
@@ -234,6 +253,20 @@ async function runImport(input: unknown): Promise<ImportOutcome> {
   });
 
   await finish("COMPLETED", { imported: toInsert.length, duplicates });
+
+  await recordAudit({
+    userId: user.id,
+    action: "CSV_IMPORTED",
+    entityType: "csv_import",
+    entityId: importRow?.id,
+    metadata: {
+      filename,
+      productId,
+      imported: toInsert.length,
+      duplicates,
+      errors: parsed.errors.length,
+    },
+  });
 
   revalidatePath("/import");
   revalidatePath("/trades");

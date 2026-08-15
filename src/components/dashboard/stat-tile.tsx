@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { InfoHint } from "@/components/shared/info-hint";
@@ -21,6 +22,8 @@ export function StatTile({
   tone = "neutral",
   sub,
   size = "sm",
+  provenanceHref,
+  provenanceLabel,
 }: {
   label: string;
   value: ReactNode;
@@ -28,6 +31,13 @@ export function StatTile({
   tone?: "positive" | "negative" | "neutral" | "warning";
   sub?: ReactNode;
   size?: "sm" | "lg";
+  /**
+   * Where the underlying rows live. Turns the tile from a number you have
+   * to trust into one you can open and count yourself -- the same filters
+   * that produced it, applied to the trades list.
+   */
+  provenanceHref?: string;
+  provenanceLabel?: string;
 }) {
   return (
     <Card>
@@ -47,6 +57,14 @@ export function StatTile({
       >
         {value}
         {sub ? <div className="mt-0.5 text-xs font-normal text-muted-foreground">{sub}</div> : null}
+        {provenanceHref ? (
+          <Link
+            href={provenanceHref}
+            className="mt-1 inline-block text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+          >
+            {provenanceLabel ?? "Ver las operaciones"}
+          </Link>
+        ) : null}
       </CardContent>
     </Card>
   );

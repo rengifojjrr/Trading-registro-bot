@@ -891,6 +891,8 @@ export interface Database {
           matches: boolean;
           note: string | null;
           verified_at: string;
+          verified_figures: Json | null;
+          figures_changed_at: string | null;
         },
         {
           id?: string;
@@ -899,6 +901,8 @@ export interface Database {
           matches: boolean;
           note?: string | null;
           verified_at?: string;
+          verified_figures?: Json | null;
+          figures_changed_at?: string | null;
         }
       >;
 

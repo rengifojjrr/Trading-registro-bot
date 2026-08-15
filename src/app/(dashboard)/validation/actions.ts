@@ -3,9 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
+import { snapshotFigures } from "@/lib/validation/figures";
 import { evaluateValidationGate } from "@/lib/validation/gate";
 import { createClient } from "@/lib/supabase/server";
+import type { Json } from "@/types/database";
 
 /**
  * Records the outcome of manually comparing one reconstructed trade
@@ -21,6 +24,20 @@ export async function recordVerification(
   if (!z.uuid().safeParse(tradeId).success) return { error: "Operación inválida." };
 
   const supabase = await createClient();
+
+  // Freeze the numbers being signed off on. Without this, a later
+  // recomputation could move them while the verification still claimed
+  // they matched Coinbase.
+  const { data: trade } = await supabase
+    .from("trades")
+    .select("net_pnl, entry_wap, exit_wap, max_size, total_commissions")
+    .eq("id", tradeId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!trade) return { error: "Operación no encontrada." };
+
+  const figures = snapshotFigures(trade);
+
   const { error } = await supabase.from("trade_verifications").upsert(
     {
       user_id: user.id,
@@ -28,11 +45,23 @@ export async function recordVerification(
       matches,
       note: note.trim().slice(0, 1000) || null,
       verified_at: new Date().toISOString(),
+      verified_figures: figures as unknown as Json,
+      // Re-verifying clears a previous drift warning: the user has just
+      // looked at the current numbers and accepted them.
+      figures_changed_at: null,
     },
     { onConflict: "trade_id" },
   );
 
   if (error) return { error: "No se pudo guardar la revisión." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "TRADE_VERIFIED",
+    entityType: "trade",
+    entityId: tradeId,
+    metadata: { matches, figures },
+  });
 
   revalidatePath("/validation");
   revalidatePath("/settings");
@@ -51,6 +80,13 @@ export async function clearVerification(tradeId: string): Promise<{ error: strin
     .eq("user_id", user.id);
 
   if (error) return { error: "No se pudo borrar la revisión." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "VERIFICATION_CLEARED",
+    entityType: "trade",
+    entityId: tradeId,
+  });
 
   revalidatePath("/validation");
   revalidatePath("/settings");
@@ -97,6 +133,13 @@ export async function setAutoSyncEnabled(enabled: boolean): Promise<{ error: str
     .eq("user_id", user.id);
 
   if (error) return { error: "No se pudo cambiar la sincronización automática." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "AUTO_SYNC_TOGGLED",
+    entityType: "app_settings",
+    metadata: { enabled },
+  });
 
   revalidatePath("/settings");
   revalidatePath("/validation");
