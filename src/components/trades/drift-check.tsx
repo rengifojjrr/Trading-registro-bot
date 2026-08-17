@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 interface DriftResponse {
   available: boolean;
-  theirs?: string;
+  theirs?: string | null;
   severity?: DriftSeverity;
   difference?: string;
   differencePct?: number | null;
@@ -26,7 +26,16 @@ interface DriftResponse {
  * against -- an absent comparison is not a discrepancy, and pretending
  * otherwise would train the user to ignore it.
  */
-export function DriftCheck({ productId, ours }: { productId: string; ours: string | null }) {
+export function DriftCheck({
+  productId,
+  ours,
+  ourSize,
+}: {
+  productId: string;
+  ours: string | null;
+  /** What this app still believes is open, so a phantom position can be spotted. */
+  ourSize: string | null;
+}) {
   const [drift, setDrift] = useState<DriftResponse | null>(null);
 
   useEffect(() => {
@@ -35,7 +44,11 @@ export function DriftCheck({ productId, ours }: { productId: string; ours: strin
 
     async function check() {
       try {
-        const query = new URLSearchParams({ productId, ours: String(ours) });
+        const query = new URLSearchParams({
+          productId,
+          ours: String(ours),
+          ourSize: String(ourSize ?? "0"),
+        });
         const res = await fetch(`/api/coinbase/position-drift?${query.toString()}`);
         const data = (await res.json()) as DriftResponse;
         if (!cancelled) setDrift(data);
@@ -52,11 +65,32 @@ export function DriftCheck({ productId, ours }: { productId: string; ours: strin
       cancelled = true;
       clearInterval(id);
     };
-  }, [productId, ours]);
+  }, [productId, ours, ourSize]);
 
   if (!drift?.available || !drift.severity) return null;
 
   const ok = drift.severity === "OK";
+  const phantom = drift.severity === "NO_POSITION";
+
+  // A position Coinbase says does not exist is not a rounding difference --
+  // it gets its own copy, with no figures to compare, because there is
+  // nothing on the other side to compare against.
+  if (phantom) {
+    return (
+      <div className="flex flex-col gap-1 rounded-md border border-negative/50 bg-negative/5 px-3 py-2 text-sm">
+        <p className="flex items-center gap-1.5 font-medium text-negative">
+          <AlertTriangle className="size-4" aria-hidden />
+          Coinbase dice que no tienes esta posición
+          <InfoHint label="Posición fantasma">
+            Se le pregunta a Coinbase por sus propias posiciones abiertas y no aparece ninguna para este
+            producto, mientras que esta aplicación sí muestra una. Cuando eso pasa, quien se equivoca es
+            la aplicación: casi siempre falta un fill en el histórico y el motor dejó un resto sin cerrar.
+          </InfoHint>
+        </p>
+        <p className="text-xs text-muted-foreground">{drift.message}</p>
+      </div>
+    );
+  }
 
   return (
     <div

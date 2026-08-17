@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateUnrealizedDrift } from "./drift";
+import { evaluateMissingPosition, evaluateUnrealizedDrift } from "./drift";
 
 describe("evaluateUnrealizedDrift", () => {
   it("accepts a small difference between two API calls", () => {
@@ -54,5 +54,30 @@ describe("evaluateUnrealizedDrift", () => {
     expect(result.differencePct).toBeNull();
     expect(result.severity).toBe("WATCH");
     expect(Number.isNaN(Number(result.difference))).toBe(false);
+  });
+});
+
+describe("evaluateMissingPosition", () => {
+  it("no dice nada si esta aplicación tampoco cree que haya posición", () => {
+    expect(evaluateMissingPosition({ ourSize: "0" })).toBeNull();
+  });
+
+  it("avisa cuando la aplicación muestra una posición y Coinbase no", () => {
+    // El caso real: un corto fantasma de 1 contrato que quedó como resto
+    // después de cerrar, con Coinbase reportando cuenta plana.
+    const result = evaluateMissingPosition({ ourSize: "1" });
+    expect(result).not.toBeNull();
+    expect(result?.severity).toBe("NO_POSITION");
+    expect(result?.message).toContain("no reporta ninguna posición");
+  });
+
+  it("también avisa con una posición corta expresada en negativo", () => {
+    const result = evaluateMissingPosition({ ourSize: "-3" });
+    expect(result?.severity).toBe("NO_POSITION");
+  });
+
+  it("trata una cantidad no numérica como ausencia de posición", () => {
+    expect(() => evaluateMissingPosition({ ourSize: "0.0" })).not.toThrow();
+    expect(evaluateMissingPosition({ ourSize: "0.0" })).toBeNull();
   });
 });

@@ -19,7 +19,11 @@ const TOLERANCE_PCT = 1;
 /** Never alarm over small change on a small position -- percentages get loud near zero. */
 const TOLERANCE_ABSOLUTE = 1;
 
-export type DriftSeverity = "OK" | "WATCH" | "ALARM";
+/**
+ * NO_POSITION is the most serious of these, not the mildest: it means this
+ * app is showing an open position that Coinbase says does not exist.
+ */
+export type DriftSeverity = "OK" | "WATCH" | "ALARM" | "NO_POSITION";
 
 export interface DriftResult {
   severity: DriftSeverity;
@@ -89,4 +93,35 @@ function isNearWholeMultiple(ratio: number): boolean {
   return candidates.some(
     (c) => Math.abs(ratio - c) / c < 0.02 || Math.abs(ratio - 1 / c) * c < 0.02,
   );
+}
+
+/**
+ * The check for a position this app believes in and Coinbase does not.
+ *
+ * This was originally treated as "nothing to compare against" and the panel
+ * hid itself. That was exactly backwards, and it cost a real user a real
+ * confusion: the app showed a phantom short of 1 contract after a close,
+ * and the one safety net built to catch that stayed silent because Coinbase
+ * reported no position at all.
+ *
+ * A missing comparison is not the same as a missing position. If we claim
+ * to be in the market and the exchange says we are flat, one of the two is
+ * wrong -- and it is never the exchange.
+ */
+export function evaluateMissingPosition(params: {
+  /** Size this app believes is still open. Zero or less means we agree there is nothing. */
+  ourSize: string | number;
+}): DriftResult | null {
+  const ourSize = new Decimal(params.ourSize);
+  if (!ourSize.abs().greaterThan(0)) return null;
+
+  return {
+    severity: "NO_POSITION",
+    difference: "0",
+    differencePct: null,
+    message:
+      "Coinbase no reporta ninguna posición abierta en este producto, pero esta aplicación sí. " +
+      "Casi siempre significa que falta algún fill en el histórico y el motor dejó un resto sin cerrar. " +
+      "Revisa la conciliación: la aplicación se equivoca, no el exchange.",
+  };
 }

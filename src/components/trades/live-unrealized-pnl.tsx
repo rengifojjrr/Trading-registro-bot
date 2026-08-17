@@ -74,7 +74,7 @@ export function LiveUnrealizedPnl({
             reports for the same position. Everything else in the product
             computes a figure; this is the only thing that says whether it
             is right. */}
-        <DriftCheck productId={productId} ours={pnl.grossPnl} />
+        <DriftCheck productId={productId} ours={pnl.grossPnl} ourSize={openQty} />
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
