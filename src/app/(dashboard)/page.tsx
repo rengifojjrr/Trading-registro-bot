@@ -6,6 +6,7 @@ import { CalendarHeatmap } from "@/components/dashboard/calendar-heatmap";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
+import { SyncFreshnessBanner } from "@/components/dashboard/sync-freshness-banner";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
@@ -17,6 +18,7 @@ import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLi
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
+import { readSyncHealth } from "@/lib/sync/read-health";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage(props: PageProps<"/">) {
@@ -119,6 +121,10 @@ export default async function DashboardPage(props: PageProps<"/">) {
         title="Dashboard"
         description="Capital, rendimiento y estadísticas de tus operaciones de futuros de Bitcoin."
       />
+
+      {/* Above the positions, not below: if the data is five days old, that
+          has to be read before the numbers it qualifies. */}
+      <SyncFreshnessBanner health={await readSyncHealth()} />
 
       <OpenPositionsPanel positions={openPositions} />
 

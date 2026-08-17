@@ -392,3 +392,93 @@ describe("reconstructTrades -- grouping overrides", () => {
     expect(result.trades).toHaveLength(1);
   });
 });
+
+describe("reconstructTrades -- la posición real del usuario", () => {
+  /**
+   * Los cuatro fills BUY que existen de verdad en raw_fills para
+   * BIP-20DEC30-CDE, con sus tamaños y precios reales.
+   *
+   * Se añadió después de que el usuario cerrara la operación en Coinbase y
+   * el panel siguiera diciendo "abierta". La causa no estaba aquí -- no
+   * había llegado ningún fill de venta porque nadie había sincronizado --
+   * pero eso dejaba sin demostrar que el cierre se registraría bien cuando
+   * llegara. Esto lo demuestra.
+   */
+  const REAL_ENTRIES = [
+    { id: "826f1d9b", size: 2, price: 63735 },
+    { id: "2800fae4", size: 1, price: 63740 },
+    { id: "4ab42b93", size: 19, price: 63740 },
+    { id: "6546ddf5", size: 20, price: 63435 },
+  ];
+
+  function realEntryFills() {
+    return REAL_ENTRIES.map((e, i) =>
+      fill({ id: e.id, side: "BUY", price: e.price, size: e.size, minutesOffset: i }),
+    );
+  }
+
+  it("con sólo compras sigue abierta, que es lo que el panel mostraba", () => {
+    const { trades } = reconstructTrades(realEntryFills());
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].status).toBe("OPEN");
+    expect(trades[0].totalEntryQty.toString()).toBe("42");
+    expect(trades[0].closedAt).toBeNull();
+  });
+
+  it("al llegar la venta de las 42 la operación queda cerrada y con P&L", () => {
+    const fills = [
+      ...realEntryFills(),
+      fill({ id: "cierre", side: "SELL", price: 64000, size: 42, minutesOffset: 10 }),
+    ];
+
+    const { trades, unclassifiedFillIds } = reconstructTrades(fills);
+
+    expect(unclassifiedFillIds).toHaveLength(0);
+    expect(trades).toHaveLength(1);
+
+    const trade = trades[0];
+    expect(trade.status).toBe("CLOSED");
+    expect(trade.closedAt).not.toBeNull();
+    expect(trade.totalExitQty.toString()).toBe("42");
+    expect(trade.exitsCount).toBe(1);
+    // WAP de entrada real: (2*63735 + 1*63740 + 19*63740 + 20*63435) / 42
+    // El mismo WAP que hay hoy en la fila de trades: (2*63735 + 1*63740 +
+    // 19*63740 + 20*63435) / 42.
+    expect(trade.entryWap).toBe("63594.523809523809524");
+    expect(trade.exitWap).toBe("64000");
+    // El P&L no se calcula aquí: el motor reconstruye la agrupación y los
+    // WAP, y lib/pnl lo convierte a dinero con el contract_size del
+    // producto. Esta prueba se queda en su capa a propósito.
+  });
+
+  it("un cierre en dos tramos también cierra la operación", () => {
+    // Cerrar en trozos es lo normal, y hasta el último tramo la posición
+    // tiene que seguir abierta.
+    const fills = [
+      ...realEntryFills(),
+      fill({ id: "cierre1", side: "SELL", price: 63900, size: 20, minutesOffset: 10 }),
+      fill({ id: "cierre2", side: "SELL", price: 64100, size: 22, minutesOffset: 11 }),
+    ];
+
+    const { trades } = reconstructTrades(fills);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].status).toBe("CLOSED");
+    expect(trades[0].exitsCount).toBe(2);
+    expect(trades[0].totalExitQty.toString()).toBe("42");
+  });
+
+  it("un cierre parcial deja la operación abierta, no cerrada", () => {
+    const fills = [
+      ...realEntryFills(),
+      fill({ id: "parcial", side: "SELL", price: 63900, size: 20, minutesOffset: 10 }),
+    ];
+
+    const { trades } = reconstructTrades(fills);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].status).toBe("OPEN");
+    expect(trades[0].totalExitQty.toString()).toBe("20");
+  });
+});
