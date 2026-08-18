@@ -35,7 +35,11 @@ const csp = [
   // Tailwind injects a stylesheet; Radix and lightweight-charts set inline
   // styles on elements they position.
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  // Trade screenshots live in a private Supabase Storage bucket and are
+  // rendered through signed URLs on that origin, so leaving it out here
+  // blocked every uploaded image at the browser -- the row rendered, the
+  // picture did not.
+  ["img-src 'self' data: blob:", supabaseOrigin].filter(Boolean).join(" "),
   "font-src 'self' data:",
   // Supabase (REST, auth, realtime, storage) is the only third party this
   // app talks to from the browser. Coinbase and Notion are server-side only.

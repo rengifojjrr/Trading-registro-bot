@@ -12,6 +12,7 @@ import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
 import { SyncFreshnessBanner } from "@/components/dashboard/sync-freshness-banner";
+import { DeleteTrade } from "@/components/trades/delete-trade";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { MAX_FILLS_RENDERED } from "@/lib/fills";
 import { readSyncHealth } from "@/lib/sync/read-health";
@@ -274,11 +275,17 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         overrides={activeOverrides}
       />
 
+      <div className="flex justify-end">
+        <DeleteTrade tradeId={trade.id} source={trade.source} hasJournal={Boolean(journalEntry)} />
+      </div>
+
       <JournalForm
         tradeId={trade.id}
         journalEntry={journalEntry ?? null}
         strategies={strategies ?? []}
         currentSetupGrade={currentSetupGrade}
+        entryPrice={trade.entry_wap}
+        direction={trade.direction}
       />
 
       <TradeScreenshots tradeId={trade.id} screenshots={screenshots} />

@@ -608,6 +608,21 @@ export function TradeChart({
       title: "Entrada",
     });
 
+    // The exit deserves the same full-width line as the entry: the arrow
+    // marker says where the fill happened, but only a line lets you see at a
+    // glance which later candles traded above or below where you got out.
+    // Hidden during a replay for the same reason the exit marker is.
+    if (exit && !replaying) {
+      series.createPriceLine({
+        price: exit.price,
+        color: THEME.exit,
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: "Salida",
+      });
+    }
+
     if (stopLoss !== null) {
       series.createPriceLine({
         price: stopLoss,

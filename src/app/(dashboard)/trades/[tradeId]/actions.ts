@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { createClient } from "@/lib/supabase/server";
@@ -337,4 +338,80 @@ export async function deleteTradeScreenshot(
   }
 
   revalidatePath(`/trades/${tradeId}`);
+}
+
+/**
+ * Sources whose trades a person entered themselves, directly or through an
+ * import, and can therefore remove.
+ *
+ * COINBASE_SYNC is deliberately absent. Those trades are derived from
+ * raw_fills by the reconstruction engine, so deleting one achieves nothing:
+ * the next sync recomputes it from the same fills and it comes straight
+ * back. The remedy there is to correct the inputs -- exclude a fill or add
+ * a grouping override -- not to delete the output.
+ */
+const DELETABLE_SOURCES = ["NOTION_IMPORT", "CSV_IMPORT", "MANUAL", "DEMO_SEED"] as const;
+
+/**
+ * Removes a trade and everything hanging off it.
+ *
+ * The cascade reaches the journal entry, tags, mistakes, comments,
+ * screenshots and chart drawings, which is why the UI states plainly what
+ * will go before asking. A trade imported from Notion with no prices still
+ * carries the reflection written about it, and that is usually the part
+ * worth more than the row.
+ *
+ * The audit entry keeps a compact record of what was removed -- product,
+ * dates, size, result -- so the history shows a deletion happened and what
+ * it was, without becoming a backup of the very thing the user asked to
+ * delete.
+ */
+export async function deleteTrade(tradeId: string): Promise<{ error: string | null }> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: trade } = await supabase
+    .from("trades")
+    .select("id, product_id, direction, status, source, opened_at, closed_at, max_size, net_pnl")
+    .eq("id", tradeId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!trade) return { error: "Operación no encontrada." };
+
+  if (!DELETABLE_SOURCES.includes(trade.source as (typeof DELETABLE_SOURCES)[number])) {
+    return {
+      error:
+        "Esta operación la reconstruye el motor a partir de los fills de Coinbase, así que volvería a aparecer en la próxima sincronización. Para cambiarla, corrige los fills en lugar de borrarla.",
+    };
+  }
+
+  const { count: journalCount } = await supabase
+    .from("journal_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("trade_id", tradeId);
+
+  const { error } = await supabase.from("trades").delete().eq("id", tradeId).eq("user_id", user.id);
+  if (error) return { error: "No se pudo borrar la operación." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "TRADE_DELETED",
+    entityType: "trade",
+    entityId: tradeId,
+    metadata: {
+      product_id: trade.product_id,
+      direction: trade.direction,
+      source: trade.source,
+      opened_at: trade.opened_at,
+      closed_at: trade.closed_at,
+      max_size: trade.max_size,
+      net_pnl: trade.net_pnl,
+      journal_entries_deleted: journalCount ?? 0,
+    },
+  });
+
+  revalidatePath("/trades");
+  revalidatePath("/");
+  return { error: null };
 }

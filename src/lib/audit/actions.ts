@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = [
   "RISK_LIMITS_UPDATED",
   "COINBASE_KEY_ROTATED",
   "BACKFILL_REQUESTED",
+  "TRADE_DELETED",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -51,6 +52,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   SETTINGS_UPDATED: "Configuración guardada",
   COINBASE_KEY_ROTATED: "Clave de Coinbase rotada",
   BACKFILL_REQUESTED: "Rebackfill del histórico solicitado",
+  TRADE_DELETED: "Operación borrada",
   STRATEGY_CREATED: "Estrategia creada",
   STRATEGY_UPDATED: "Estrategia editada",
   STRATEGY_DELETED: "Estrategia eliminada",

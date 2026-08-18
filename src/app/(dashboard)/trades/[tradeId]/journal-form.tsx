@@ -8,6 +8,12 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PlannedPriceField } from "@/components/trades/planned-price-field";
+import {
+  HTF_BIAS_OPTIONS,
+  RATING_OPTIONS,
+  SR_PROXIMITY_OPTIONS,
+} from "@/lib/journal/options";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,11 +62,16 @@ export function JournalForm({
   journalEntry,
   strategies,
   currentSetupGrade,
+  entryPrice,
+  direction,
 }: {
   tradeId: string;
   journalEntry: JournalEntryRow | null;
   strategies: { id: string; name: string }[];
   currentSetupGrade: string | null;
+  /** Lets the stop/target be typed as a percentage of what was actually paid. */
+  entryPrice: string | null;
+  direction: "LONG" | "SHORT";
 }) {
   const [state, formAction, pending] = useActionState(saveJournalEntry, initialState);
 
@@ -140,16 +151,20 @@ export function JournalForm({
             </Field>
 
             <Field label="Sesgo HTF" htmlFor="htf_bias">
-              <Input id="htf_bias" name="htf_bias" autoComplete="off" defaultValue={journalEntry?.htf_bias ?? ""} />
+              <OptionSelect
+                id="htf_bias"
+                name="htf_bias"
+                options={HTF_BIAS_OPTIONS}
+                current={journalEntry?.htf_bias ?? null}
+              />
             </Field>
 
             <Field label="Proximidad a soporte/resistencia" htmlFor="sr_proximity">
-              <Input
+              <OptionSelect
                 id="sr_proximity"
                 name="sr_proximity"
-                autoComplete="off"
-                defaultValue={journalEntry?.sr_proximity ?? ""}
-                placeholder="p. ej. cerca de resistencia diaria"
+                options={SR_PROXIMITY_OPTIONS}
+                current={journalEntry?.sr_proximity ?? null}
               />
             </Field>
 
@@ -165,24 +180,24 @@ export function JournalForm({
             </Field>
 
             <Field label="Stop loss planeado" htmlFor="stop_loss_price">
-              <Input
+              <PlannedPriceField
                 id="stop_loss_price"
                 name="stop_loss_price"
-                type="number"
-                step="any"
-                autoComplete="off"
-                defaultValue={journalEntry?.stop_loss_price ?? ""}
+                defaultValue={journalEntry?.stop_loss_price ?? null}
+                entryPrice={entryPrice}
+                direction={direction}
+                kind="STOP"
               />
             </Field>
 
             <Field label="Take profit planeado" htmlFor="take_profit_price">
-              <Input
+              <PlannedPriceField
                 id="take_profit_price"
                 name="take_profit_price"
-                type="number"
-                step="any"
-                autoComplete="off"
-                defaultValue={journalEntry?.take_profit_price ?? ""}
+                defaultValue={journalEntry?.take_profit_price ?? null}
+                entryPrice={entryPrice}
+                direction={direction}
+                kind="TARGET"
               />
             </Field>
           </FieldGroup>
@@ -200,28 +215,18 @@ export function JournalForm({
             </Field>
 
             <Field label="Adherencia al plan (1-5)" htmlFor="plan_adherence">
-              <Input
+              <RatingSelect
                 id="plan_adherence"
                 name="plan_adherence"
-                type="number"
-                min={1}
-                max={5}
-                step={1}
-                autoComplete="off"
-                defaultValue={journalEntry?.plan_adherence ?? ""}
+                current={journalEntry?.plan_adherence ?? null}
               />
             </Field>
 
             <Field label="Calidad de entrada (1-5)" htmlFor="entry_quality">
-              <Input
+              <RatingSelect
                 id="entry_quality"
                 name="entry_quality"
-                type="number"
-                min={1}
-                max={5}
-                step={1}
-                autoComplete="off"
-                defaultValue={journalEntry?.entry_quality ?? ""}
+                current={journalEntry?.entry_quality ?? null}
               />
             </Field>
           </FieldGroup>
@@ -379,5 +384,61 @@ function CheckboxGroupField({
         <input key={option} type="hidden" name={name} value={option} />
       ))}
     </div>
+  );
+}
+
+/**
+ * A select over a closed vocabulary that still keeps whatever was already
+ * stored.
+ *
+ * These fields used to be free text, and Notion imports filled them with
+ * phrases that are not on any list. Dropping those silently on the next
+ * save would quietly rewrite history, so an unknown value is offered as its
+ * own option and stays selected until the user changes it.
+ */
+function OptionSelect({
+  id,
+  name,
+  options,
+  current,
+}: {
+  id: string;
+  name: string;
+  options: readonly string[];
+  current: string | null;
+}) {
+  const known = current === null || options.includes(current);
+  return (
+    <Select name={name} defaultValue={current ?? ""}>
+      <SelectTrigger id={id}>
+        <SelectValue placeholder="Sin especificar" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
+        ))}
+        {!known && current ? <SelectItem value={current}>{current}</SelectItem> : null}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** 1-5 with words attached, so today's 4 means the same as last month's 4. */
+function RatingSelect({ id, name, current }: { id: string; name: string; current: number | null }) {
+  return (
+    <Select name={name} defaultValue={current === null ? "" : String(current)}>
+      <SelectTrigger id={id}>
+        <SelectValue placeholder="Sin puntuar" />
+      </SelectTrigger>
+      <SelectContent>
+        {RATING_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={String(option.value)}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
