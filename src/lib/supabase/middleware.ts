@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { publicEnv } from "@/lib/env";
+import { authCookieOptions } from "@/lib/supabase/cookie-options";
 
 const PUBLIC_PATH_PREFIXES = [
   "/login",
@@ -35,6 +36,9 @@ export async function updateSession(request: NextRequest) {
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     {
+      // Adds `secure` in production; the session length is the library's,
+      // not ours -- see cookie-options.ts.
+      cookieOptions: authCookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -45,7 +49,7 @@ export async function updateSession(request: NextRequest) {
           }
           supabaseResponse = NextResponse.next({ request });
           for (const { name, value, options } of cookiesToSet) {
-            supabaseResponse.cookies.set(name, value, options);
+            supabaseResponse.cookies.set(name, value, { ...options, ...authCookieOptions });
           }
         },
       },
