@@ -238,6 +238,9 @@ export async function fetchOpenLivePositions(): Promise<OpenPositionRow[]> {
     .select(OPEN_POSITION_COLUMNS)
     .eq("status", "OPEN")
     .eq("source", "COINBASE_SYNC")
+    // A trade the latest recomputation no longer produces is not something
+    // that is open right now, whatever the status column still says.
+    .is("orphaned_at", null)
     .not("entry_wap", "is", null)
     .order("opened_at", { ascending: false });
   if (error) throw new Error(`fetchOpenLivePositions: ${error.message}`);

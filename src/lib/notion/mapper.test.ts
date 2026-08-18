@@ -34,6 +34,7 @@ const trade: TradeRow = {
   exits_count: 1,
   reconstruction_version: 1,
   is_manually_adjusted: false,
+  orphaned_at: null,
   session_computed: "NEW_YORK",
   session_override: null,
   session_effective: "NEW_YORK",

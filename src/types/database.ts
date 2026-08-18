@@ -436,6 +436,7 @@ export interface Database {
           exits_count: number;
           reconstruction_version: number;
           is_manually_adjusted: boolean;
+          orphaned_at: string | null;
           session_computed: SessionLabel | null;
           session_override: SessionLabel | null;
           session_effective: SessionLabel | null;
@@ -469,6 +470,7 @@ export interface Database {
           exits_count?: number;
           reconstruction_version?: number;
           is_manually_adjusted?: boolean;
+          orphaned_at?: string | null;
           session_computed?: SessionLabel | null;
           session_override?: SessionLabel | null;
           source?: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";

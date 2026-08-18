@@ -166,6 +166,11 @@ export async function persistReconstruction(
       reconstruction_version: params.algorithmVersion,
       session_computed: sessionComputed,
       source,
+      // A trade the recomputation produces is current by definition. Clearing
+      // this matters as much as setting it: a fill that arrives late can make
+      // a previously-orphaned trade real again, and it must come back rather
+      // than stay marked as gone.
+      orphaned_at: null,
     };
 
     const existingId = existingByOpeningFillId.get(trade.openingFillId);
@@ -218,6 +223,20 @@ export async function persistReconstruction(
   }
 
   await flagVerifiedFiguresThatMoved(params.userId, touchedTradeIds);
+
+  // Trades whose opening fill no longer starts a position are marked, never
+  // deleted. Keeping the row means the history stays auditable; marking it
+  // means the open-position views stop presenting it as something happening
+  // now. Without this, a phantom position left over from a missing fill
+  // survived every later sync untouched.
+  if (orphanedOpeningFillIds.length > 0) {
+    await supabase
+      .from("trades")
+      .update({ orphaned_at: new Date().toISOString() })
+      .eq("user_id", params.userId)
+      .in("opening_fill_id", orphanedOpeningFillIds)
+      .is("orphaned_at", null);
+  }
 
   return {
     tradesCreated,

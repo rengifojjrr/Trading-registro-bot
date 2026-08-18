@@ -3,6 +3,7 @@ import { AutoSyncToggle } from "@/components/settings/auto-sync-toggle";
 import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
+import { RebuildHistory } from "@/components/settings/rebuild-history";
 import { SyncNow } from "@/components/settings/sync-now";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
@@ -61,6 +62,7 @@ export default async function SettingsPage() {
                 timezone={settings?.timezone || "UTC"}
               />
               <SyncNow />
+              <RebuildHistory />
             </>
           }
           autoSyncSlot={
