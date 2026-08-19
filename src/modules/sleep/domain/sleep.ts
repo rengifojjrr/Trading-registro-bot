@@ -77,8 +77,38 @@ export function nightLabel(date: string): string {
 }
 
 /**
- * Convierte lo que se teclea en el formulario -- una noche y dos horas del
- * reloj -- en dos instantes.
+ * Las dos mitades de una noche.
+ *
+ * Se registran en momentos distintos -- la primera antes de acostarse y la
+ * segunda al levantarse -- y por eso cada guardado escribe sólo sus columnas.
+ * Vive aquí y no junto a las acciones porque un fichero «use server» sólo
+ * puede exportar funciones, y esto es una tabla de datos.
+ */
+export const SLEEP_PARTS = ["ANTES", "DESPERTAR"] as const;
+export type SleepPart = (typeof SLEEP_PARTS)[number];
+
+/** Qué campo pertenece a qué mitad. Nadie más decide esto. */
+export const SLEEP_PART_FIELDS: Record<SleepPart, readonly string[]> = {
+  ANTES: ["bedtime", "before_bed", "place"],
+  DESPERTAR: [
+    "wake_time",
+    "woke_how",
+    "mood_on_waking",
+    "score",
+    "dream",
+    "notes",
+    "self_reported",
+    "icon",
+  ],
+};
+
+export function isSleepPart(value: string): value is SleepPart {
+  return (SLEEP_PARTS as readonly string[]).includes(value);
+}
+
+/**
+ * Convierte lo que se teclea en el formulario -- una noche y las horas del
+ * reloj -- en instantes.
  *
  * Cruzar la medianoche es el caso normal, no la excepción, así que se
  * resuelve con una regla explícita en lugar de dejarlo a la interpretación:
@@ -86,7 +116,15 @@ export function nightLabel(date: string): string {
  * (acostarse a las 2am de la «noche del 19» es el día 20), y si la hora de
  * despertar no es posterior a la de acostarse, es que amaneció.
  *
- * Devuelve null cuando falta un dato en lugar de inventarse un instante.
+ * **Cada hora se resuelve por su cuenta.** Antes bastaba con que faltara una
+ * para tirar las dos, y eso rompía justo la forma de usarlo: apuntar a qué
+ * hora te acuestas *antes* de dormir y la de levantarte por la mañana. La
+ * primera mitad se guardaba como nada, y al día siguiente no había con qué
+ * calcular la duración.
+ *
+ * `sleptAtIso` es el instante ya guardado, para cuando la mitad de la mañana
+ * se envía sin repetir la hora de acostarse: sin él, despertar a las 07:00 no
+ * sabría si fue antes o después de haberse acostado.
  */
 export function resolveSleepTimestamps(params: {
   /** La noche a la que pertenece, en formato ISO. */
@@ -95,25 +133,58 @@ export function resolveSleepTimestamps(params: {
   bedtime: string | null;
   wakeTime: string | null;
   timezone: string;
+  /** El `slept_at` que ya estaba guardado, si lo hay. */
+  sleptAtIso?: string | null;
 }): { sleptAt: string | null; wokeAt: string | null } {
-  const { sleepDate, bedtime, wakeTime, timezone } = params;
-  if (!bedtime || !wakeTime) return { sleptAt: null, wokeAt: null };
-
-  const bed = parseClock(bedtime);
-  const wake = parseClock(wakeTime);
-  if (!bed || !wake) return { sleptAt: null, wokeAt: null };
+  const { sleepDate, bedtime, wakeTime, timezone, sleptAtIso } = params;
 
   const base = DateTime.fromISO(sleepDate, { zone: timezone });
   if (!base.isValid) return { sleptAt: null, wokeAt: null };
 
-  // Antes del mediodía ya es el día siguiente de esa noche.
-  const sleptDay = bed.hour < 12 ? base.plus({ days: 1 }) : base;
-  const sleptAt = sleptDay.set({ hour: bed.hour, minute: bed.minute, second: 0, millisecond: 0 });
+  const bed = bedtime ? parseClock(bedtime) : null;
+  const wake = wakeTime ? parseClock(wakeTime) : null;
 
-  let wokeAt = sleptAt.set({ hour: wake.hour, minute: wake.minute, second: 0, millisecond: 0 });
-  if (wokeAt <= sleptAt) wokeAt = wokeAt.plus({ days: 1 });
+  // Una hora imposible -- «25:00» -- no se redondea ni se aproxima: se
+  // descarta, y con ella la mitad que dependía de ella.
+  const slept =
+    bed === null
+      ? null
+      : // Antes del mediodía ya es el día siguiente de esa noche.
+        (bed.hour < 12 ? base.plus({ days: 1 }) : base).set({
+          hour: bed.hour,
+          minute: bed.minute,
+          second: 0,
+          millisecond: 0,
+        });
 
-  return { sleptAt: sleptAt.toISO(), wokeAt: wokeAt.toISO() };
+  // Si el formulario no trae la hora de acostarse pero ya había una guardada,
+  // se usa esa como referencia para saber en qué día cae el despertar.
+  const anchor = slept ?? parseIsoInZone(sleptAtIso, timezone);
+
+  let woke: DateTime | null = null;
+  if (wake !== null) {
+    if (anchor !== null) {
+      woke = anchor.set({ hour: wake.hour, minute: wake.minute, second: 0, millisecond: 0 });
+      if (woke <= anchor) woke = woke.plus({ days: 1 });
+    } else {
+      // Sin referencia, despertar es la mañana siguiente a esa noche: la del
+      // 19 se levanta el 20. Es la única lectura posible de una hora suelta.
+      woke = base.plus({ days: 1 }).set({
+        hour: wake.hour,
+        minute: wake.minute,
+        second: 0,
+        millisecond: 0,
+      });
+    }
+  }
+
+  return { sleptAt: slept?.toISO() ?? null, wokeAt: woke?.toISO() ?? null };
+}
+
+function parseIsoInZone(iso: string | null | undefined, timezone: string): DateTime | null {
+  if (!iso) return null;
+  const parsed = DateTime.fromISO(iso).setZone(timezone);
+  return parsed.isValid ? parsed : null;
 }
 
 function parseClock(value: string): { hour: number; minute: number } | null {

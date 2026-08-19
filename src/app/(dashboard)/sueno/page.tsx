@@ -20,9 +20,13 @@ import { sleepDatabaseId } from "@/modules/sleep/notion-import";
  * Sueño: registrar.
  *
  * La pantalla principal del módulo es el formulario, no el informe. Es lo
- * único que se abre a diario, y con dos preguntas ya deja un dato que en
- * Notion no existía: la duración como número, no como la etiqueta de texto
- * «8 horas» de una lista de opciones.
+ * único que se abre a diario, y con dos horas ya deja un dato que en Notion no
+ * existía: la duración como número, no como la etiqueta de texto «8 horas» de
+ * una lista de opciones.
+ *
+ * El formulario son dos mitades porque así se rellena de verdad: la de arriba
+ * antes de acostarse y la de abajo al levantarse, con horas de sueño de por
+ * medio. Cada una guarda sólo lo suyo.
  *
  * El historial y el análisis viven en sus propias secciones para que esta
  * quepa entera en la pantalla del móvil a las siete de la mañana.
@@ -48,7 +52,7 @@ export default async function SleepPage({
     <>
       <PageHeader
         title="Registrar sueño"
-        description="Una pregunta cada vez. Con las dos horas basta; lo demás es de propina."
+        description="Dos momentos: lo de arriba antes de acostarte, lo de abajo al levantarte. Cada mitad se guarda sola."
       />
 
       <Card>

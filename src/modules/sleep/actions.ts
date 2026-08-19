@@ -8,7 +8,12 @@ import { publishDailyMetrics } from "@/core/metrics";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
-import { resolveSleepTimestamps } from "@/modules/sleep/domain/sleep";
+import {
+  SLEEP_PART_FIELDS,
+  isSleepPart,
+  resolveSleepTimestamps,
+  type SleepPart,
+} from "@/modules/sleep/domain/sleep";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importSleepFromNotion } from "@/modules/sleep/notion-import";
 
@@ -33,17 +38,24 @@ const schema = z.object({
 });
 
 /**
- * Guarda la noche.
+ * Las dos mitades de una noche.
  *
- * Una noche por fecha: volver a guardar la misma corrige en lugar de
- * duplicar, porque lo normal es apuntar la hora al levantarse y el sueño y
- * la puntuación más tarde.
+ * Se registran en momentos distintos: la primera antes de acostarse y la
+ * segunda al levantarse, con horas de sueño de por medio. Por eso cada
+ * guardado escribe **sólo sus columnas**: antes bastaba un guardado para pisar
+ * con nulos todo lo que la otra mitad había dejado escrito, y el resultado era
+ * una noche vacía después de haberla rellenado dos veces.
  */
-export async function saveSleepEntry(
+async function saveSleepPart(
+  part: SleepPart,
   _prev: SleepFormState,
   formData: FormData,
 ): Promise<SleepFormState> {
   const user = await requireUser();
+
+  if (!isSleepPart(part)) {
+    return { error: "Parte desconocida.", success: false };
+  }
 
   const parsed = schema.safeParse({
     sleep_date: formData.get("sleep_date"),
@@ -60,36 +72,51 @@ export async function saveSleepEntry(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
 
+  const { sleep_date } = parsed.data;
   const timezone = await userTimezone();
+  const supabase = await createClient();
+
+  // La hora ya guardada hace de referencia para la de la mañana: sin ella, las
+  // 07:00 no sabrían si fueron antes o después de haberse acostado.
+  const { data: current } = await supabase
+    .from("sleep_entries")
+    .select("slept_at")
+    .eq("user_id", user.id)
+    .eq("sleep_date", sleep_date)
+    .maybeSingle();
+
   const { sleptAt, wokeAt } = resolveSleepTimestamps({
-    sleepDate: parsed.data.sleep_date,
+    sleepDate: sleep_date,
     bedtime: parsed.data.bedtime,
     wakeTime: parsed.data.wake_time,
     timezone,
+    sleptAtIso: current?.slept_at ?? null,
   });
 
-  const supabase = await createClient();
+  const owns = (field: string) => SLEEP_PART_FIELDS[part].includes(field);
+
+  const patch = {
+    user_id: user.id,
+    sleep_date,
+    ...(owns("bedtime") ? { slept_at: sleptAt } : {}),
+    ...(owns("wake_time") ? { woke_at: wokeAt } : {}),
+    ...(owns("before_bed") ? { before_bed: formData.getAll("before_bed").map(String) } : {}),
+    ...(owns("woke_how") ? { woke_how: formData.getAll("woke_how").map(String) } : {}),
+    ...(owns("mood_on_waking")
+      ? { mood_on_waking: formData.getAll("mood_on_waking").map(String) }
+      : {}),
+    ...(owns("score") ? { score: parsed.data.score } : {}),
+    ...(owns("dream") ? { dream: parsed.data.dream } : {}),
+    ...(owns("notes") ? { notes: parsed.data.notes } : {}),
+    ...(owns("place") ? { place: parsed.data.place } : {}),
+    ...(owns("self_reported") ? { self_reported: parsed.data.self_reported } : {}),
+    ...(owns("icon") ? { icon: parsed.data.icon } : {}),
+    updated_at: new Date().toISOString(),
+  };
+
   const { data: saved, error } = await supabase
     .from("sleep_entries")
-    .upsert(
-      {
-        user_id: user.id,
-        sleep_date: parsed.data.sleep_date,
-        slept_at: sleptAt,
-        woke_at: wokeAt,
-        score: parsed.data.score,
-        mood_on_waking: formData.getAll("mood_on_waking").map(String),
-        woke_how: formData.getAll("woke_how").map(String),
-        before_bed: formData.getAll("before_bed").map(String),
-        dream: parsed.data.dream,
-        notes: parsed.data.notes,
-        place: parsed.data.place,
-        self_reported: parsed.data.self_reported,
-        icon: parsed.data.icon,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,sleep_date" },
-    )
+    .upsert(patch, { onConflict: "user_id,sleep_date" })
     .select("duration_minutes, score")
     .maybeSingle();
 
@@ -97,8 +124,8 @@ export async function saveSleepEntry(
     return { error: "No se pudo guardar la noche.", success: false };
   }
 
-  // La duración la calcula Postgres, así que se publica lo que quedó
-  // guardado y no lo que creíamos haber guardado.
+  // La duración la calcula Postgres, así que se publica lo que quedó guardado
+  // y no lo que creíamos haber guardado.
   const metrics = [];
   if (saved?.duration_minutes != null) {
     metrics.push({ module: "sleep" as const, key: "minutos", value: saved.duration_minutes, unit: "min" });
@@ -106,10 +133,25 @@ export async function saveSleepEntry(
   if (saved?.score != null) {
     metrics.push({ module: "sleep" as const, key: "puntaje", value: Number(saved.score) });
   }
-  await publishDailyMetrics(parsed.data.sleep_date, metrics);
+  await publishDailyMetrics(sleep_date, metrics);
 
   revalidateSleep();
   return { error: null, success: true };
+}
+
+/** Las dos mitades, atadas para que `useActionState` las pueda usar. */
+export async function saveNightHalf(
+  prev: SleepFormState,
+  formData: FormData,
+): Promise<SleepFormState> {
+  return saveSleepPart("ANTES", prev, formData);
+}
+
+export async function saveMorningHalf(
+  prev: SleepFormState,
+  formData: FormData,
+): Promise<SleepFormState> {
+  return saveSleepPart("DESPERTAR", prev, formData);
 }
 
 /**

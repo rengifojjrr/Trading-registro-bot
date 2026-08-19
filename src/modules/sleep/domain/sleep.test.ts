@@ -62,17 +62,119 @@ describe("resolveSleepTimestamps", () => {
     expect(minutesBetween(sleptAt!, wokeAt!)).toBe(1440);
   });
 
-  it("no inventa instantes si falta una hora", () => {
+  it("no inventa la hora que falta", () => {
     expect(
-      resolveSleepTimestamps({ sleepDate: "2026-08-19", bedtime: "23:00", wakeTime: null, timezone: TZ }),
-    ).toEqual({ sleptAt: null, wokeAt: null });
+      resolveSleepTimestamps({ sleepDate: "2026-08-19", bedtime: "23:00", wakeTime: null, timezone: TZ })
+        .wokeAt,
+    ).toBeNull();
   });
 
-  it("rechaza una hora imposible en lugar de redondearla", () => {
-    expect(
-      resolveSleepTimestamps({ sleepDate: "2026-08-19", bedtime: "25:00", wakeTime: "07:00", timezone: TZ }),
-    ).toEqual({ sleptAt: null, wokeAt: null });
+  /**
+   * La forma de usarlo de verdad: apuntar la hora de acostarse antes de
+   * dormir, y la de levantarse a la mañana siguiente. Antes bastaba con que
+   * faltara una para tirar las dos, así que la primera mitad se guardaba como
+   * nada y al día siguiente no había con qué calcular la duración.
+   */
+  describe("cada hora se guarda por su cuenta", () => {
+    it("guarda la hora de acostarse aunque todavía no haya despertado", () => {
+      const { sleptAt } = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: "23:00",
+        wakeTime: null,
+        timezone: TZ,
+      });
+      expect(sleptAt).not.toBeNull();
+      expect(DateTime.fromISO(sleptAt!).setZone(TZ).toFormat("yyyy-MM-dd HH:mm")).toBe(
+        "2026-08-19 23:00",
+      );
+    });
+
+    it("una madrugada suelta sigue cayendo en el día siguiente", () => {
+      const { sleptAt } = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: "02:00",
+        wakeTime: null,
+        timezone: TZ,
+      });
+      expect(DateTime.fromISO(sleptAt!).setZone(TZ).toFormat("yyyy-MM-dd HH:mm")).toBe(
+        "2026-08-20 02:00",
+      );
+    });
+
+    it("una hora de despertar sola cae en la mañana siguiente a esa noche", () => {
+      const { sleptAt, wokeAt } = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: null,
+        wakeTime: "07:00",
+        timezone: TZ,
+      });
+      expect(sleptAt).toBeNull();
+      expect(DateTime.fromISO(wokeAt!).setZone(TZ).toFormat("yyyy-MM-dd HH:mm")).toBe(
+        "2026-08-20 07:00",
+      );
+    });
+
+    it("usa la hora ya guardada como referencia cuando el formulario no la repite", () => {
+      // Es lo que pasa al guardar la mitad de la mañana: sin referencia, las
+      // 07:00 no sabrían si fueron antes o después de acostarse.
+      const noche = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: "23:00",
+        wakeTime: null,
+        timezone: TZ,
+      });
+
+      const manana = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: null,
+        wakeTime: "07:00",
+        timezone: TZ,
+        sleptAtIso: noche.sleptAt,
+      });
+
+      expect(minutesBetween(noche.sleptAt!, manana.wokeAt!)).toBe(480);
+    });
+
+    it("con la referencia guardada, dormir a las 2am y despertar a las 10 dan ocho horas", () => {
+      const noche = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: "02:00",
+        wakeTime: null,
+        timezone: TZ,
+      });
+      const manana = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: null,
+        wakeTime: "10:00",
+        timezone: TZ,
+        sleptAtIso: noche.sleptAt,
+      });
+      expect(minutesBetween(noche.sleptAt!, manana.wokeAt!)).toBe(480);
+    });
+
+    it("descarta sólo la hora imposible, no la otra", () => {
+      const { sleptAt, wokeAt } = resolveSleepTimestamps({
+        sleepDate: "2026-08-19",
+        bedtime: "25:00",
+        wakeTime: "07:00",
+        timezone: TZ,
+      });
+      expect(sleptAt).toBeNull();
+      expect(wokeAt).not.toBeNull();
+    });
+
+    it("sin ninguna hora no inventa nada", () => {
+      expect(
+        resolveSleepTimestamps({
+          sleepDate: "2026-08-19",
+          bedtime: null,
+          wakeTime: null,
+          timezone: TZ,
+        }),
+      ).toEqual({ sleptAt: null, wokeAt: null });
+    });
   });
+
 });
 
 describe("formatSleepDuration", () => {
