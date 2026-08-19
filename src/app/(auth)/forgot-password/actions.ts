@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { publicEnv } from "@/lib/env";
+import { appOrigin } from "@/lib/app-url";
 import { createClient } from "@/lib/supabase/server";
 
 const schema = z.object({ email: z.email("Introduce un correo válido.") });
@@ -19,7 +19,10 @@ export async function requestPasswordReset(
   }
 
   const supabase = await createClient();
-  const redirectTo = `${publicEnv().NEXT_PUBLIC_APP_URL}/auth/confirm?next=/reset-password`;
+  // Deducido de la petición, no de una variable de entorno: con
+  // NEXT_PUBLIC_APP_URL sin poner, el enlace apuntaba a localhost y acababa
+  // en otro proyecto del usuario. Ver lib/app-url.ts.
+  const redirectTo = `${await appOrigin()}/auth/confirm?next=/reset-password`;
 
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
     redirectTo,

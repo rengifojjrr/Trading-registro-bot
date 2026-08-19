@@ -29,6 +29,24 @@ function isPublicPath(pathname: string) {
  * proxy/middleware.
  */
 export async function updateSession(request: NextRequest) {
+  // Un enlace de correo que trae `code` a cualquier ruta que no sea
+  // /auth/confirm se reencamina antes de nada.
+  //
+  // Supabase ignora el redirectTo que no esté en su lista de URLs
+  // permitidas y usa su Site URL, con lo que el código aterriza en la raíz.
+  // Y como la raíz está protegida, el guardián de más abajo lo mandaría a
+  // login y el código se perdería sin llegar a canjearse nunca. Esto tiene
+  // que ir antes que la comprobación de sesión, no después.
+  const authCode = request.nextUrl.searchParams.get("code");
+  if (authCode && !request.nextUrl.pathname.startsWith("/auth/")) {
+    const target = request.nextUrl.clone();
+    target.pathname = "/auth/confirm";
+    if (!target.searchParams.has("next")) {
+      target.searchParams.set("next", "/reset-password");
+    }
+    return NextResponse.redirect(target);
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const env = publicEnv();
