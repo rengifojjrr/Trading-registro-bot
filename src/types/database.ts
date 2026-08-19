@@ -41,6 +41,21 @@ export type SessionLabel =
   | "NEW_YORK"
   | "OFF_SESSION";
 
+/**
+ * Espeja el check de `reconciliation_discrepancies.discrepancy_type`.
+ *
+ * `POSITION_MISMATCH` es la posición reconstruida contra la que reporta el
+ * broker: si no cuadran, falta un fill y alguna operación se queda abierta
+ * aquí aunque esté cerrada de verdad.
+ */
+export type DiscrepancyType =
+  | "MISSING_IN_DB"
+  | "MISSING_IN_COINBASE"
+  | "FIELD_MISMATCH"
+  | "UNCLASSIFIED_FILL"
+  | "TRADE_BOUNDARY_CHANGED"
+  | "POSITION_MISMATCH";
+
 // Mirrors the trades.source check constraint.
 export type TradeSource = "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
 
@@ -857,12 +872,7 @@ export interface Database {
           id: string;
           user_id: string;
           reconciliation_run_id: string;
-          discrepancy_type:
-            | "MISSING_IN_DB"
-            | "MISSING_IN_COINBASE"
-            | "FIELD_MISMATCH"
-            | "UNCLASSIFIED_FILL"
-            | "TRADE_BOUNDARY_CHANGED";
+          discrepancy_type: DiscrepancyType;
           entity_type: string;
           entity_id: string;
           expected: Json | null;
@@ -875,12 +885,7 @@ export interface Database {
           id?: string;
           user_id: string;
           reconciliation_run_id: string;
-          discrepancy_type:
-            | "MISSING_IN_DB"
-            | "MISSING_IN_COINBASE"
-            | "FIELD_MISMATCH"
-            | "UNCLASSIFIED_FILL"
-            | "TRADE_BOUNDARY_CHANGED";
+          discrepancy_type: DiscrepancyType;
           entity_type: string;
           entity_id: string;
           expected?: Json | null;

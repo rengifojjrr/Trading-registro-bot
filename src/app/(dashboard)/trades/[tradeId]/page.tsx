@@ -35,7 +35,13 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
   const [{ data: trade }, { data: settings }] = await Promise.all([
     supabase.from("trades").select(TRADE_COLUMNS).eq("user_id", user.id).eq("id", tradeId).maybeSingle(),
-    supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    // El capital y el tope por operación son lo que convierte el importe de
+    // riesgo en un porcentaje comparable entre operaciones.
+    supabase
+      .from("app_settings")
+      .select("timezone, account_size, max_risk_per_trade_pct")
+      .eq("user_id", user.id)
+      .maybeSingle(),
   ]);
 
   if (!trade) {
@@ -286,6 +292,13 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         currentSetupGrade={currentSetupGrade}
         entryPrice={trade.entry_wap}
         direction={trade.direction}
+        accountSize={settings?.account_size === null || settings?.account_size === undefined ? null : Number(settings.account_size)}
+        maxRiskPct={
+          settings?.max_risk_per_trade_pct === null || settings?.max_risk_per_trade_pct === undefined
+            ? null
+            : Number(settings.max_risk_per_trade_pct)
+        }
+        netPnl={trade.net_pnl === null ? null : Number(trade.net_pnl)}
       />
 
       <TradeScreenshots tradeId={trade.id} screenshots={screenshots} />

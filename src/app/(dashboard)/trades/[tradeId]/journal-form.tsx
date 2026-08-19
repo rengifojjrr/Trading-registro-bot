@@ -8,6 +8,7 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { RiskReading } from "@/components/trades/risk-reading";
 import { PlannedPriceField } from "@/components/trades/planned-price-field";
 import {
   HTF_BIAS_OPTIONS,
@@ -64,6 +65,9 @@ export function JournalForm({
   currentSetupGrade,
   entryPrice,
   direction,
+  accountSize,
+  maxRiskPct,
+  netPnl,
 }: {
   tradeId: string;
   journalEntry: JournalEntryRow | null;
@@ -72,6 +76,11 @@ export function JournalForm({
   /** Lets the stop/target be typed as a percentage of what was actually paid. */
   entryPrice: string | null;
   direction: "LONG" | "SHORT";
+  /** De Configuración: sin esto el riesgo no se puede poner en porcentaje. */
+  accountSize: number | null;
+  maxRiskPct: number | null;
+  /** El resultado neto, si la operación ya cerró: da las erres. */
+  netPnl: number | null;
 }) {
   const [state, formAction, pending] = useActionState(saveJournalEntry, initialState);
 
@@ -168,14 +177,13 @@ export function JournalForm({
               />
             </Field>
 
-            <Field label="Riesgo (moneda de cuenta)" htmlFor="risk_amount">
-              <Input
-                id="risk_amount"
+            <Field label="Cuánto arriesgo" htmlFor="risk_amount">
+              <RiskReading
                 name="risk_amount"
-                type="number"
-                step="any"
-                autoComplete="off"
-                defaultValue={journalEntry?.risk_amount ?? ""}
+                defaultValue={journalEntry?.risk_amount ?? null}
+                accountSize={accountSize}
+                maxRiskPct={maxRiskPct}
+                netPnl={netPnl}
               />
             </Field>
 

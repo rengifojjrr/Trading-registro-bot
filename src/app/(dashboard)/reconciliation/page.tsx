@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { DiscrepancyList, type DiscrepancyRow } from "@/components/reconciliation/discrepancy-list";
+import { ReReadButton } from "@/components/reconciliation/re-read-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { InfoHint } from "@/components/shared/info-hint";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,12 @@ export default async function ReconciliationPage() {
               ? `Última conciliación: ${formatDateTime(lastRun.finished_at ?? lastRun.window_end, timezone)}`
               : "Todavía no se ha ejecutado ninguna conciliación."}
           </CardDescription>
+          {/*
+            Pedirla a mano es lo único que recupera un fill que llegó tarde:
+            la sincronización normal sólo mira hacia adelante desde su
+            marcador, y lo que quede detrás no lo vuelve a pedir nunca.
+          */}
+          <ReReadButton />
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-4">
           <Figure label="Fills según Coinbase" value={totalCoinbase} />

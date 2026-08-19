@@ -12,6 +12,7 @@ import { publishDailyMetricsFor } from "@/core/metrics";
 import { todayIn } from "@/core/today";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { verifyPositions } from "./verify-positions";
 import type { Json } from "@/types/database";
 
 const RECONSTRUCTION_ALGORITHM_VERSION = 1;
@@ -123,6 +124,18 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
         newHighWaterMark = productResult.highWaterMark;
       }
     }
+
+    // Lo último, cuando las operaciones ya están reconstruidas: se le
+    // pregunta a Coinbase cuántos contratos hay y se compara. Es lo que
+    // detecta que falta un fill por el medio -- el fallo que deja una
+    // operación cerrada figurando como abierta sin que nada lo diga.
+    const positions = await verifyPositions({
+      adapter,
+      userId: account.user_id,
+      accountId,
+      runId: run.id,
+    });
+    totalDiscrepancies += positions.mismatches.length;
 
     await supabase
       .from("sync_state")

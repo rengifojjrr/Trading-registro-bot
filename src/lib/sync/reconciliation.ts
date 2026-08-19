@@ -11,6 +11,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
 
 const RECONCILIATION_WINDOW_DAYS = 3;
+/**
+ * El techo de la ventana cuando se pide a mano.
+ *
+ * Noventa días es lo mismo que rellena la primera sincronización, así que es
+ * lo más atrás que la aplicación ha mirado nunca; pedir más sería prometer un
+ * histórico que no tiene.
+ */
+const MAX_WINDOW_DAYS = 90;
 const RECONSTRUCTION_ALGORITHM_VERSION = 1;
 
 /**
@@ -20,8 +28,17 @@ const RECONSTRUCTION_ALGORITHM_VERSION = 1;
  * late-arriving or amended data the overlap window might have missed. Never
  * duplicates a fill (raw_fills.entry_id is the primary key), and
  * discrepancies are recorded individually, never silently corrected away.
+ *
+ * `windowDays` deja pedirla a mano con más recorrido. Es la única forma que
+ * tiene la aplicación de recuperar un fill que llegó tarde -- fuera de la
+ * ventana de solapamiento de la sincronización, que sólo mira hacia adelante
+ * desde su marcador. Sin esto, un fill perdido lo está para siempre, y con él
+ * la operación que dependía de él se queda abierta sin explicación.
  */
-export async function runNightlyReconciliation(accountId: string) {
+export async function runNightlyReconciliation(
+  accountId: string,
+  windowDays: number = RECONCILIATION_WINDOW_DAYS,
+) {
   const supabase = createAdminClient();
 
   const { data: account, error: accountError } = await supabase
@@ -39,8 +56,9 @@ export async function runNightlyReconciliation(accountId: string) {
   }
 
   const productId = env.COINBASE_PRODUCT_ID;
+  const days = Math.min(Math.max(Math.trunc(windowDays) || RECONCILIATION_WINDOW_DAYS, 1), MAX_WINDOW_DAYS);
   const windowEnd = new Date();
-  const windowStart = new Date(windowEnd.getTime() - RECONCILIATION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const windowStart = new Date(windowEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
   const { data: run, error: runError } = await supabase
     .from("reconciliation_runs")
