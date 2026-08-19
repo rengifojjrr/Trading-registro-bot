@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import Link from "next/link";
+import type { Route } from "next";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
@@ -110,13 +111,27 @@ export default async function ContentCalendarPage({
                   )}
                   style={iso === today ? { borderColor: "var(--mod-content)" } : undefined}
                 >
-                  <span className="text-xs tabular-nums text-muted-foreground">{day.day}</span>
+                  {/*
+                    El número abre la ficha del día -- lo de los siete módulos,
+                    no sólo el contenido -- y cada pieza abre la suya. El
+                    enlace va en el número y no en la celda entera para que
+                    siga siendo posible pulsar una pieza concreta: una celda
+                    que fuera enlace se tragaría esos clics.
+                  */}
+                  <Link
+                    href={`/dia/${iso}` as Route}
+                    aria-label={`Ver el día ${iso}`}
+                    className="w-fit rounded px-1 text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {day.day}
+                  </Link>
                   {items.map((piece) => (
-                    <span
+                    <Link
                       key={piece.id}
+                      href={`/contenido/${piece.id}` as Route}
                       title={`${piece.title} · ${STATUS_LABELS[piece.status]}`}
                       className={cn(
-                        "truncate rounded px-1 py-0.5 text-[0.7rem] leading-tight",
+                        "truncate rounded px-1 py-0.5 text-[0.7rem] leading-tight transition-opacity hover:opacity-80",
                         piece.status === "PUBLICADO"
                           ? "bg-accent text-muted-foreground line-through"
                           : "text-foreground",
@@ -128,7 +143,7 @@ export default async function ContentCalendarPage({
                       }
                     >
                       {piece.title}
-                    </span>
+                    </Link>
                   ))}
                 </div>
               );

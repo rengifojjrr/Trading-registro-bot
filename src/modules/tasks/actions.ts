@@ -24,6 +24,10 @@ const schema = z.object({
   title: z.string().trim().min(1, "Escribe la tarea.").max(300),
   project_id: emptyToNull(z.string().uuid()),
   priority: z.enum(PRIORITIES).default("MEDIA"),
+  // El estado se edita aquí y no en la lista: allí el círculo marca hecha de
+  // un toque, y «en curso» es la respuesta a una pregunta que sólo se hace
+  // teniendo la tarea delante.
+  status: z.enum(STATUSES).default("NO_INICIADA"),
   due_date: emptyToNull(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   // Tus tareas de Notion admiten fecha de inicio a fin y hora concreta; aquí
   // todo se aplanaba al último día, así que lo que duraba tres días se
@@ -41,6 +45,7 @@ function readForm(formData: FormData) {
     title: formData.get("title"),
     project_id: formData.get("project_id"),
     priority: formData.get("priority") || "MEDIA",
+    status: formData.get("status") || "NO_INICIADA",
     due_date: formData.get("due_date"),
     due_end: formData.get("due_end"),
     due_time: formData.get("due_time"),
@@ -96,10 +101,27 @@ export async function updateTask(
   }
 
   const supabase = await createClient();
+
+  // Cambiar el estado desde la ficha tiene que sellar el cierre igual que lo
+  // hace el círculo de la lista, o la gráfica de «entra y sale» se quedaría
+  // sin la mitad de los cierres.
+  const { data: before } = await supabase
+    .from("tasks_items")
+    .select("status, completed_at")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const completedAt =
+    parsed.data.status === "HECHA"
+      ? (before?.completed_at ?? new Date().toISOString())
+      : null;
+
   const { error } = await supabase
     .from("tasks_items")
     .update({
       ...parsed.data,
+      completed_at: completedAt,
       categories: formData.getAll("categories").map(String),
       updated_at: new Date().toISOString(),
     })

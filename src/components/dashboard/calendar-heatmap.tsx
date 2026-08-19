@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import Link from "next/link";
+import type { Route } from "next";
 
 import type { DailyPnl } from "@/lib/analytics/stats";
 import { formatSignedMoney, pnlColorClass } from "@/lib/format";
@@ -88,10 +89,15 @@ export function CalendarHeatmap({
           const pnl = entry ? Number(entry.netPnl) : null;
 
           return (
-            <div
+            // La celda entera es el enlace: aquí no hay nada dentro que se
+            // pueda pulsar por separado, a diferencia del calendario de los
+            // módulos de vida.
+            <Link
               key={iso}
+              href={`/dia/${iso}` as Route}
+              aria-label={`Ver el día ${iso}`}
               className={cn(
-                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1 py-1 text-[10px] sm:px-1.5 sm:text-[11px]",
+                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1 py-1 text-[10px] transition-colors hover:border-foreground/40 sm:px-1.5 sm:text-[11px]",
                 !inMonth && "border-transparent opacity-25",
                 inMonth && pnl === null && "border-border/60",
                 inMonth && pnl !== null && pnl > 0 && "border-positive/30 bg-positive/10",
@@ -112,7 +118,7 @@ export function CalendarHeatmap({
                   <span className="hidden text-muted-foreground sm:block">{entry.tradesCount} op.</span>
                 </>
               ) : null}
-            </div>
+            </Link>
           );
         })}
       </div>

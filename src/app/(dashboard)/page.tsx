@@ -1,5 +1,9 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LifeCalendar } from "@/components/vida/life-calendar";
 import { ModuleCard } from "@/components/vida/module-card";
 import { QuickLog } from "@/components/vida/quick-log";
+import { monthGrid, monthOf } from "@/core/calendar";
+import { fetchMarkers } from "@/core/day";
 import { formatModuleValue } from "@/core/format-metrics";
 import { readDayMetrics } from "@/core/metrics";
 import { MODULES } from "@/core/registry";
@@ -15,15 +19,39 @@ import { requireUser } from "@/lib/auth/require-user";
  * registrar en cinco segundos, así que el registro rápido va antes que
  * cualquier cifra y las tarjetas están debajo, para consultar.
  *
- * Sólo lee core_daily_metrics. No importa de ningún módulo -- si lo hiciera,
- * esta pantalla sería el punto por el que los siete se acoplan y la promesa
- * de poder arrancar uno dejaría de ser cierta.
+ * El calendario va el último y a propósito: responde «cómo va la semana», que
+ * es una pregunta de repaso, no de registro. Ponerlo arriba convertiría la
+ * pantalla de hacer en una de mirar.
+ *
+ * Esta página no importa ningún módulo -- lee `core_daily_metrics` para las
+ * tarjetas y las marcas del calendario desde `core/day`, que consulta las
+ * tablas por su nombre. Si importara uno, esta pantalla sería el punto por el
+ * que los siete se acoplan y la promesa de poder arrancar uno dejaría de ser
+ * cierta.
  */
-export default async function TodayPage() {
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string }>;
+}) {
+  const { mes } = await searchParams;
+
   const user = await requireUser();
   const timezone = await userTimezone();
   const today = todayIn(timezone);
-  const metrics = await readDayMetrics(today);
+
+  const month = /^\d{4}-\d{2}$/.test(mes ?? "") ? mes! : monthOf(today);
+
+  // El rango cubre las semanas completas que pinta la rejilla, incluidos los
+  // días de relleno del mes anterior y el siguiente: si no, esos días
+  // saldrían siempre vacíos aunque tuvieran cosas.
+  const grid = monthGrid(month).flat();
+  const [metrics, markers] = await Promise.all([
+    readDayMetrics(today),
+    grid.length > 0
+      ? fetchMarkers(grid[0].date, grid[grid.length - 1].date)
+      : Promise.resolve(new Map()),
+  ]);
 
   const firstName = (user.email ?? "").split("@")[0];
   const greeting = firstName ? `Hola, ${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}` : "Hola";
@@ -48,6 +76,18 @@ export default async function TodayPage() {
           ))}
         </div>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">El mes</CardTitle>
+          <CardDescription>
+            Un punto por módulo con algo ese día. Pulsa un día para ver todo lo que registraste.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LifeCalendar month={month} today={today} markers={markers} />
+        </CardContent>
+      </Card>
     </>
   );
 }

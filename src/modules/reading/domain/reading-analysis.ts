@@ -22,6 +22,8 @@ export interface AnalysableSession {
 export interface Point {
   label: string;
   value: number;
+  /** El día que representa, para que la barra pueda abrir su ficha. */
+  date?: string;
 }
 
 function shortDayLabel(date: string): string {
@@ -50,7 +52,7 @@ export function minutesByDay(
   const points: Point[] = [];
   let cursor = fromDate;
   while (cursor <= toDate) {
-    points.push({ label: shortDayLabel(cursor), value: byDate.get(cursor) ?? 0 });
+    points.push({ label: shortDayLabel(cursor), value: byDate.get(cursor) ?? 0, date: cursor });
     cursor = shiftDate(cursor, 1);
   }
   return points;

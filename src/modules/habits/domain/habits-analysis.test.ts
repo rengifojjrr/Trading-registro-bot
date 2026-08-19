@@ -39,7 +39,14 @@ describe("dailyCompletion", () => {
 
   it("dibuja los días sin marcar como cero, porque no marcar es no hacerlo", () => {
     const series = dailyCompletion([habit("a", [])], "2026-08-18", "2026-08-18");
-    expect(series).toEqual([{ label: "18 ago", value: 0 }]);
+    expect(series).toEqual([{ label: "18 ago", value: 0, date: "2026-08-18" }]);
+  });
+
+  it("cada punto lleva su fecha, que es lo que hace la barra pulsable", () => {
+    // Sin la fecha, la barra sabría qué día enseña pero no a cuál llevar: la
+    // etiqueta («18 ago») no basta para construir la ruta de su ficha.
+    const series = dailyCompletion([habit("a", ["2026-08-19"])], "2026-08-18", "2026-08-20");
+    expect(series.map((p) => p.date)).toEqual(["2026-08-18", "2026-08-19", "2026-08-20"]);
   });
 
   it("no devuelve nada sin hábitos, en lugar de una línea plana en cero", () => {

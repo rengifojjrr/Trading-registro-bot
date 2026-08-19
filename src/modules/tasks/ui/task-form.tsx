@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { updateTask, type TaskFormState } from "@/modules/tasks/actions";
-import { CATEGORIES, PRIORITY_LABELS } from "@/modules/tasks/domain/tasks";
+import { CATEGORIES, PRIORITY_LABELS, STATUS_LABELS } from "@/modules/tasks/domain/tasks";
 import type { ProjectRow, TaskRow } from "@/modules/tasks/queries";
 
 const initial: TaskFormState = { error: null, success: false };
@@ -51,7 +51,23 @@ export function TaskForm({ task, projects }: { task: TaskRow; projects: ProjectR
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="status">Estado</Label>
+          <Select name="status" defaultValue={task.status}>
+            <SelectTrigger id="status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="flex flex-col gap-2">
           <Label htmlFor="project_id">Proyecto</Label>
           <Select name="project_id" defaultValue={task.project_id ?? ""}>

@@ -67,11 +67,12 @@ export function flowSeries(
     }
   }
 
-  const rows: { label: string; creadas: number; terminadas: number }[] = [];
+  const rows: { label: string; date: string; creadas: number; terminadas: number }[] = [];
   let cursor = fromDate;
   while (cursor <= toDate) {
     rows.push({
       label: shortDayLabel(cursor),
+      date: cursor,
       creadas: created.get(cursor) ?? 0,
       terminadas: completed.get(cursor) ?? 0,
     });

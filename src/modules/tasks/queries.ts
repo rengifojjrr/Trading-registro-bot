@@ -119,3 +119,38 @@ export async function fetchTask(id: string): Promise<TaskRow | null> {
     projectColor: project?.color ?? null,
   };
 }
+
+/** Un proyecto solo, con sus tareas, para su ficha. */
+export async function fetchProject(
+  id: string,
+): Promise<{ project: ProjectRow; tasks: TaskRow[] } | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: project } = await supabase
+    .from("tasks_projects")
+    .select("id, name, is_active, color, icon")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!project) return null;
+
+  const { data: tasks } = await supabase
+    .from("tasks_items")
+    .select(TASK_COLUMNS)
+    .eq("user_id", user.id)
+    .eq("project_id", id)
+    .order("created_at", { ascending: false });
+
+  const withColor: ProjectRow = { ...project, color: project.color ?? colorForName(project.name) };
+
+  return {
+    project: withColor,
+    tasks: (tasks ?? []).map((t) => ({
+      ...t,
+      projectName: withColor.name,
+      projectColor: withColor.color,
+    })),
+  };
+}

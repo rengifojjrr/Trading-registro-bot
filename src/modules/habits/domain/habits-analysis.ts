@@ -20,6 +20,8 @@ export interface HabitHistory {
 export interface Point {
   label: string;
   value: number;
+  /** El día que representa, para que la barra pueda abrir su ficha. */
+  date?: string;
 }
 
 /** Los días de una ventana, del más antiguo al más reciente. */
@@ -57,6 +59,8 @@ export function dailyCompletion(
 
   return daysBetween(fromDate, toDate).map((date) => ({
     label: shortDayLabel(date),
+    // La fecha viaja con el punto para que la barra pueda abrir su día.
+    date,
     value: Math.round(((marked.get(date) ?? 0) / habits.length) * 100),
   }));
 }

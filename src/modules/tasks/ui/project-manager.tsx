@@ -1,6 +1,8 @@
 "use client";
 
 import { Archive, Loader2, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useActionState, useEffect, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -129,10 +131,13 @@ function ProjectRowItem({
         ))}
       </select>
 
-      <span className={archived ? "text-sm text-muted-foreground" : "text-sm font-medium"}>
+      <Link
+        href={`/tareas/proyectos/${project.id}` as Route}
+        className={archived ? "text-sm text-muted-foreground hover:underline" : "text-sm font-medium hover:underline"}
+      >
         {project.icon ? `${project.icon} ` : ""}
         {project.name}
-      </span>
+      </Link>
       <span className="text-xs tabular-nums text-muted-foreground">
         {open} pendientes · {done} hechas
       </span>

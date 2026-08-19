@@ -176,9 +176,19 @@ function TaskItem({ task, today }: { task: TaskRow; today: string }) {
   const remaining = isDone ? null : daysLeftLabel(task.due_date, today);
   const overdue = !isDone && task.due_date !== null && task.due_date < today;
 
-  function cycle() {
-    const next: TaskStatus =
-      task.status === "NO_INICIADA" ? "EN_CURSO" : task.status === "EN_CURSO" ? "HECHA" : "NO_INICIADA";
+  /**
+   * Marcar y desmarcar, sin pasar por «en curso».
+   *
+   * Antes el círculo giraba entre los tres estados, así que el primer toque
+   * dejaba la tarea «en curso» y seguía en la lista. Tachar algo y verlo
+   * quedarse ahí es lo que hace que uno deje de tachar: un toque tiene que
+   * quitarla de la vista.
+   *
+   * «En curso» no desaparece -- se elige en la ficha, que es donde uno está
+   * cuando de verdad quiere decir «esto lo empecé pero no lo terminé».
+   */
+  function toggleDone() {
+    const next: TaskStatus = isDone ? "NO_INICIADA" : "HECHA";
     startTransition(async () => {
       await setTaskStatus(task.id, next);
     });
@@ -188,10 +198,11 @@ function TaskItem({ task, today }: { task: TaskRow; today: string }) {
     <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
       <button
         type="button"
-        onClick={cycle}
+        onClick={toggleDone}
         disabled={pending}
-        aria-label={`Cambiar estado de ${task.title}`}
-        title="Sin empezar → En curso → Hecha"
+        aria-pressed={isDone}
+        aria-label={isDone ? `Desmarcar ${task.title}` : `Marcar ${task.title} como hecha`}
+        title={isDone ? "Desmarcar" : "Marcar como hecha"}
         className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
       >
         {pending ? (

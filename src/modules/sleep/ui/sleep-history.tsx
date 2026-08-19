@@ -17,9 +17,12 @@ import type { SleepEntryRow } from "@/modules/sleep/queries";
  * siete horas no dice si fueron de la una a las ocho o de las cuatro a las
  * once.
  *
- * El sueño narrado sigue saliendo entero, sin recortar: recortarlo obliga a
- * abrir cada noche para leer justo lo que se venía a leer. Lo que sí hay ahora
- * es dónde entrar, para corregirla o para colgarle algo.
+ * El sueño narrado sale entero, sin recortar: recortarlo obliga a abrir cada
+ * noche para leer justo lo que se venía a leer.
+ *
+ * La tarjeta entera es el enlace. Antes sólo lo era un «Abrir» en la esquina,
+ * que en el móvil es un objetivo de un centímetro justo donde lo natural es
+ * tocar la tarjeta.
  */
 export function SleepHistory({
   entries,
@@ -40,41 +43,11 @@ export function SleepHistory({
 
   return (
     <div className="flex flex-col gap-3">
-      {entries.map((entry) => {
-        const bedtime = clockFromTimestamp(entry.slept_at, timezone);
-        const wake = clockFromTimestamp(entry.woke_at, timezone);
-
-        return (
-          <Card key={entry.id}>
+      {entries.map((entry) => (
+        <Card key={entry.id} className="transition-colors hover:bg-muted/40">
+          <Link href={`/sueno/historial/${entry.id}` as Route} className="block">
             <CardContent className="flex flex-col gap-3 pt-5">
-              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                <span
-                  className="text-2xl font-semibold tabular-nums"
-                  style={{ color: "var(--mod-sleep)" }}
-                >
-                  {formatSleepDuration(entry.duration_minutes)}
-                </span>
-
-                {bedtime || wake ? (
-                  <span className="flex items-center gap-1.5 text-sm tabular-nums text-muted-foreground">
-                    <MoonStar className="size-3.5" aria-hidden />
-                    {bedtime || "—"}
-                    <ArrowRight className="size-3" aria-hidden />
-                    <Sunrise className="size-3.5" aria-hidden />
-                    {wake || "—"}
-                  </span>
-                ) : null}
-
-                <span className="text-sm text-muted-foreground">
-                  {formatDate(`${entry.sleep_date}T00:00:00Z`, timezone)}
-                </span>
-
-                {entry.score !== null ? (
-                  <Badge variant="outline" className="ml-auto tabular-nums">
-                    {entry.score}/10
-                  </Badge>
-                ) : null}
-              </div>
+              <NightHeader entry={entry} timezone={timezone} />
 
               {entry.self_reported ? (
                 <p className="text-xs text-muted-foreground">
@@ -86,46 +59,75 @@ export function SleepHistory({
                 <p className="whitespace-pre-wrap text-sm text-foreground/90">{entry.dream}</p>
               ) : null}
 
-              {[...entry.before_bed, ...entry.woke_how, ...entry.mood_on_waking].length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {entry.before_bed.map((tag) => (
-                    <Tag key={`b-${tag}`} label={tag} />
-                  ))}
-                  {entry.woke_how.map((tag) => (
-                    <Tag key={`w-${tag}`} label={tag} />
-                  ))}
-                  {entry.mood_on_waking.map((tag) => (
-                    <Tag key={`m-${tag}`} label={tag} />
-                  ))}
-                </div>
+              <NightTags entry={entry} />
+
+              {entry.notes || entry.place ? (
+                <p className="text-xs text-muted-foreground">
+                  {[entry.place, entry.notes].filter(Boolean).join(" · ")}
+                </p>
               ) : null}
-
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                {entry.notes || entry.place ? (
-                  <p className="text-xs text-muted-foreground">
-                    {[entry.place, entry.notes].filter(Boolean).join(" · ")}
-                  </p>
-                ) : null}
-
-                <Link
-                  href={`/sueno/historial/${entry.id}` as Route}
-                  className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline"
-                >
-                  Abrir
-                </Link>
-              </div>
             </CardContent>
-          </Card>
-        );
-      })}
+          </Link>
+        </Card>
+      ))}
     </div>
   );
 }
 
-function Tag({ label }: { label: string }) {
+function NightHeader({ entry, timezone }: { entry: SleepEntryRow; timezone: string }) {
+  const bedtime = clockFromTimestamp(entry.slept_at, timezone);
+  const wake = clockFromTimestamp(entry.woke_at, timezone);
+
   return (
-    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-      {label}
-    </span>
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <span className="text-2xl font-semibold tabular-nums" style={{ color: "var(--mod-sleep)" }}>
+        {formatSleepDuration(entry.duration_minutes)}
+      </span>
+
+      {bedtime || wake ? (
+        <span className="flex items-center gap-1.5 text-sm tabular-nums text-muted-foreground">
+          <MoonStar className="size-3.5" aria-hidden />
+          {bedtime || "—"}
+          <ArrowRight className="size-3" aria-hidden />
+          <Sunrise className="size-3.5" aria-hidden />
+          {wake || "—"}
+        </span>
+      ) : null}
+
+      <span className="text-sm text-muted-foreground">
+        {formatDate(`${entry.sleep_date}T00:00:00Z`, timezone)}
+      </span>
+
+      {entry.score !== null ? (
+        <Badge variant="outline" className="ml-auto tabular-nums">
+          {entry.score}/10
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function NightTags({ entry }: { entry: SleepEntryRow }) {
+  // Las tres listas se pintan juntas porque al releer una noche no importa de
+  // qué campo salió cada etiqueta, sino que estaban todas.
+  const tags = [
+    ...entry.before_bed.map((label) => ({ key: `b-${label}`, label })),
+    ...entry.woke_how.map((label) => ({ key: `w-${label}`, label })),
+    ...entry.mood_on_waking.map((label) => ({ key: `m-${label}`, label })),
+  ];
+
+  if (tags.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tags.map((tag) => (
+        <span
+          key={tag.key}
+          className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+        >
+          {tag.label}
+        </span>
+      ))}
+    </div>
   );
 }

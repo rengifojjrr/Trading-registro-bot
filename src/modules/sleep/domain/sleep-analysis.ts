@@ -46,6 +46,7 @@ export function durationSeries(nights: AnalysableNight[]): Point[] {
     .sort((a, b) => a.sleepDate.localeCompare(b.sleepDate))
     .map((n) => ({
       label: shortDayLabel(n.sleepDate),
+      date: n.sleepDate,
       value: Math.round(((n.durationMinutes as number) / 60) * 10) / 10,
     }));
 }

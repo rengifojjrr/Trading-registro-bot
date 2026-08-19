@@ -1,5 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
+
 import { DateTime } from "luxon";
 import {
   Bar,
@@ -63,6 +66,47 @@ const TOOLTIP_STYLE = {
 export interface Point {
   label: string;
   value: number;
+  /**
+   * El día que representa el punto, cuando representa uno.
+   *
+   * Es lo que hace la barra pulsable: lleva a la ficha de ese día. Se guarda
+   * la fecha y no una dirección porque el que construye la serie ya la tiene
+   * -- la etiqueta («12 mar») sale de ella -- y así no hay que repetir la
+   * misma cadena de ruta en once sitios.
+   */
+  date?: string;
+  /** A dónde lleva cuando no es un día. Gana sobre `date`. */
+  href?: string;
+}
+
+/**
+ * Navegar al pulsar un punto de una gráfica.
+ *
+ * Recharts entrega el estado del gráfico, no el dato: el punto vivo está en
+ * `activePayload`. Devuelve un manejador para el gráfico entero en lugar de
+ * uno por barra porque así vale igual para líneas, dispersión y barras, donde
+ * lo que se pulsa no siempre es una forma con `onClick`.
+ */
+function useChartDrill() {
+  const router = useRouter();
+
+  return (state: unknown) => {
+    const payload = (state as { activePayload?: { payload?: Point }[] } | null)?.activePayload;
+    const point = payload?.[0]?.payload;
+    const href = hrefOf(point);
+    if (href) router.push(href as Route);
+  };
+}
+
+function hrefOf(point: { date?: string; href?: string } | undefined): string | null {
+  if (!point) return null;
+  if (point.href) return point.href;
+  return point.date ? `/dia/${point.date}` : null;
+}
+
+/** Si la serie lleva a algún sitio, el puntero tiene que decirlo. */
+function drillCursor(data: { date?: string; href?: string }[]): "pointer" | undefined {
+  return data.some((point) => hrefOf(point) !== null) ? "pointer" : undefined;
 }
 
 /**
@@ -94,9 +138,16 @@ export function BarSeries({
   average?: number | null;
   unit?: string;
 }) {
+  const drill = useChartDrill();
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 4, right: 4, bottom: 0, left: -18 }}
+        onClick={drill}
+        style={{ cursor: drillCursor(data) }}
+      >
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" />
         <YAxis {...AXIS} width={44} />
@@ -127,9 +178,16 @@ export function LineSeries({
   height?: number;
   unit?: string;
 }) {
+  const drill = useChartDrill();
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 4, right: 8, bottom: 0, left: -18 }}
+        onClick={drill}
+        style={{ cursor: drillCursor(data) }}
+      >
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" />
         <YAxis {...AXIS} width={44} />
@@ -175,10 +233,14 @@ export function MultiLineSeries({
   format?: "clock";
 }) {
   const tick = format === "clock" ? (v: number) => formatClockHours(v) : undefined;
+  const drill = useChartDrill();
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -6 }}>
+      <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -6 }}
+        onClick={drill}
+        style={{ cursor: drillCursor(data as { date?: string; href?: string }[]) }}
+      >
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" />
         <YAxis {...AXIS} width={48} tickFormatter={tick} domain={["auto", "auto"]} />
@@ -282,9 +344,17 @@ export function RankSeries({
   height?: number;
   unit?: string;
 }) {
+  const drill = useChartDrill();
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 12, bottom: 0, left: 8 }}>
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 0, right: 12, bottom: 0, left: 8 }}
+        onClick={drill}
+        style={{ cursor: drillCursor(data) }}
+      >
         <CartesianGrid stroke="var(--border)" horizontal={false} />
         <XAxis type="number" {...AXIS} />
         <YAxis type="category" dataKey="label" {...AXIS} width={130} />
@@ -401,9 +471,8 @@ export function HeatGrid({
             // igual que un fallo convertiría el resto de la semana en una
             // racha rota que todavía no existe.
             const future = cell.date > today;
-            return (
+            const square = (
               <rect
-                key={cell.date}
                 x={x * (size + gap)}
                 y={y * (size + gap)}
                 width={size}
@@ -416,6 +485,16 @@ export function HeatGrid({
                   {`${cell.date}: ${future ? "aún no" : cell.value > 0 ? "hecho" : "sin marcar"}`}
                 </title>
               </rect>
+            );
+
+            // Un día que aún no ha llegado no lleva a ninguna parte: su ficha
+            // estaría vacía por definición.
+            if (future) return <g key={cell.date}>{square}</g>;
+
+            return (
+              <a key={cell.date} href={`/dia/${cell.date}`} style={{ cursor: "pointer" }}>
+                {square}
+              </a>
             );
           }),
         )}
@@ -440,9 +519,16 @@ export function CategoryBars({
 }) {
   const categories = [...new Set(data.map((d) => d.category))];
 
+  const drill = useChartDrill();
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 4, right: 4, bottom: 0, left: -18 }}
+        onClick={drill}
+        style={{ cursor: drillCursor(data) }}
+      >
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="label" {...AXIS} />
         <YAxis {...AXIS} width={44} />

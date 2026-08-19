@@ -16,6 +16,11 @@ import { cn } from "@/lib/utils";
  * El mes va en la URL y no en un estado local, así que se puede compartir,
  * recargar y guardar como vista. Por eso el componente no necesita ser de
  * cliente: las flechas son enlaces.
+ *
+ * El número del día abre la ficha del día, que junta lo de los siete módulos.
+ * El enlace está en el número y no en la celda entera para que siga siendo
+ * posible pulsar una pieza concreta dentro de ella: una celda-enlace se
+ * tragaría los clics de lo que contiene.
  */
 export function MonthCalendar<T>({
   month,
@@ -87,15 +92,19 @@ export function MonthCalendar<T>({
                     !day.inMonth && "opacity-40",
                   )}
                 >
-                  <span
+                  <Link
+                    href={`/dia/${day.date}` as Route}
+                    aria-label={`Ver el día ${day.date}`}
                     className={cn(
-                      "flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums",
-                      isToday ? "font-semibold text-white" : "text-muted-foreground",
+                      "flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums transition-colors",
+                      isToday
+                        ? "font-semibold text-white"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                     style={isToday ? { backgroundColor: `var(${colorToken})` } : undefined}
                   >
                     {day.dayOfMonth}
-                  </span>
+                  </Link>
 
                   <div className="flex flex-col gap-0.5">
                     {items.slice(0, 4).map((item, index) => (
