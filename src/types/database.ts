@@ -57,6 +57,286 @@ export interface Database {
         { id: string; display_name?: string | null }
       >;
 
+      // ------------------------------------------------------- Vida: núcleo
+
+      core_daily_metrics: Table<
+        {
+          id: string;
+          user_id: string;
+          metric_date: string;
+          module: string;
+          metric_key: string;
+          value: string;
+          unit: string | null;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          metric_date: string;
+          module: string;
+          metric_key: string;
+          value: number | string;
+          unit?: string | null;
+          updated_at?: string;
+        }
+      >;
+
+      // -------------------------------------------------------- Vida: sueño
+
+      sleep_entries: Table<
+        {
+          id: string;
+          user_id: string;
+          sleep_date: string;
+          slept_at: string | null;
+          woke_at: string | null;
+          /** Generada por Postgres a partir de los dos timestamps -- nunca se escribe. */
+          duration_minutes: number | null;
+          score: string | null;
+          mood_on_waking: string[];
+          woke_how: string[];
+          before_bed: string[];
+          dream: string | null;
+          notes: string | null;
+          place: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          sleep_date: string;
+          slept_at?: string | null;
+          woke_at?: string | null;
+          score?: number | string | null;
+          mood_on_waking?: string[];
+          woke_how?: string[];
+          before_bed?: string[];
+          dream?: string | null;
+          notes?: string | null;
+          place?: string | null;
+          updated_at?: string;
+        }
+      >;
+
+      // ------------------------------------------------------ Vida: hábitos
+
+      habits_definitions: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          emoji: string | null;
+          sort_order: number;
+          archived_at: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          emoji?: string | null;
+          sort_order?: number;
+          archived_at?: string | null;
+        }
+      >;
+
+      habits_entries: Table<
+        {
+          id: string;
+          user_id: string;
+          habit_id: string;
+          entry_date: string;
+          done: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          habit_id: string;
+          entry_date: string;
+          done?: boolean;
+        }
+      >;
+
+      // ----------------------------------------------------- Vida: lecturas
+
+      reading_books: Table<
+        {
+          id: string;
+          user_id: string;
+          title: string;
+          author: string | null;
+          genres: string[];
+          total_pages: number | null;
+          status: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          title: string;
+          author?: string | null;
+          genres?: string[];
+          total_pages?: number | null;
+          status?: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+        }
+      >;
+
+      reading_sessions: Table<
+        {
+          id: string;
+          user_id: string;
+          book_id: string | null;
+          session_date: string;
+          started_at: string | null;
+          minutes: number | null;
+          pages: number | null;
+          score: string | null;
+          summary: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          book_id?: string | null;
+          session_date: string;
+          started_at?: string | null;
+          minutes?: number | null;
+          pages?: number | null;
+          score?: number | string | null;
+          summary?: string | null;
+        }
+      >;
+
+      // ------------------------------------------------------- Vida: tareas
+
+      tasks_projects: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          color: string | null;
+          is_active: boolean;
+          sort_order: number;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          color?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+        }
+      >;
+
+      tasks_items: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string | null;
+          title: string;
+          status: "NO_INICIADA" | "EN_CURSO" | "HECHA";
+          priority: "ALTA" | "MEDIA" | "BAJA";
+          due_date: string | null;
+          categories: string[];
+          notes: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id?: string | null;
+          title: string;
+          status?: "NO_INICIADA" | "EN_CURSO" | "HECHA";
+          priority?: "ALTA" | "MEDIA" | "BAJA";
+          due_date?: string | null;
+          categories?: string[];
+          notes?: string | null;
+          completed_at?: string | null;
+          updated_at?: string;
+        }
+      >;
+
+      // ------------------------------------------------------ Vida: comidas
+
+      meals_entries: Table<
+        {
+          id: string;
+          user_id: string;
+          meal_date: string;
+          meal_type: "DESAYUNO" | "ALMUERZO" | "CENA";
+          name: string;
+          notes: string | null;
+          cook: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          meal_date: string;
+          meal_type: "DESAYUNO" | "ALMUERZO" | "CENA";
+          name: string;
+          notes?: string | null;
+          cook?: string | null;
+        }
+      >;
+
+      meals_ingredients: Table<
+        {
+          id: string;
+          user_id: string;
+          meal_id: string;
+          name: string;
+          quantity: string | null;
+          unit: string | null;
+          sort_order: number;
+        },
+        {
+          id?: string;
+          user_id: string;
+          meal_id: string;
+          name: string;
+          quantity?: number | string | null;
+          unit?: string | null;
+          sort_order?: number;
+        }
+      >;
+
+      // ---------------------------------------------------- Vida: contenido
+
+      content_pieces: Table<
+        {
+          id: string;
+          user_id: string;
+          title: string;
+          platforms: string[];
+          status: "IDEA" | "GRABADO" | "EDITADO" | "PROGRAMADO" | "PUBLICADO";
+          planned_date: string | null;
+          published_at: string | null;
+          url: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          title: string;
+          platforms?: string[];
+          status?: "IDEA" | "GRABADO" | "EDITADO" | "PROGRAMADO" | "PUBLICADO";
+          planned_date?: string | null;
+          published_at?: string | null;
+          url?: string | null;
+          notes?: string | null;
+          updated_at?: string;
+        }
+      >;
+
       saved_views: Table<
         {
           id: string;

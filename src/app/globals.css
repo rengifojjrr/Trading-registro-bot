@@ -54,6 +54,17 @@
   --warning: hsl(38 92% 50%);
   --warning-foreground: hsl(38 92% 8%);
 
+  /* Un tono por módulo de Vida. Aquí distinguir sí es información: la
+     tarjeta y el encabezado de cada módulo se reconocen por el color antes
+     de leer el nombre. */
+  --mod-trading: hsl(199 74% 59%);
+  --mod-sleep: hsl(250 76% 75%);
+  --mod-habits: hsl(150 52% 54%);
+  --mod-reading: hsl(43 70% 58%);
+  --mod-tasks: hsl(342 74% 70%);
+  --mod-meals: hsl(24 74% 64%);
+  --mod-content: hsl(275 58% 71%);
+
   --radius: 0.625rem;
 }
 
@@ -94,6 +105,16 @@
   --negative-foreground: hsl(0 0% 100%);
   --warning: hsl(32 95% 38%);
   --warning-foreground: hsl(0 0% 100%);
+
+  /* Mismos tonos, oscurecidos para que sigan siendo legibles sobre blanco.
+     El azul de trading no puede lavarse justo donde se leen las cifras. */
+  --mod-trading: hsl(199 82% 36%);
+  --mod-sleep: hsl(250 58% 52%);
+  --mod-habits: hsl(150 62% 28%);
+  --mod-reading: hsl(38 82% 34%);
+  --mod-tasks: hsl(342 62% 45%);
+  --mod-meals: hsl(22 74% 40%);
+  --mod-content: hsl(275 48% 48%);
 }
 
 @theme inline {
