@@ -5,19 +5,22 @@ import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { countPieces } from "@/modules/content/domain/content";
 import { fetchPieces } from "@/modules/content/queries";
-import { ContentBoard, NewPiece } from "@/modules/content/ui/content-board";
+import { ContentBoard } from "@/modules/content/ui/content-board";
+import { PieceForm } from "@/modules/content/ui/piece-form";
 
 /**
- * Contenido.
+ * Contenido: el tablero.
  *
- * El único módulo que no venía de una plantilla de Notion: allí sólo existe
- * la casilla «Trabajar en las redes», que dice si trabajaste, no qué
- * publicaste. Esto registra lo segundo.
+ * Es una traducción del calendario real de Notion -- «📷 Social Media Content
+ * Calendar» -- y no un diseño nuevo. Su decisión más importante son los diez
+ * estados: cada uno nombra un cuello de botella concreto en lugar del clásico
+ * «pendiente / en curso / hecho», que no dice *qué* falta.
  */
 export default async function ContentPage() {
   const timezone = await userTimezone();
   const today = todayIn(timezone);
   const pieces = await fetchPieces();
+
   const counts = countPieces(
     pieces.map((p) => ({
       status: p.status,
@@ -34,29 +37,37 @@ export default async function ContentPage() {
         description="Dónde se atasca cada pieza, de la idea a publicada."
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile size="lg" label="En cola" value={String(counts.inProgress)} sub="sin publicar" />
         <StatTile
           size="lg"
           label="Atrasadas"
           value={String(counts.late)}
           tone={counts.late > 0 ? "negative" : "neutral"}
-          sub="pasó la fecha prevista"
+          sub="pasó su fecha"
         />
+        <StatTile size="lg" label="Con el editor" value={String(counts.withEditor)} sub="ahora mismo" />
         <StatTile size="lg" label="Publicadas" value={String(counts.published)} sub="en total" />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Nueva pieza</CardTitle>
-          <CardDescription>Con el título basta -- una idea hay que poder apuntarla en dos segundos.</CardDescription>
+          <CardDescription>
+            Con el título basta -- una idea hay que poder apuntarla en dos segundos. Lo demás se
+            rellena cuando toque.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <NewPiece />
+          <PieceForm />
         </CardContent>
       </Card>
 
-      <ContentBoard pieces={pieces} today={today} />
+      <Card>
+        <CardContent className="pt-6">
+          <ContentBoard pieces={pieces} today={today} />
+        </CardContent>
+      </Card>
     </>
   );
 }

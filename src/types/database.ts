@@ -309,17 +309,50 @@ export interface Database {
 
       // ---------------------------------------------------- Vida: contenido
 
+      /**
+       * Los diez estados son los del calendario real de Notion, no una
+       * simplificación: cada uno nombra un cuello de botella concreto del
+       * proceso. Se escriben aquí en lugar de importarlos del módulo porque
+       * este archivo describe la base de datos y no puede depender de
+       * `src/modules` -- el módulo tiene que poder extraerse entero.
+       */
       content_pieces: Table<
         {
           id: string;
           user_id: string;
           title: string;
+          summary: string | null;
+          channels: string[];
           platforms: string[];
-          status: "IDEA" | "GRABADO" | "EDITADO" | "PROGRAMADO" | "PUBLICADO";
+          content_type: string | null;
+          status:
+            | "IDEA"
+            | "FALTA_GUION"
+            | "FALTA_GRABAR"
+            | "FALTA_EDITAR"
+            | "EDITANDO"
+            | "EDITADO_FALTA_LINK"
+            | "EN_DRIVE"
+            | "FALTA_MINIATURA"
+            | "LISTO_PARA_PUBLICAR"
+            | "PUBLICADO";
           planned_date: string | null;
           published_at: string | null;
+          has_script: boolean;
+          is_edited: boolean;
+          has_thumbnail_ab: boolean;
+          record_difficulty: string | null;
+          record_minutes: number | null;
+          edit_minutes: number | null;
+          /** El tiempo guardado es un suelo: «despues de las 10 deje de contar». */
+          edit_time_uncapped: boolean;
+          edit_styles: string[];
+          edit_notes: string | null;
+          video_url: string | null;
+          final_url: string | null;
           url: string | null;
           notes: string | null;
+          notion_page_id: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -327,12 +360,37 @@ export interface Database {
           id?: string;
           user_id: string;
           title: string;
+          summary?: string | null;
+          channels?: string[];
           platforms?: string[];
-          status?: "IDEA" | "GRABADO" | "EDITADO" | "PROGRAMADO" | "PUBLICADO";
+          content_type?: string | null;
+          status?:
+            | "IDEA"
+            | "FALTA_GUION"
+            | "FALTA_GRABAR"
+            | "FALTA_EDITAR"
+            | "EDITANDO"
+            | "EDITADO_FALTA_LINK"
+            | "EN_DRIVE"
+            | "FALTA_MINIATURA"
+            | "LISTO_PARA_PUBLICAR"
+            | "PUBLICADO";
           planned_date?: string | null;
           published_at?: string | null;
+          has_script?: boolean;
+          is_edited?: boolean;
+          has_thumbnail_ab?: boolean;
+          record_difficulty?: string | null;
+          record_minutes?: number | null;
+          edit_minutes?: number | null;
+          edit_time_uncapped?: boolean;
+          edit_styles?: string[];
+          edit_notes?: string | null;
+          video_url?: string | null;
+          final_url?: string | null;
           url?: string | null;
           notes?: string | null;
+          notion_page_id?: string | null;
           updated_at?: string;
         }
       >;
