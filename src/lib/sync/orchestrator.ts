@@ -8,6 +8,8 @@ import { serverEnv } from "@/lib/env";
 import { parseProductIds } from "./product-ids";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
+import { publishDailyMetricsFor } from "@/core/metrics";
+import { todayIn } from "@/core/today";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
@@ -271,6 +273,8 @@ async function syncOneProduct(params: {
     result.touchedTradeIds.map((tradeId) => enqueueNotionSync(userId, tradeId)),
   );
 
+  await publishTradingMetrics(userId);
+
   if (result.unclassifiedFillIds.length > 0) {
     await raiseNotification({
       userId: userId,
@@ -431,5 +435,48 @@ async function upsertRawOrders(
     // Order detail is supplementary context, not required for
     // reconstruction (which only reads fills) -- a failure here must never
     // fail the whole sync run.
+  }
+}
+
+/**
+ * Publica el resumen de hoy de trading en el contrato del núcleo.
+ *
+ * Es el único punto por el que la tarjeta de trading de la pantalla de Hoy
+ * se entera de algo: esa pantalla no importa nada de trading, sólo lee
+ * core_daily_metrics. Se recalcula desde la base tras cada sincronización,
+ * así que corregir una operación corrige también la tarjeta.
+ *
+ * Va con el cliente de servicio porque la sincronización corre desde un cron
+ * y ahí no hay sesión de la que deducir el usuario.
+ */
+async function publishTradingMetrics(userId: string): Promise<void> {
+  try {
+    const supabase = createAdminClient();
+
+    const { data: settings } = await supabase
+      .from("app_settings")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const today = todayIn(settings?.timezone || "UTC");
+
+    const { data: trades } = await supabase
+      .from("trades")
+      .select("net_pnl, closed_at")
+      .eq("user_id", userId)
+      .not("closed_at", "is", null)
+      .gte("closed_at", `${today}T00:00:00Z`)
+      .lte("closed_at", `${today}T23:59:59Z`)
+      .is("orphaned_at", null);
+
+    const rows = trades ?? [];
+    const net = rows.reduce((sum, t) => sum + Number(t.net_pnl ?? 0), 0);
+
+    await publishDailyMetricsFor(userId, today, [
+      { module: "trading", key: "operaciones", value: rows.length },
+      { module: "trading", key: "resultado_neto", value: Math.round(net * 100) / 100, unit: "USD" },
+    ]);
+  } catch (error) {
+    console.error("[sync] no se pudieron publicar las métricas de trading", error);
   }
 }

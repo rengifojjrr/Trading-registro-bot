@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ModuleId } from "@/core/registry";
 
@@ -125,4 +126,39 @@ export async function readMetricSeries(
     .order("metric_date", { ascending: true });
 
   return (data ?? []).map((row) => ({ date: row.metric_date, value: Number(row.value) }));
+}
+
+/**
+ * Igual que publishDailyMetrics, pero para trabajos que corren sin sesión.
+ *
+ * La sincronización y la reconciliación se ejecutan desde un cron, donde no
+ * hay usuario del que deducir el id, así que se pasa explícito y se usa el
+ * cliente de servicio. Separado en dos funciones a propósito: la versión con
+ * sesión es la que deben usar los módulos, y tenerla aparte evita que un
+ * formulario acabe escribiendo con permisos de administrador por descuido.
+ */
+export async function publishDailyMetricsFor(
+  userId: string,
+  metricDate: string,
+  metrics: DailyMetric[],
+): Promise<void> {
+  if (metrics.length === 0) return;
+
+  try {
+    const supabase = createAdminClient();
+    await supabase.from("core_daily_metrics").upsert(
+      metrics.map((m) => ({
+        user_id: userId,
+        metric_date: metricDate,
+        module: m.module,
+        metric_key: m.key,
+        value: m.value,
+        unit: m.unit ?? null,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "user_id,metric_date,module,metric_key" },
+    );
+  } catch (error) {
+    console.error("[core/metrics] no se pudieron publicar las métricas del trabajo", error);
+  }
 }
