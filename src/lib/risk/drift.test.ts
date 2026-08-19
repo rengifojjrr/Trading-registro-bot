@@ -81,3 +81,66 @@ describe("evaluateMissingPosition", () => {
     expect(evaluateMissingPosition({ ourSize: "0.0" })).toBeNull();
   });
 });
+
+describe("la tolerancia va sobre el precio, no sobre el P&L", () => {
+  // El caso real del 19 de agosto de 2026: 150 contratos nano cortos a
+  // 67.950, nocional 101.925 dólares. Esta aplicación calcula con el último
+  // precio negociado (68.695) y Coinbase publica contra el de liquidación
+  // (68.775). Ochenta dólares de diferencia de precio -- un 0,12 % -- son
+  // 120 dólares de P&L, casi un 10 % de los 1.237 que reporta Coinbase.
+  const NOCIONAL = "103042.5"; // 150 × 0,01 × 68.695
+
+  it("no da la alarma por la separación entre el último precio y el de liquidación", () => {
+    const result = evaluateUnrealizedDrift({
+      ours: "-1117.50",
+      theirs: "-1237.50",
+      notional: NOCIONAL,
+    });
+    expect(result.severity).toBe("OK");
+    expect(result.message).toContain("liquidación");
+  });
+
+  it("sin el nocional habría dado la alarma, que es lo que hacía antes", () => {
+    // Documenta por qué hizo falta el cambio: la misma comparación, juzgada
+    // como porcentaje del P&L, alarma sobre algo que es normal. Una alarma
+    // que salta siempre enseña a ignorarla.
+    const result = evaluateUnrealizedDrift({ ours: "-1117.50", theirs: "-1237.50" });
+    expect(result.severity).not.toBe("OK");
+  });
+
+  it("sigue cazando un multiplicador equivocado", () => {
+    // Diez veces el P&L implica una separación de precio enorme: la
+    // tolerancia nueva no le hace ni cosquillas.
+    const result = evaluateUnrealizedDrift({ ours: "12375", theirs: "1237.50", notional: NOCIONAL });
+    expect(result.severity).toBe("ALARM");
+    expect(result.message).toContain("tamaño de contrato");
+  });
+
+  it("sigue cazando un fill que falta", () => {
+    // Es el caso de esta semana: 151 contratos a 66.893 en vez de 150 a
+    // 67.950 daban -2.720 contra los -1.237 de Coinbase.
+    const result = evaluateUnrealizedDrift({
+      ours: "-2720.61",
+      theirs: "-1237.50",
+      notional: NOCIONAL,
+    });
+    expect(result.severity).toBe("ALARM");
+    expect(result.message).toContain("fill");
+  });
+
+  it("un nocional inservible no cuela como cero", () => {
+    // Dividir entre cero daría un porcentaje infinito, y entre basura, NaN:
+    // en los dos casos se vuelve a la comparación de antes en vez de dar
+    // cualquier cosa por buena.
+    for (const notional of ["0", "", "no-sé", null]) {
+      expect(
+        evaluateUnrealizedDrift({ ours: "-1117.50", theirs: "-1237.50", notional }).severity,
+        String(notional),
+      ).not.toBe("OK");
+    }
+  });
+
+  it("céntimos siguen sin decir nada, con nocional o sin él", () => {
+    expect(evaluateUnrealizedDrift({ ours: "1.40", theirs: "1.00", notional: NOCIONAL }).severity).toBe("OK");
+  });
+});

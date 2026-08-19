@@ -14,10 +14,28 @@ import { Decimal } from "decimal.js";
  * Pure, so the thresholds are testable without touching Coinbase.
  */
 
-/** Below this, a difference is indistinguishable from two calls landing at different prices. */
-const TOLERANCE_PCT = 1;
 /** Never alarm over small change on a small position -- percentages get loud near zero. */
 const TOLERANCE_ABSOLUTE = 1;
+
+/**
+ * Cuánto puede separarse el precio de referencia antes de que sea un problema.
+ *
+ * La tolerancia va sobre el **precio**, no sobre el P&L, y eso no es un
+ * detalle: en un futuro apalancado los dos no se parecen en nada. Esta
+ * aplicación calcula con el último precio negociado y Coinbase publica su
+ * P&L contra el precio de liquidación (*mark*), que nunca es el mismo. Con
+ * 150 contratos nano, 80 dólares de diferencia entre esos dos precios -- un
+ * 0,12 % -- se convierten en 120 dólares de P&L, que sobre 1.237 es casi un
+ * 10 %. Con un umbral del 1 % sobre el P&L, eso salta siempre; y una alarma
+ * que salta siempre no es una alarma, es ruido que enseña a ignorarla.
+ *
+ * Dividir la diferencia entre el tamaño de la posición la devuelve a
+ * dólares por unidad, que es donde la comparación tiene sentido y donde el
+ * apalancamiento deja de distorsionarla. No pierde poder de detección: un
+ * multiplicador equivocado o un fill que falta mueven el precio implícito
+ * muchísimo más que esto.
+ */
+const TOLERANCE_PRICE_PCT = 0.35;
 
 /**
  * NO_POSITION is the most serious of these, not the mildest: it means this
@@ -39,6 +57,14 @@ export function evaluateUnrealizedDrift(params: {
   ours: string | number;
   /** What Coinbase reports for the same position. */
   theirs: string | number;
+  /**
+   * El valor nocional de la posición: contratos × tamaño de contrato ×
+   * precio. Es lo que permite traducir la diferencia de P&L a diferencia de
+   * precio, que es donde la comparación tiene sentido. Sin él se cae a la
+   * comparación antigua sobre el P&L, que en una posición apalancada es
+   * demasiado estricta.
+   */
+  notional?: string | number | null;
 }): DriftResult {
   const ours = new Decimal(params.ours);
   const theirs = new Decimal(params.theirs);
@@ -58,12 +84,21 @@ export function evaluateUnrealizedDrift(params: {
     };
   }
 
-  if (differencePct !== null && differencePct <= TOLERANCE_PCT) {
+  // La diferencia, devuelta a precio: qué separación entre el último
+  // negociado y el de liquidación haría falta para explicarla entera.
+  const notional = parseNotional(params.notional);
+  const pricePct =
+    notional !== null ? absDifference.dividedBy(notional).times(100).toNumber() : null;
+
+  if (pricePct !== null && pricePct <= TOLERANCE_PRICE_PCT) {
     return {
       severity: "OK",
       difference: difference.toString(),
       differencePct,
-      message: "Coincide con Coinbase dentro del margen normal entre dos consultas.",
+      message:
+        `Coincide con Coinbase. La diferencia equivale a ${pricePct.toFixed(2)} % de precio: ` +
+        `esta aplicación calcula con el último precio negociado y Coinbase con el de liquidación, ` +
+        `y esos dos nunca son el mismo.`,
     };
   }
 
@@ -74,8 +109,16 @@ export function evaluateUnrealizedDrift(params: {
   const looksLikeMultiplier =
     ratio !== null && Number.isFinite(ratio) && ratio > 0 && isNearWholeMultiple(ratio);
 
+  // Se gradúa por la separación de precio cuando se conoce, porque es la que
+  // no depende del apalancamiento; si no, por el porcentaje del P&L.
   const severity: DriftSeverity =
-    differencePct !== null && differencePct > 10 ? "ALARM" : "WATCH";
+    pricePct !== null
+      ? pricePct > TOLERANCE_PRICE_PCT * 4
+        ? "ALARM"
+        : "WATCH"
+      : differencePct !== null && differencePct > 10
+        ? "ALARM"
+        : "WATCH";
 
   return {
     severity,
@@ -85,6 +128,16 @@ export function evaluateUnrealizedDrift(params: {
       ? `La cifra calculada es ${ratio!.toFixed(2)}× la de Coinbase. Suele significar que el tamaño de contrato del producto está mal.`
       : "La cifra calculada no coincide con la de Coinbase. Revisa que no falte ningún fill.",
   };
+}
+
+function parseNotional(value: string | number | null | undefined): Decimal | null {
+  if (value === null || value === undefined || value === "") return null;
+  try {
+    const parsed = new Decimal(value).abs();
+    return parsed.isFinite() && parsed.greaterThan(0) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /** True for something close to 2x, 10x, 100x… and their reciprocals. */

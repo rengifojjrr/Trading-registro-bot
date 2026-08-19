@@ -35,6 +35,10 @@ export async function GET(request: Request) {
   // The size this app still believes is open. Without it, "Coinbase has no
   // position" cannot be told apart from "we agree there is no position".
   const ourSize = url.searchParams.get("ourSize");
+  // Contratos × tamaño de contrato × precio. Con él la diferencia se juzga
+  // en precio en vez de en P&L, que es lo único que no distorsiona el
+  // apalancamiento.
+  const notional = url.searchParams.get("notional");
 
   if (!productId || ours === null || !Number.isFinite(Number(ours))) {
     return NextResponse.json({ available: false });
@@ -72,7 +76,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ available: false });
     }
 
-    const drift = evaluateUnrealizedDrift({ ours, theirs: position.unrealized_pnl });
+    const drift = evaluateUnrealizedDrift({ ours, theirs: position.unrealized_pnl, notional });
 
     return NextResponse.json({
       available: true,

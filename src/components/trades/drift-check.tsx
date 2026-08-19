@@ -30,11 +30,14 @@ export function DriftCheck({
   productId,
   ours,
   ourSize,
+  notional,
 }: {
   productId: string;
   ours: string | null;
   /** What this app still believes is open, so a phantom position can be spotted. */
   ourSize: string | null;
+  /** Contratos × tamaño de contrato × precio, para juzgar la diferencia en precio y no en P&L. */
+  notional: string | null;
 }) {
   const [drift, setDrift] = useState<DriftResponse | null>(null);
 
@@ -48,6 +51,7 @@ export function DriftCheck({
           productId,
           ours: String(ours),
           ourSize: String(ourSize ?? "0"),
+          notional: String(notional ?? ""),
         });
         const res = await fetch(`/api/coinbase/position-drift?${query.toString()}`);
         const data = (await res.json()) as DriftResponse;
@@ -65,7 +69,7 @@ export function DriftCheck({
       cancelled = true;
       clearInterval(id);
     };
-  }, [productId, ours, ourSize]);
+  }, [productId, ours, ourSize, notional]);
 
   if (!drift?.available || !drift.severity) return null;
 
@@ -120,7 +124,13 @@ export function DriftCheck({
           </>
         ) : null}
       </p>
-      {!ok ? <p className="text-xs text-muted-foreground">{drift.message}</p> : null}
+      {/* La explicación también cuando coincide: si Coinbase enseña una cifra
+          y esta pantalla otra, «Coincide» a secas no convence a nadie. Sólo
+          se calla cuando los dos números son literalmente el mismo y no hay
+          nada que explicar. */}
+      {drift.message && drift.message !== "Coincide con Coinbase." ? (
+        <p className="text-xs text-muted-foreground">{drift.message}</p>
+      ) : null}
     </div>
   );
 }

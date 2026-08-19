@@ -74,7 +74,15 @@ export function LiveUnrealizedPnl({
             reports for the same position. Everything else in the product
             computes a figure; this is the only thing that says whether it
             is right. */}
-        <DriftCheck productId={productId} ours={pnl.grossPnl} ourSize={openQty} />
+        <DriftCheck
+          productId={productId}
+          ours={pnl.grossPnl}
+          ourSize={openQty}
+          // El nocional es lo que convierte una diferencia de P&L en una
+          // diferencia de precio, que es lo único comparable cuando hay
+          // apalancamiento de por medio.
+          notional={String(Number(openQty) * Number(contractSize) * price)}
+        />
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
