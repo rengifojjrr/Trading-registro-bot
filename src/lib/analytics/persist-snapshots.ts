@@ -34,7 +34,8 @@ export async function persistSnapshots(params: {
     .from("trades")
     .select("id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions")
     .eq("user_id", params.userId)
-    .eq("account_id", params.accountId);
+    .eq("account_id", params.accountId)
+    .is("orphaned_at", null);
 
   const trades: TradeForStats[] = (tradeRows ?? []).map((t) => ({
     id: t.id,

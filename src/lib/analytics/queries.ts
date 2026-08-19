@@ -110,6 +110,20 @@ export function applyFilters<T>(query: T, filters: TradeFilters): T {
   // readability for no real safety gain here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = query as any;
+
+  // Fuera las huérfanas, siempre y sin poder desactivarlo.
+  //
+  // Una operación queda huérfana cuando un recálculo mueve los límites de
+  // posición y su fill de apertura deja de abrir nada. No se borra -- el
+  // historial tiene que seguir siendo auditable -- pero describe un pasado
+  // que ya no es cierto, así que contarla en un total o enseñarla en una
+  // lista es enseñar la misma operación dos veces, una buena y otra vieja.
+  //
+  // Va aquí y no en cada consulta porque esto lo comparten el panel, la
+  // tabla, el diario, las estadísticas y los informes: quien añada la
+  // consulta número cuarenta y cuatro la hereda sin saber que existe.
+  q = q.is("orphaned_at", null);
+
   if (filters.accountId) q = q.eq("account_id", filters.accountId);
   if (filters.productId) q = q.eq("product_id", filters.productId);
   if (filters.direction) q = q.eq("direction", filters.direction);
@@ -302,7 +316,11 @@ export async function fetchTradesForStrategyReport(filters: TradeFilters = {}): 
  */
 export async function fetchDistinctProductIds(): Promise<string[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("trades").select("product_id").order("product_id", { ascending: true });
+  const { data, error } = await supabase
+    .from("trades")
+    .select("product_id")
+    .is("orphaned_at", null)
+    .order("product_id", { ascending: true });
   if (error) throw new Error(`fetchDistinctProductIds: ${error.message}`);
   return Array.from(new Set((data ?? []).map((r) => r.product_id)));
 }

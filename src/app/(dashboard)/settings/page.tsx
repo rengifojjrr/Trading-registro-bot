@@ -37,7 +37,8 @@ export default async function SettingsPage() {
         .from("trades")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "CLOSED"),
+        .eq("status", "CLOSED")
+        .is("orphaned_at", null),
     ]);
 
   const disabledFields = new Set((fieldMappingRows ?? []).filter((r) => !r.enabled).map((r) => r.internal_field));

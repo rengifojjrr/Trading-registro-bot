@@ -28,7 +28,7 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
 
   const [{ count: totalTradeCount }, { data: settings }, accounts, products, openPositions, filterOptions] =
     await Promise.all([
-      supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+      supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("orphaned_at", null),
       supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
       fetchAccounts(),
       fetchDistinctProductIds(),

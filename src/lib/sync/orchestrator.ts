@@ -11,6 +11,7 @@ import { raiseNotification } from "@/lib/notifications/create";
 import { publishDailyMetricsFor } from "@/core/metrics";
 import { todayIn } from "@/core/today";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
+import { describeGap, findFillGaps, storedHighWaterMark, type FillGap } from "./gaps";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPositions } from "./verify-positions";
 import type { Json } from "@/types/database";
@@ -262,17 +263,22 @@ async function syncOneProduct(params: {
     limit: 100,
   });
 
-  // raw_orders must exist before raw_fills: raw_fills.order_id is a
-  // foreign key into raw_orders.order_id, so on a fresh order (never
-  // synced before) inserting the fill first trips
-  // "raw_fills_order_id_fkey" -- upsertRawOrders' own failure is
-  // deliberately swallowed (see its docstring), so if it can't reach
-  // Coinbase for order detail, the fill insert right after still fails
-  // loudly via that same FK instead of silently referencing an order
-  // that was never persisted.
+  // Las órdenes primero, aunque ya no sea obligatorio: desde la migración
+  // `el_fill_no_depende_de_su_orden` el fill se guarda aunque su orden no
+  // esté, porque el fill es el hecho y la orden es contexto. Se siguen
+  // pidiendo antes porque son ellas las que traen `filled_size` y
+  // `number_of_fills`, que es con lo que se cuadra justo después.
   const orderIds = [...new Set(fills.map((f) => f.order_id))];
   await upsertRawOrders(adapter, userId, accountId, productId, runId, orderIds);
-  const fillsNew = await upsertRawFills(userId, accountId, runId, fills);
+  const storedFills = await upsertRawFills(userId, accountId, runId, fills);
+
+  // Antes de reconstruir, cuadrar. La reconstrucción da por supuesto que
+  // están todos los fills; si falta uno, no falla nada de forma visible --
+  // simplemente la posición nunca vuelve a cero, y como una operación muere
+  // cuando la posición vuelve a cero, todas las siguientes se funden en una
+  // sola operación interminable. Reconstruir sobre datos incompletos produce
+  // cifras coherentes y falsas, que es lo peor que puede pasar aquí.
+  const repaired = await repairFillGaps({ adapter, userId, accountId, productId, runId });
 
   const result = await persistReconstruction({
     userId: userId,
@@ -314,14 +320,16 @@ async function syncOneProduct(params: {
 
   return {
     fillsFetched: fills.length,
-    fillsNew,
+    fillsNew: storedFills.inserted + repaired.recovered,
     tradesCreated: result.tradesCreated,
     tradesUpdated: result.tradesUpdated,
-    discrepancies: result.orphanedOpeningFillIds.length,
-    highWaterMark: fills.reduce(
-      (max, f) => (f.sequence_timestamp > max ? f.sequence_timestamp : max),
-      "1970-01-01T00:00:00Z",
-    ),
+    discrepancies: result.orphanedOpeningFillIds.length + repaired.remaining.length,
+    // La marca de agua avanza sobre lo que quedó **guardado**, no sobre lo
+    // que se trajo. Es la diferencia entre un fallo que se reintenta y un
+    // agujero permanente: si la marca pasa por encima de un fill que no llegó
+    // a guardarse, ninguna sincronización posterior vuelve a mirar ahí jamás
+    // -- sólo se pide lo más nuevo que la marca, menos la ventana de solape.
+    highWaterMark: storedHighWaterMark(fills, storedFills.stored),
   };
 }
 
@@ -368,13 +376,28 @@ async function refreshProductSpec(
   return { contractSize: details?.contract_size ?? null };
 }
 
+interface StoredFillsResult {
+  /** Cuántos no estaban y ahora sí. */
+  inserted: number;
+  /** Los `entry_id` que están en la base de datos, ya estuvieran o no. */
+  stored: Set<string>;
+}
+
+/**
+ * Guarda los fills nuevos y **confirma leyendo** cuáles quedaron dentro.
+ *
+ * Devolver «he insertado N» no vale para mover la marca de agua: lo que
+ * importa no es cuántos se intentaron sino cuáles están, y esas dos cosas se
+ * separan en cuanto una fila se cae. Se relee después de insertar porque la
+ * base de datos es la única que sabe la respuesta.
+ */
 async function upsertRawFills(
   userId: string,
   accountId: string,
   syncRunId: string,
   fills: CoinbaseFill[],
-): Promise<number> {
-  if (fills.length === 0) return 0;
+): Promise<StoredFillsResult> {
+  if (fills.length === 0) return { inserted: 0, stored: new Set() };
   const supabase = createAdminClient();
 
   const entryIds = fills.map((f) => f.entry_id);
@@ -384,7 +407,7 @@ async function upsertRawFills(
     .in("entry_id", entryIds);
   const existingIds = new Set((existing ?? []).map((r) => r.entry_id));
   const newFills = fills.filter((f) => !existingIds.has(f.entry_id));
-  if (newFills.length === 0) return 0;
+  if (newFills.length === 0) return { inserted: 0, stored: existingIds };
 
   const { error: insertError } = await supabase.from("raw_fills").insert(
     newFills.map((f) => ({
@@ -414,8 +437,145 @@ async function upsertRawFills(
     throw new Error(`Failed to insert raw_fills: ${insertError.message}`);
   }
 
-  return newFills.length;
+  // Se relee en vez de dar por hecho que entraron todos: si alguna fila se
+  // hubiera caído, la marca de agua no debe pasar por encima de ella.
+  const { data: confirmed } = await supabase
+    .from("raw_fills")
+    .select("entry_id")
+    .in("entry_id", entryIds);
+
+  return {
+    inserted: newFills.length,
+    stored: new Set((confirmed ?? []).map((r) => r.entry_id)),
+  };
 }
+
+
+/**
+ * Busca fills que Coinbase ejecutó y nosotros no tenemos, y los pide otra vez.
+ *
+ * La comprobación no es una estimación: cada orden trae de Coinbase cuánto se
+ * ejecutó y en cuántos trozos, así que el hueco se calcula restando. Y como el
+ * hueco viene con el `order_id` puesto, repararlo es volver a pedir los fills
+ * **de esa orden** -- no un rebarrido del histórico entero.
+ *
+ * Esto existe porque el remedio anterior era un botón escondido en
+ * Configuración que había que saber que estaba ahí. La aplicación tenía la
+ * información para darse cuenta sola desde el primer día y no la miraba: una
+ * compra de 1 contrato del 11 de agosto de 2026 se perdió, y durante ocho días
+ * el panel enseñó una operación fantasma de 151 contratos sin que nada
+ * chistara.
+ */
+async function repairFillGaps(params: {
+  adapter: MarketDataPort;
+  userId: string;
+  accountId: string;
+  productId: string;
+  runId: string;
+}): Promise<{ recovered: number; remaining: FillGap[] }> {
+  const { adapter, userId, accountId, productId, runId } = params;
+
+  const gaps = await findGapsForAccount(userId, accountId, productId);
+  if (gaps.length === 0) return { recovered: 0, remaining: [] };
+
+  let recovered = 0;
+  try {
+    const fills = await adapter.listFills({
+      order_ids: gaps.map((g) => g.orderId),
+      limit: 100,
+    });
+    if (fills.length > 0) {
+      const stored = await upsertRawFills(userId, accountId, runId, fills);
+      recovered = stored.inserted;
+    }
+  } catch (error) {
+    console.error("[sync] no se pudieron recuperar los fills que faltaban", error);
+  }
+
+  // Se vuelve a cuadrar contra la base de datos en vez de suponer que lo
+  // recuperado tapa el hueco: puede que Coinbase no devuelva el fill, y en ese
+  // caso hay que decirlo, no dar el problema por resuelto.
+  const remaining = await findGapsForAccount(userId, accountId, productId);
+
+  if (remaining.length > 0) {
+    await raiseNotification({
+      userId,
+      type: "DISCREPANCY",
+      severity: "CRITICAL",
+      title: "Faltan ejecuciones por registrar",
+      message:
+        `Coinbase dice que estas órdenes se ejecutaron por más de lo que tenemos guardado, y volver a pedirlas no lo ha resuelto. ` +
+        `Mientras falte un fill, la posición reconstruida no cuadra y las operaciones pueden aparecer unidas o abiertas cuando no lo están.\n\n` +
+        remaining.map((gap) => describeGap(gap)).join("\n"),
+      relatedEntityType: "product",
+      relatedEntityId: productId,
+      dedupKey: `FILL_GAP:account:${accountId}:product:${productId}`,
+    });
+  } else if (recovered > 0) {
+    await raiseNotification({
+      userId,
+      type: "DISCREPANCY",
+      severity: "INFO",
+      title: "Se recuperaron ejecuciones que faltaban",
+      message: `Faltaban ${recovered} ejecución(es) por registrar y se han recuperado de Coinbase. Las operaciones afectadas se han vuelto a calcular.`,
+      relatedEntityType: "product",
+      relatedEntityId: productId,
+      dedupKey: `FILL_GAP_FIXED:account:${accountId}:product:${productId}:${recovered}`,
+    });
+  }
+
+  return { recovered, remaining };
+}
+
+/** Lee el cuadre por orden y aplica la regla, que vive en `gaps.ts`. */
+async function findGapsForAccount(
+  userId: string,
+  accountId: string,
+  productId: string,
+): Promise<FillGap[]> {
+  const supabase = createAdminClient();
+
+  // `order_fill_tallies` es una vista y los tipos generados sólo cubren
+  // tablas, así que el cliente tipado no la conoce. El tipo se pierde aquí,
+  // en una línea y con el motivo escrito, en vez de repartir `as never` por
+  // el archivo; la forma la garantiza la propia migración, que es quien
+  // define las cinco columnas que se piden abajo.
+  const { data, error } = await (supabase.from as unknown as UntypedFrom)("order_fill_tallies")
+    .select("order_id, expected_size, expected_fills, stored_size, stored_count")
+    .eq("user_id", userId)
+    .eq("account_id", accountId)
+    .eq("product_id", productId);
+
+  if (error || !data) return [];
+
+  return findFillGaps(
+    data.map((row) => ({
+      orderId: row.order_id,
+      filledSize: row.expected_size,
+      numberOfFills: row.expected_fills === null ? null : Number(row.expected_fills),
+    })),
+    data.map((row) => ({
+      orderId: row.order_id,
+      storedSize: row.stored_size,
+      storedCount: row.stored_count,
+    })),
+  );
+}
+
+interface TallyRow {
+  order_id: string;
+  expected_size: string | null;
+  expected_fills: string | null;
+  stored_size: string;
+  stored_count: number;
+}
+
+/** Lo justo de la cadena de `.eq()` que hace falta para leer la vista. */
+interface TallyQuery extends PromiseLike<{ data: TallyRow[] | null; error: unknown }> {
+  eq: (column: string, value: string) => TallyQuery;
+}
+
+type UntypedFrom = (table: string) => { select: (columns: string) => TallyQuery };
 
 async function upsertRawOrders(
   adapter: MarketDataPort,

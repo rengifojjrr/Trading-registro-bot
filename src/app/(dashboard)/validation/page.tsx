@@ -39,6 +39,7 @@ export default async function ValidationPage() {
         .eq("user_id", user.id)
         .eq("status", "CLOSED")
         .eq("source", "COINBASE_SYNC")
+        .is("orphaned_at", null)
         .order("opened_at", { ascending: false })
         .limit(50),
       supabase.from("trade_verifications").select("trade_id, matches, note").eq("user_id", user.id),
@@ -46,7 +47,8 @@ export default async function ValidationPage() {
         .from("trades")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "CLOSED"),
+        .eq("status", "CLOSED")
+        .is("orphaned_at", null),
     ]);
 
   const timezone = settings?.timezone || "UTC";

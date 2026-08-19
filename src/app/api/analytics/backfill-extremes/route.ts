@@ -39,6 +39,7 @@ export async function POST() {
     .eq("user_id", user.id)
     .eq("status", "CLOSED")
     .eq("source", "COINBASE_SYNC")
+    .is("orphaned_at", null)
     .not("entry_wap", "is", null)
     .not("closed_at", "is", null)
     .order("opened_at", { ascending: false });

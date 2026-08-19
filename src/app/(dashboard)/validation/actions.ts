@@ -112,7 +112,8 @@ export async function setAutoSyncEnabled(enabled: boolean): Promise<{ error: str
         .from("trades")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "CLOSED"),
+        .eq("status", "CLOSED")
+        .is("orphaned_at", null),
     ]);
 
     const rows = verifications ?? [];

@@ -35,6 +35,7 @@ async function reconstructedPositions(
     .from("trades")
     .select("product_id, direction, total_entry_qty, total_exit_qty")
     .eq("user_id", userId)
+    .is("orphaned_at", null)
     .eq("account_id", accountId)
     .eq("status", "OPEN");
 

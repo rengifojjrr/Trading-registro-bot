@@ -182,6 +182,7 @@ export async function fetchDay(date: string): Promise<DaySummary> {
         .from("trades")
         .select("id, product_id, direction, status, net_pnl, opened_at, closed_at")
         .eq("user_id", user.id)
+        .is("orphaned_at", null)
         .gte("opened_at", from)
         .lte("opened_at", to)
         .order("opened_at", { ascending: true }),
@@ -348,6 +349,7 @@ export async function fetchMarkers(fromDate: string, toDate: string): Promise<Da
       .from("trades")
       .select("opened_at")
       .eq("user_id", user.id)
+      .is("orphaned_at", null)
       .gte("opened_at", `${fromDate}T00:00:00`)
       .lte("opened_at", `${toDate}T23:59:59.999`),
   ]);

@@ -36,6 +36,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
       .from("trades")
       .select("opened_at")
       .eq("user_id", user.id)
+      .is("orphaned_at", null)
       .order("opened_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
