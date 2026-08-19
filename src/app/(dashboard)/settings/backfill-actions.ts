@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
+import { resolveCoinbaseAccountId } from "@/lib/sync/account";
+import { runPollSync } from "@/lib/sync/orchestrator";
 
 export type BackfillState = { error: string | null; message: string | null };
 
@@ -52,5 +54,71 @@ export async function requestFullBackfill(): Promise<BackfillState> {
     error: null,
     message:
       "Listo. La próxima sincronización pedirá el histórico completo en lugar de sólo lo nuevo. Pulsa «Sincronizar ahora».",
+  };
+}
+
+/**
+ * Rehace el histórico y sincroniza, de una vez.
+ *
+ * `requestFullBackfill` deja preparada la relectura pero no la ejecuta, y eso
+ * está bien en Configuración, donde quien entra ya venía a tocar la
+ * sincronización. No está bien en el sitio donde de verdad aparece el
+ * problema: cuando la aplicación enseña una posición que Coinbase dice que no
+ * existe, la persona que lo está mirando no tiene por qué saber que la cura se
+ * llama «rehacer el histórico», ni que después hay que ir a otra tarjeta a
+ * pulsar «Sincronizar ahora».
+ *
+ * Ese fue el fallo real de esta semana: la aplicación tenía el remedio desde
+ * el principio, escondido detrás de dos pasos y de un título que parece de
+ * programadores, y el panel estuvo ocho días enseñando una operación fantasma
+ * de 151 contratos.
+ *
+ * No borra nada. `raw_fills` está indexado por el `entry_id` de Coinbase, así
+ * que releer una ventana que ya está completa no cambia absolutamente nada;
+ * lo único que cuesta es una petición más grande.
+ */
+export async function repairHistory(): Promise<BackfillState> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error: markError } = await supabase
+    .from("sync_state")
+    .update({ high_water_mark: null })
+    .eq("user_id", user.id)
+    .eq("sync_type", "POLL");
+
+  if (markError) {
+    return { error: "No se pudo preparar la relectura del histórico.", message: null };
+  }
+
+  const accountId = await resolveCoinbaseAccountId(user.id);
+  if (!accountId) {
+    return { error: "No hay ninguna cuenta de Coinbase configurada.", message: null };
+  }
+
+  const summary = await runPollSync(accountId);
+
+  await recordAudit({
+    userId: user.id,
+    action: "BACKFILL_REQUESTED",
+    metadata: {
+      note: "Relectura completa lanzada desde el aviso de descuadre.",
+      fillsNew: summary.fillsNew,
+      status: summary.status,
+    },
+  });
+
+  revalidatePath("/", "layout");
+
+  if (summary.status === "FAILED") {
+    return { error: summary.errorSummary ?? "La sincronización falló.", message: null };
+  }
+
+  return {
+    error: null,
+    message:
+      summary.fillsNew > 0
+        ? `Recuperadas ${summary.fillsNew} ejecución(es) que faltaban. Las operaciones se han vuelto a calcular.`
+        : "El histórico ya estaba completo: no faltaba ninguna ejecución.",
   };
 }
