@@ -39,6 +39,16 @@ export interface NotionMappedNight {
   dream: string | null;
   notes: string | null;
   place: string | null;
+  /**
+   * La etiqueta de «Cuanto tiempo Dormí?», tal cual.
+   *
+   * Ya se usaba para contrastarla con el reloj y se tiraba después. Ahora se
+   * guarda: la diferencia entre lo que crees que dormiste y lo que dicen las
+   * horas apuntadas es un dato por sí misma, y era el único campo de la base
+   * de sueño que no llegaba.
+   */
+  self_reported: string | null;
+  icon: string | null;
 }
 
 export interface NightMappingResult {
@@ -71,6 +81,7 @@ function toMinutes(clock: string): number | null {
 export function mapNotionNight(page: {
   id: string;
   properties: NotionProperties;
+  icon?: string | null;
 }): NightMappingResult | null {
   const properties = page.properties ?? {};
 
@@ -102,7 +113,8 @@ export function mapNotionNight(page: {
   // El contraste entre el reloj y la etiqueta que se apuntó a mano. Media
   // hora de diferencia es redondeo; hora y media es que uno de los dos campos
   // se quedó sin actualizar, y eso conviene saberlo.
-  const claimed = labelledMinutes(multiSelectNames(findProperty(properties, "Cuanto tiempo Dormi")));
+  const claimedLabels = multiSelectNames(findProperty(properties, "Cuanto tiempo Dormi"));
+  const claimed = labelledMinutes(claimedLabels);
   if (bedtime && wakeTime && claimed !== null) {
     const measured = minutesBetweenClocks(bedtime, wakeTime);
     if (measured !== null && Math.abs(measured - claimed) > 90) {
@@ -129,6 +141,8 @@ export function mapNotionNight(page: {
       dream: plainText(findProperty(properties, "Sueño")),
       notes: plainText(findProperty(properties, "Notas")),
       place: plainText(findProperty(properties, "Donde")),
+      self_reported: claimedLabels[0] ?? null,
+      icon: page.icon ?? null,
     },
     warnings,
   };

@@ -181,3 +181,29 @@ export function formatWorkTime(minutes: number | null, uncapped = false): string
   const base = h === 0 ? `${m}m` : m === 0 ? `${h}h` : `${h}h ${m}m`;
   return uncapped ? `${base} o más` : base;
 }
+
+/**
+ * Coincide con lo buscado.
+ *
+ * Mira el título, el resumen, las notas y el guion. Buscar sólo en el título
+ * dejaría fuera justo la vez que uno recuerda una frase del guion y no cómo
+ * llamó a la pieza -- que es la mitad de las veces que se busca.
+ */
+export function matchesSearch(
+  piece: {
+    title: string;
+    summary: string | null;
+    notes: string | null;
+    edit_notes: string | null;
+    body: string | null;
+  },
+  term: string,
+): boolean {
+  const needle = term.trim().toLowerCase();
+  if (needle === "") return true;
+
+  return [piece.title, piece.summary ?? "", piece.notes ?? "", piece.edit_notes ?? "", piece.body ?? ""]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}

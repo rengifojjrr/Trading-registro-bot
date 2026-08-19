@@ -35,7 +35,8 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
   const user = await requireUser();
   const supabase = await createClient();
 
-  const read = await readNotionDatabase(env.NOTION_TASKS_DATABASE_ID);
+  // Con cuerpos: la explicación de cada tarea vive ahí y no en una propiedad.
+  const read = await readNotionDatabase(env.NOTION_TASKS_DATABASE_ID, { withBodies: true });
   if (!read.ok) return { ...EMPTY_RESULT, error: read.error };
 
   const warnings = new Set<string>();
@@ -80,7 +81,11 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
     status: task.status,
     priority: task.priority,
     due_date: task.due_date,
+    due_end: task.due_end,
+    due_time: task.due_time,
     categories: task.categories,
+    description: task.description,
+    icon: task.icon,
     project_id: task.project ? (idByProject.get(task.project) ?? null) : null,
     // Notion no guarda cuándo se marcó una tarea, sólo que lo está. Se sella
     // con la fecha de vencimiento como aproximación, y sin ella se queda sin

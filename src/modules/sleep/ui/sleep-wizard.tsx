@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ChipGroup } from "@/core/ui/chip-group";
+import { IconPicker } from "@/core/ui/icon-picker";
 import { cn } from "@/lib/utils";
 import { saveSleepEntry, type SleepFormState } from "@/modules/sleep/actions";
 import {
@@ -24,6 +25,18 @@ const initialState: SleepFormState = { error: null, success: false };
 /** Las horas a las que uno se acuesta y se levanta de verdad, para no teclear. */
 const BEDTIME_SHORTCUTS = ["21:30", "22:00", "22:30", "23:00", "23:30", "00:00", "01:00", "02:00"];
 const WAKE_SHORTCUTS = ["05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "09:00"];
+
+/** Las opciones de «Cuanto tiempo Dormí?», tal cual están en tu Notion. */
+const SELF_REPORTED = [
+  "4 horas",
+  "5 horas",
+  "6 horas",
+  "7 horas",
+  "8 horas",
+  "9 horas",
+  "10 horas",
+  "Más de 10",
+];
 
 /**
  * Registrar una noche, una pregunta a la vez.
@@ -61,6 +74,7 @@ export function SleepWizard({
   const [bedtime, setBedtime] = useState(clockFromTimestamp(entry?.slept_at ?? null, timezone));
   const [wakeTime, setWakeTime] = useState(clockFromTimestamp(entry?.woke_at ?? null, timezone));
   const [score, setScore] = useState<number | null>(entry?.score ?? null);
+  const [selfReported, setSelfReported] = useState(entry?.self_reported ?? "");
 
   useEffect(() => {
     if (state.success) toast.success("Noche guardada.");
@@ -160,6 +174,40 @@ export function SleepWizard({
             <span className="text-sm text-muted-foreground">Notas</span>
             <Input name="notes" defaultValue={entry?.notes ?? ""} autoComplete="off" />
           </label>
+        </div>
+
+        {/*
+          «Cuanto tiempo Dormí?» de tu Notion. No es la resta de las dos horas
+          y por eso vale: la diferencia entre lo que crees que dormiste y lo
+          que dicen los relojes es un dato por sí misma.
+        */}
+        <div className="mt-4 flex flex-col gap-2">
+          <span className="text-sm text-muted-foreground">
+            ¿Cuánto crees que dormiste?
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {SELF_REPORTED.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSelfReported((current) => (current === option ? "" : option))}
+                aria-pressed={selfReported === option}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  selfReported === option
+                    ? "border-primary bg-accent font-medium text-foreground"
+                    : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                )}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <input type="hidden" name="self_reported" value={selfReported} />
+        </div>
+
+        <div className="mt-4">
+          <IconPicker name="icon" defaultValue={entry?.icon} />
         </div>
       </Step>
 

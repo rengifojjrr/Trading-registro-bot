@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   CONTENT_TYPES,
   DIFFICULTIES,
+  DIFFICULTY_LABELS,
   EDIT_TIME_OPTIONS,
   RECORD_TIME_OPTIONS,
   STATUSES,
@@ -29,13 +30,16 @@ const schema = z.object({
   status: z.enum(STATUSES).default("IDEA"),
   content_type: emptyToNull(z.enum(CONTENT_TYPES)),
   planned_date: emptyToNull(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
-  record_difficulty: emptyToNull(z.enum(DIFFICULTIES)),
   // Las etiquetas de tiempo llegan tal cual del desplegable y se traducen a
   // minutos aquí, para que el formulario siga hablando el idioma de Notion.
   record_time: emptyToNull(z.string().max(80)),
   edit_time: emptyToNull(z.string().max(80)),
   edit_notes: emptyToNull(z.string().max(4000)),
   notes: emptyToNull(z.string().max(4000)),
+  // El cuerpo de la página de Notion: el guion. Es lo más valioso del módulo
+  // y no tenía ni columna donde caber.
+  body: emptyToNull(z.string().max(20000)),
+  icon: emptyToNull(z.string().max(8)),
   // Sólo rutas absolutas http(s): un enlace es para pulsarlo, y aceptar
   // cualquier cadena acaba en enlaces rotos o peores.
   url: emptyToNull(z.string().url("El enlace no es válido.").max(500)),
@@ -50,11 +54,12 @@ function readForm(formData: FormData) {
     status: formData.get("status") || "IDEA",
     content_type: formData.get("content_type"),
     planned_date: formData.get("planned_date"),
-    record_difficulty: formData.get("record_difficulty"),
     record_time: formData.get("record_time"),
     edit_time: formData.get("edit_time"),
     edit_notes: formData.get("edit_notes"),
     notes: formData.get("notes"),
+    body: formData.get("body"),
+    icon: formData.get("icon"),
     url: formData.get("url"),
     video_url: formData.get("video_url"),
     final_url: formData.get("final_url"),
@@ -77,6 +82,15 @@ function fieldsFrom(parsed: z.infer<typeof schema>, formData: FormData) {
   const record = minutesFor(parsed.record_time, RECORD_TIME_OPTIONS);
   const edit = minutesFor(parsed.edit_time, EDIT_TIME_OPTIONS);
 
+  // Las fichas envían la etiqueta que se ve («FÁCIL»), y lo que se guarda es
+  // el valor de Notion. Una etiqueta que no esté en la lista se descarta en
+  // lugar de guardarse a medias.
+  const difficulties = formData
+    .getAll("record_difficulties")
+    .map(String)
+    .map((label) => DIFFICULTIES.find((level) => DIFFICULTY_LABELS[level] === label))
+    .filter((level): level is (typeof DIFFICULTIES)[number] => level !== undefined);
+
   return {
     title: parsed.title,
     summary: parsed.summary,
@@ -91,12 +105,17 @@ function fieldsFrom(parsed: z.infer<typeof schema>, formData: FormData) {
     has_script: formData.get("has_script") !== null,
     is_edited: formData.get("is_edited") !== null,
     has_thumbnail_ab: formData.get("has_thumbnail_ab") !== null,
-    record_difficulty: parsed.record_difficulty,
+    // La lista manda y la columna vieja se queda con el primero: las
+    // gráficas que ya la leían siguen funcionando sin tocarlas.
+    record_difficulties: difficulties,
+    record_difficulty: difficulties[0] ?? null,
     record_minutes: record.minutes,
     edit_minutes: edit.minutes,
     edit_time_uncapped: edit.uncapped,
     edit_notes: parsed.edit_notes,
     notes: parsed.notes,
+    body: parsed.body,
+    icon: parsed.icon,
     url: parsed.url,
     video_url: parsed.video_url,
     final_url: parsed.final_url,

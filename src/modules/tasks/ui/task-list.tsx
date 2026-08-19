@@ -1,35 +1,47 @@
 "use client";
 
-import { Check, Circle, CircleDot, Loader2, Trash2 } from "lucide-react";
-import { useTransition } from "react";
-import { toast } from "sonner";
+import { Check, Circle, CircleDot, Loader2, MessageSquare, Paperclip } from "lucide-react";
+import Link from "next/link";
+import { useState, useTransition } from "react";
+import type { Route } from "next";
 
 import { Badge } from "@/components/ui/badge";
+import { colorVars } from "@/core/notion-colors";
+import { DeleteButton } from "@/core/ui/delete-button";
 import { cn } from "@/lib/utils";
-import { deleteTask, setTaskStatus } from "@/modules/tasks/actions";
+import { afterTaskRemoved, setTaskStatus } from "@/modules/tasks/actions";
 import {
   PRIORITY_LABELS,
+  STATUS_LABELS,
   URGENCY_LABELS,
   URGENCY_ORDER,
   compareWithinGroup,
+  daysLeftLabel,
   urgencyOf,
+  type TaskGrouping,
   type TaskStatus,
   type Urgency,
 } from "@/modules/tasks/domain/tasks";
 import type { TaskRow } from "@/modules/tasks/queries";
 
 /**
- * Las tareas agrupadas por urgencia real, no por fecha.
+ * Las tareas agrupadas.
  *
- * Una lista ordenada por fecha entierra lo vencido debajo de lo de dentro de
- * un mes. Aquí lo vencido va primero siempre, porque es lo que hay que
- * decidir: hacerlo, moverlo o borrarlo.
+ * Por urgencia de partida, porque una lista ordenada por fecha entierra lo
+ * vencido debajo de lo de dentro de un mes. Pero ya no sólo por urgencia:
+ * tus tableros de Notion agrupan también por Projectos y por categoría, y
+ * fijar una sola agrupación es decidir por ti cuál es la pregunta.
+ *
+ * Se acabó el corte en veinte: de tus 42 tareas hechas, 22 no se veían desde
+ * ninguna pantalla. Ahora las hechas empiezan plegadas -- que es lo que
+ * resolvía el corte, no perder de vista lo pendiente -- y se abren enteras.
  */
 export function TaskList({
   tasks,
   today,
   only,
   showDone = true,
+  grouping = "URGENCIA",
   emptyLabel = "No hay tareas. Añade una arriba.",
 }: {
   tasks: TaskRow[];
@@ -41,23 +53,15 @@ export function TaskList({
    */
   only?: readonly Urgency[];
   showDone?: boolean;
+  grouping?: TaskGrouping;
   emptyLabel?: string;
 }) {
-  const visible = only ?? URGENCY_ORDER;
+  const [doneOpen, setDoneOpen] = useState(false);
+
   const open = tasks.filter((t) => t.status !== "HECHA");
   const done = tasks.filter((t) => t.status === "HECHA");
 
-  const groups = visible.map((urgency) => ({
-    urgency,
-    items: open
-      .filter((t) => urgencyOf(t.due_date, today) === urgency)
-      .sort((a, b) =>
-        compareWithinGroup(
-          { status: a.status, priority: a.priority, dueDate: a.due_date },
-          { status: b.status, priority: b.priority, dueDate: b.due_date },
-        ),
-      ),
-  })).filter((g) => g.items.length > 0);
+  const groups = buildGroups(open, today, grouping, only);
 
   if (groups.length === 0 && (!showDone || done.length === 0)) {
     return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
@@ -70,38 +74,107 @@ export function TaskList({
       ) : null}
 
       {groups.map((group) => (
-        <div key={group.urgency} className="flex flex-col gap-2">
+        <div key={group.key} className="flex flex-col gap-2">
           <h3
             className={cn(
               "text-xs font-medium uppercase tracking-wide",
-              group.urgency === "VENCIDA" ? "text-negative" : "text-muted-foreground",
+              group.key === "VENCIDA" ? "text-negative" : "text-muted-foreground",
             )}
           >
-            {URGENCY_LABELS[group.urgency]} · {group.items.length}
+            {group.label} · {group.items.length}
           </h3>
           {group.items.map((task) => (
-            <TaskItem key={task.id} task={task} />
+            <TaskItem key={task.id} task={task} today={today} />
           ))}
         </div>
       ))}
 
       {showDone && done.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setDoneOpen((o) => !o)}
+            aria-expanded={doneOpen}
+            className="flex w-fit items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          >
             Hechas · {done.length}
-          </h3>
-          {done.slice(0, 20).map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
+            <span aria-hidden>{doneOpen ? "▾" : "▸"}</span>
+          </button>
+          {doneOpen
+            ? done.map((task) => <TaskItem key={task.id} task={task} today={today} />)
+            : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-function TaskItem({ task }: { task: TaskRow }) {
+interface Group {
+  key: string;
+  label: string;
+  items: TaskRow[];
+}
+
+/**
+ * Reparte las tareas en grupos según la propiedad elegida.
+ *
+ * La urgencia lleva orden propio -- primero lo vencido -- y las demás se
+ * ordenan alfabéticamente, con «Sin …» al final: un cubo de sobras al
+ * principio empuja hacia abajo justo lo que sí está clasificado.
+ */
+function buildGroups(
+  tasks: TaskRow[],
+  today: string,
+  grouping: TaskGrouping,
+  only?: readonly Urgency[],
+): Group[] {
+  const sort = (items: TaskRow[]) =>
+    [...items].sort((a, b) =>
+      compareWithinGroup(
+        { status: a.status, priority: a.priority, dueDate: a.due_date },
+        { status: b.status, priority: b.priority, dueDate: b.due_date },
+      ),
+    );
+
+  if (grouping === "URGENCIA") {
+    return (only ?? URGENCY_ORDER)
+      .map((urgency) => ({
+        key: urgency,
+        label: URGENCY_LABELS[urgency],
+        items: sort(tasks.filter((t) => urgencyOf(t.due_date, today) === urgency)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }
+
+  const buckets = new Map<string, TaskRow[]>();
+  const push = (key: string, task: TaskRow) =>
+    buckets.set(key, [...(buckets.get(key) ?? []), task]);
+
+  for (const task of tasks) {
+    if (grouping === "PROYECTO") push(task.projectName ?? "Sin proyecto", task);
+    else if (grouping === "PRIORIDAD") push(PRIORITY_LABELS[task.priority], task);
+    else if (grouping === "ESTADO") push(STATUS_LABELS[task.status], task);
+    else if (task.categories.length === 0) push("Sin categoría", task);
+    // Una tarea con tres categorías sale en los tres grupos, igual que en un
+    // tablero de Notion agrupado por multi-select.
+    else for (const category of task.categories) push(category, task);
+  }
+
+  return [...buckets]
+    .map(([key, items]) => ({ key, label: key, items: sort(items) }))
+    .sort((a, b) => {
+      const aSpare = a.label.startsWith("Sin ");
+      const bSpare = b.label.startsWith("Sin ");
+      if (aSpare !== bSpare) return aSpare ? 1 : -1;
+      return a.label.localeCompare(b.label, "es");
+    });
+}
+
+function TaskItem({ task, today }: { task: TaskRow; today: string }) {
   const [pending, startTransition] = useTransition();
   const isDone = task.status === "HECHA";
+  const remaining = isDone ? null : daysLeftLabel(task.due_date, today);
+  const overdue = !isDone && task.due_date !== null && task.due_date < today;
 
   function cycle() {
     const next: TaskStatus =
@@ -133,38 +206,65 @@ function TaskItem({ task }: { task: TaskRow }) {
       </button>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={cn("text-sm", isDone && "text-muted-foreground line-through")}>{task.title}</span>
+        <Link
+          href={`/tareas/${task.id}` as Route}
+          className={cn(
+            "text-sm hover:underline",
+            isDone && "text-muted-foreground line-through",
+          )}
+        >
+          {task.icon ? `${task.icon} ` : ""}
+          {task.title}
+        </Link>
+
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {task.projectName ? <Badge variant="outline">{task.projectName}</Badge> : null}
+          {task.projectName ? (
+            <span
+              className="rounded-full border px-2 py-0.5"
+              style={{
+                ...colorVars(task.projectColor),
+                borderColor: "var(--tag-color)",
+                color: "var(--tag-color)",
+              }}
+            >
+              {task.projectName}
+            </span>
+          ) : null}
+
           {task.priority !== "MEDIA" ? (
             <Badge variant={task.priority === "ALTA" ? "warning" : "outline"}>
               {PRIORITY_LABELS[task.priority]}
             </Badge>
           ) : null}
-          {task.due_date ? <span className="tabular-nums">{task.due_date}</span> : null}
-          {task.categories.map((c) => (
-            <span key={c} className="rounded-full border border-border px-2 py-0.5">
-              {c}
+
+          {remaining ? (
+            <span className={cn("tabular-nums", overdue && "text-negative")}>{remaining}</span>
+          ) : null}
+
+          {task.due_time ? (
+            <span className="tabular-nums">{task.due_time.slice(0, 5)}</span>
+          ) : null}
+
+          {task.categories.map((category) => (
+            <span key={category} className="rounded-full border border-border px-2 py-0.5">
+              {category}
             </span>
           ))}
+
+          {task.description ? (
+            <MessageSquare className="size-3" aria-label="Tiene descripción" />
+          ) : null}
+          {task.notes ? <Paperclip className="size-3" aria-label="Tiene nota" /> : null}
         </div>
-        {task.notes ? <p className="text-xs text-muted-foreground">{task.notes}</p> : null}
       </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          startTransition(async () => {
-            await deleteTask(task.id);
-            toast.success("Tarea borrada.");
-          })
-        }
-        disabled={pending}
-        aria-label={`Borrar ${task.title}`}
-        className="shrink-0 text-muted-foreground transition-colors hover:text-negative disabled:opacity-50"
-      >
-        <Trash2 className="size-4" aria-hidden />
-      </button>
+      <DeleteButton
+        kind="TAREA"
+        entityId={task.id}
+        path="/tareas"
+        label={task.title}
+        onRemoved={afterTaskRemoved}
+      />
     </div>
   );
 }

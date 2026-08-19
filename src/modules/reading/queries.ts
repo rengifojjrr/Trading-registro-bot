@@ -11,6 +11,7 @@ export interface BookRow {
   genres: string[];
   total_pages: number | null;
   status: BookStatus;
+  icon: string | null;
   /** Páginas acumuladas de todas las sesiones de ese libro. */
   pagesRead: number;
 }
@@ -40,7 +41,7 @@ export async function fetchBooks(): Promise<BookRow[]> {
   const [{ data: books }, { data: sessions }] = await Promise.all([
     supabase
       .from("reading_books")
-      .select("id, title, author, genres, total_pages, status")
+      .select("id, title, author, genres, total_pages, status, icon")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("reading_sessions").select("book_id, pages").eq("user_id", user.id),
@@ -85,4 +86,60 @@ export async function fetchSessions(limit = 60): Promise<SessionRow[]> {
       bookGenres: book?.genres ?? [],
     };
   });
+}
+
+/** Una sesión sola, para su ficha. */
+export async function fetchSession(id: string): Promise<SessionRow | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("reading_sessions")
+    .select("id, book_id, session_date, started_at, minutes, pages, score, summary")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  const { data: book } = data.book_id
+    ? await supabase
+        .from("reading_books")
+        .select("title, genres")
+        .eq("id", data.book_id)
+        .maybeSingle()
+    : { data: null };
+
+  return {
+    ...data,
+    score: data.score === null ? null : Number(data.score),
+    bookTitle: book?.title ?? null,
+    bookGenres: book?.genres ?? [],
+  };
+}
+
+/** Un libro solo, con lo que se lleva leído, para su ficha. */
+export async function fetchBook(id: string): Promise<BookRow | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: book } = await supabase
+    .from("reading_books")
+    .select("id, title, author, genres, total_pages, status, icon")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!book) return null;
+
+  const { data: sessions } = await supabase
+    .from("reading_sessions")
+    .select("pages")
+    .eq("user_id", user.id)
+    .eq("book_id", id);
+
+  return {
+    ...book,
+    pagesRead: (sessions ?? []).reduce((sum, s) => sum + (s.pages ?? 0), 0),
+  };
 }

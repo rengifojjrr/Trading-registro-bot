@@ -26,13 +26,8 @@ const sessionSchema = z.object({
   summary: emptyToNull(z.string().max(8000)),
 });
 
-export async function logReadingSession(
-  _prev: ReadingFormState,
-  formData: FormData,
-): Promise<ReadingFormState> {
-  const user = await requireUser();
-
-  const parsed = sessionSchema.safeParse({
+function readSessionForm(formData: FormData) {
+  return sessionSchema.safeParse({
     session_date: formData.get("session_date"),
     book_id: formData.get("book_id"),
     started_at: formData.get("started_at"),
@@ -41,6 +36,15 @@ export async function logReadingSession(
     score: formData.get("score"),
     summary: formData.get("summary"),
   });
+}
+
+export async function logReadingSession(
+  _prev: ReadingFormState,
+  formData: FormData,
+): Promise<ReadingFormState> {
+  const user = await requireUser();
+
+  const parsed = readSessionForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
@@ -65,6 +69,78 @@ export async function logReadingSession(
   await republishDay(parsed.data.session_date);
   revalidateReading();
   return { error: null, success: true };
+}
+
+/**
+ * Edita una sesión de lectura.
+ *
+ * No existía: registrar sólo creaba, así que unos minutos mal contados no se
+ * arreglaban de ninguna forma.
+ *
+ * Se recuentan los dos días -- el de antes y el de después -- porque mover
+ * una sesión de fecha cambia el total de ambos, y recontar sólo el nuevo
+ * dejaría el viejo inflado para siempre.
+ */
+export async function updateReadingSession(
+  _prev: ReadingFormState,
+  formData: FormData,
+): Promise<ReadingFormState> {
+  const user = await requireUser();
+
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) {
+    return { error: "Lectura no encontrada.", success: false };
+  }
+
+  const parsed = readSessionForm(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
+  if (parsed.data.minutes === null && parsed.data.pages === null) {
+    return { error: "Apunta al menos los minutos o las páginas.", success: false };
+  }
+
+  const supabase = await createClient();
+
+  const { data: before } = await supabase
+    .from("reading_sessions")
+    .select("session_date")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("reading_sessions")
+    .update({
+      book_id: parsed.data.book_id,
+      session_date: parsed.data.session_date,
+      started_at: parsed.data.started_at,
+      minutes: parsed.data.minutes,
+      pages: parsed.data.pages,
+      score: parsed.data.score,
+      summary: parsed.data.summary,
+    })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: "No se pudo guardar la lectura.", success: false };
+
+  await republishDay(parsed.data.session_date);
+  if (before && before.session_date !== parsed.data.session_date) {
+    await republishDay(before.session_date);
+  }
+
+  revalidateReading();
+  revalidatePath(`/lecturas/${id}`);
+  return { error: null, success: true };
+}
+
+/** Rehace la cuenta del día cuando la papelera se lleva una sesión. */
+export async function afterSessionRemoved(date: string): Promise<void> {
+  await requireUser();
+  await republishDay(date);
+  revalidateReading();
 }
 
 /**
@@ -97,7 +173,18 @@ const bookSchema = z.object({
   author: emptyToNull(z.string().max(120)),
   total_pages: emptyToNull(z.coerce.number().int().positive().max(50000)),
   status: z.enum(BOOK_STATUSES).default("LEYENDO"),
+  icon: emptyToNull(z.string().max(8)),
 });
+
+function readBookForm(formData: FormData) {
+  return bookSchema.safeParse({
+    title: formData.get("title"),
+    author: formData.get("author"),
+    total_pages: formData.get("total_pages"),
+    status: formData.get("status") || "LEYENDO",
+    icon: formData.get("icon"),
+  });
+}
 
 export async function createBook(
   _prev: ReadingFormState,
@@ -105,12 +192,7 @@ export async function createBook(
 ): Promise<ReadingFormState> {
   const user = await requireUser();
 
-  const parsed = bookSchema.safeParse({
-    title: formData.get("title"),
-    author: formData.get("author"),
-    total_pages: formData.get("total_pages"),
-    status: formData.get("status") || "LEYENDO",
-  });
+  const parsed = readBookForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
@@ -118,10 +200,7 @@ export async function createBook(
   const supabase = await createClient();
   const { error } = await supabase.from("reading_books").insert({
     user_id: user.id,
-    title: parsed.data.title,
-    author: parsed.data.author,
-    total_pages: parsed.data.total_pages,
-    status: parsed.data.status,
+    ...parsed.data,
     genres: formData.getAll("genres").map(String),
   });
 
@@ -133,6 +212,43 @@ export async function createBook(
   }
 
   revalidateReading();
+  return { error: null, success: true };
+}
+
+/** Edita un libro entero. */
+export async function updateBook(
+  _prev: ReadingFormState,
+  formData: FormData,
+): Promise<ReadingFormState> {
+  const user = await requireUser();
+
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) {
+    return { error: "Libro no encontrado.", success: false };
+  }
+
+  const parsed = readBookForm(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("reading_books")
+    .update({ ...parsed.data, genres: formData.getAll("genres").map(String) })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) {
+    return {
+      error:
+        error.code === "23505" ? "Ya tienes un libro con ese título." : "No se pudo guardar el libro.",
+      success: false,
+    };
+  }
+
+  revalidateReading();
+  revalidatePath(`/lecturas/libros/${id}`);
   return { error: null, success: true };
 }
 

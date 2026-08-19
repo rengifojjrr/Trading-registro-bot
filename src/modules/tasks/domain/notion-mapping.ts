@@ -1,5 +1,7 @@
 import {
+  dateEnd,
   dateStart,
+  dateStartTime,
   findProperty,
   matchOptions,
   multiSelectNames,
@@ -26,7 +28,14 @@ export interface NotionMappedTask {
   status: TaskStatus;
   priority: TaskPriority;
   due_date: string | null;
+  /** El último día, cuando la tarea de Notion tenía rango. */
+  due_end: string | null;
+  /** `HH:MM`, cuando la fecha traía hora. */
+  due_time: string | null;
   categories: string[];
+  /** El cuerpo de la página: lo que la tarea explica. */
+  description: string | null;
+  icon: string | null;
   /** El nombre del proyecto; el llamador lo resuelve a un identificador. */
   project: string | null;
 }
@@ -51,6 +60,9 @@ export interface TaskMappingResult {
 export function mapNotionTask(page: {
   id: string;
   properties: NotionProperties;
+  /** El cuerpo de la página. Sólo llega si la lectura lo pidió. */
+  body?: string | null;
+  icon?: string | null;
 }): TaskMappingResult | null {
   const properties = page.properties ?? {};
 
@@ -86,7 +98,14 @@ export function mapNotionTask(page: {
       status: status ?? "NO_INICIADA",
       priority: priority ?? "MEDIA",
       due_date: dateStart(findProperty(properties, "Fecha")),
+      due_end: dateEnd(findProperty(properties, "Fecha")),
+      due_time: dateStartTime(findProperty(properties, "Fecha")),
       categories: categories.kept,
+      // «Crear Inventario» lleva escrito dentro «Hacer inventario de trendy
+      // sports». Todo eso vive en el cuerpo de la página, no en una propiedad,
+      // y por eso ninguna tarea traía su explicación.
+      description: page.body ?? null,
+      icon: page.icon ?? null,
       project: selectName(findProperty(properties, "Projectos")),
     },
     warnings,

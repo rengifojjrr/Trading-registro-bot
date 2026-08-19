@@ -17,7 +17,10 @@ export interface PieceRow {
   has_script: boolean;
   is_edited: boolean;
   has_thumbnail_ab: boolean;
+  /** El primero de `record_difficulties`; se conserva por compatibilidad. */
   record_difficulty: string | null;
+  /** En Notion «DIFICULTAD DE GRABAR» admite varios valores a la vez. */
+  record_difficulties: string[];
   record_minutes: number | null;
   edit_minutes: number | null;
   edit_time_uncapped: boolean;
@@ -27,6 +30,9 @@ export interface PieceRow {
   final_url: string | null;
   url: string | null;
   notes: string | null;
+  /** El cuerpo de la página: el guion, que es el trabajo de verdad. */
+  body: string | null;
+  icon: string | null;
   notion_page_id: string | null;
 }
 
@@ -45,7 +51,7 @@ export async function fetchPieces(): Promise<PieceRow[]> {
   const { data } = await supabase
     .from("content_pieces")
     .select(
-      "id, title, summary, channels, platforms, content_type, status, planned_date, published_at, has_script, is_edited, has_thumbnail_ab, record_difficulty, record_minutes, edit_minutes, edit_time_uncapped, edit_styles, edit_notes, video_url, final_url, url, notes, notion_page_id",
+      "id, title, summary, channels, platforms, content_type, status, planned_date, published_at, has_script, is_edited, has_thumbnail_ab, record_difficulty, record_difficulties, record_minutes, edit_minutes, edit_time_uncapped, edit_styles, edit_notes, video_url, final_url, url, notes, body, icon, notion_page_id",
     )
     .eq("user_id", user.id)
     // Sin fecha al final: lo que tiene fecha es lo que corre prisa.
@@ -62,7 +68,7 @@ export async function fetchPiece(id: string): Promise<PieceRow | null> {
   const { data } = await supabase
     .from("content_pieces")
     .select(
-      "id, title, summary, channels, platforms, content_type, status, planned_date, published_at, has_script, is_edited, has_thumbnail_ab, record_difficulty, record_minutes, edit_minutes, edit_time_uncapped, edit_styles, edit_notes, video_url, final_url, url, notes, notion_page_id",
+      "id, title, summary, channels, platforms, content_type, status, planned_date, published_at, has_script, is_edited, has_thumbnail_ab, record_difficulty, record_difficulties, record_minutes, edit_minutes, edit_time_uncapped, edit_styles, edit_notes, video_url, final_url, url, notes, body, icon, notion_page_id",
     )
     .eq("user_id", user.id)
     .eq("id", id)

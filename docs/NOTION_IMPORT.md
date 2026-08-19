@@ -98,8 +98,10 @@ corrija en Notion la importación dejaría de traer esos campos sin decir nada.
 
 ## Idempotencia
 
-Cada pieza guarda `notion_page_id`, con un índice único parcial sobre
-`(user_id, notion_page_id)`. Reimportar actualiza en lugar de duplicar, y el
+Cada pieza guarda `notion_page_id`, con un índice único sobre
+`(user_id, notion_page_id)` -- llano y no parcial: Postgres no acepta un índice
+parcial en un `ON CONFLICT` a menos que se repita su predicado, y el cliente de
+Supabase no lo repite. Reimportar actualiza en lugar de duplicar, y el
 informe distingue cuántas eran nuevas de cuántas se actualizaron. Las piezas
 creadas dentro de la aplicación no tienen `notion_page_id` y la importación no
 las toca nunca.
@@ -110,3 +112,76 @@ las toca nunca.
 calendario. No es un secreto, pero se configura como variable de entorno para
 no fijar en el código la base de nadie. Hay que compartir esa base con la misma
 integración de Notion (menú «...» → Conexiones), igual que la de trading.
+
+
+## El cuerpo de las páginas
+
+Durante un tiempo la importación sólo leyó propiedades, y eso dejaba fuera
+justo lo que más cuesta escribir:
+
+- Cada pieza del calendario de contenido lleva su guion **dentro de la
+  página**, con la estructura `HOOK` / `SCRIPT/NOTES` / `TAGS` que traen todas.
+- Cada tarea lleva su explicación igual: «Crear Inventario» contiene «Hacer
+  inventario de trendy sports».
+
+Ahora se traen los dos. El cuerpo se traduce a Markdown --
+`src/lib/notion/render-blocks.ts`, puro y con pruebas -- porque Markdown es lo
+que se puede volver a escribir a mano en un área de texto sin perder nada, y
+este contenido está para leerlo y editarlo, no para renderizarlo con fidelidad
+tipográfica.
+
+Cuesta **una llamada más por página**, así que sólo lo piden las dos
+importaciones donde el cuerpo es el dato (`withBodies: true`). Las páginas se
+piden de cinco en cinco: en serie una base de sesenta filas tarda un minuto, y
+todas a la vez Notion responde 429.
+
+Dos límites deliberados:
+
+- **Las subpáginas se nombran pero no se siguen.** Traerlas enteras mezclaría
+  dos documentos en un mismo campo de texto.
+- **Se cortan a 400 bloques y a tres niveles de anidamiento.** Más allá de eso
+  son listas dentro de listas que en un área de texto plano ya no se
+  distinguen, y cada nivel es otra ronda de llamadas.
+
+Si una página no deja leer sus bloques, se importa sin cuerpo y la importación
+sigue: un permiso suelto no debe tumbar las otras cincuenta y nueve.
+
+## Los iconos
+
+Se importa el emoji de la página (💤 en los registros de sueño, 🐳 en las
+piezas). Sólo emoji: un icono subido como imagen es una URL que caduca, y
+guardar una URL caducada en la columna del icono deja un hueco roto para
+siempre.
+
+## Bases que la aplicación no conoce
+
+En el espacio de Notion hay tres cosas más que **no** se importan, y conviene
+que sea una decisión y no un olvido:
+
+| Base | Por qué está fuera |
+|---|---|
+| «Mis Tareas» | Anterior a «✅ To-Do Base de Datos», que es la que se usa. Importarla duplicaría tareas viejas. |
+| «Planificador de Comidas» (la copia suelta) | La que se importa es la que cuelga del planificador actual. |
+| «Curso de trading» (MÓDULO 0 a 9) | Es material de curso, no un registro: no encaja en ninguno de los seis módulos. |
+
+Si alguna tiene que entrar, lo que hace falta es un mapeador nuevo en
+`src/modules/<módulo>/domain/notion-mapping.ts` y su variable de entorno; el
+lector, la idempotencia y la interfaz de importación ya están.
+
+## Configuración, en una tabla
+
+| Variable | Qué base | Trae cuerpos |
+|---|---|---|
+| `NOTION_API_TOKEN` | -- | -- |
+| `NOTION_CONTENT_DATABASE_ID` | 📷 Social Media Content Calendar | Sí (los guiones) |
+| `NOTION_TASKS_DATABASE_ID` | ✅ To-Do Base de Datos | Sí (las descripciones) |
+| `NOTION_SLEEP_DATABASE_ID` | Dormir | No |
+| `NOTION_HABITS_DATABASE_ID` | 📆 Hábitos 2026 | No |
+| `NOTION_MEALS_DATABASE_ID` | 🍳 Planificador de Comidas | No |
+| `NOTION_READING_DATABASE_ID` | Leer | No |
+
+Ninguna de estas es un secreto salvo el token. Todas se configuran en el panel
+del alojamiento -- nunca pegadas en un chat ni guardadas en la base de datos --
+y cada base hay que compartirla con la misma integración de Notion desde su
+menú «...» → Conexiones. Sin eso, la importación devuelve «no se pudo abrir la
+base de datos» aunque el identificador sea correcto.

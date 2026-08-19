@@ -10,6 +10,7 @@ import {
   ListChecks,
   Moon,
   Settings,
+  Trash2,
   TrendingUp,
   UtensilsCrossed,
   type LucideIcon,
@@ -83,6 +84,7 @@ function RootMenu({ pathname }: { pathname: string }) {
       <p className="mt-3 px-2.5 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Sistema
       </p>
+      <Item href="/papelera" label="Papelera" icon={Trash2} active={pathname.startsWith("/papelera")} />
       <Item href="/activity" label="Actividad" icon={Activity} active={pathname.startsWith("/activity")} />
       <Item href="/settings" label="Configuración" icon={Settings} active={pathname.startsWith("/settings")} />
     </>

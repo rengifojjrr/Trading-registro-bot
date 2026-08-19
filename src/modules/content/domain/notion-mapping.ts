@@ -50,6 +50,7 @@ export interface NotionMappedPiece {
   is_edited: boolean;
   has_thumbnail_ab: boolean;
   record_difficulty: Difficulty | null;
+  record_difficulties: Difficulty[];
   record_minutes: number | null;
   edit_minutes: number | null;
   edit_time_uncapped: boolean;
@@ -57,6 +58,8 @@ export interface NotionMappedPiece {
   edit_notes: string | null;
   video_url: string | null;
   final_url: string | null;
+  body: string | null;
+  icon: string | null;
 }
 
 /** Los rótulos de Notion, tal cual, contra nuestros identificadores. */
@@ -96,6 +99,9 @@ export interface MappingResult {
 export function mapNotionPage(page: {
   id: string;
   properties: NotionProperties;
+  /** El cuerpo de la página: el guion. Sólo llega si la lectura lo pidió. */
+  body?: string | null;
+  icon?: string | null;
 }): MappingResult | null {
   const properties = page.properties ?? {};
   const title = plainText(findProperty(properties, "Post"));
@@ -122,12 +128,19 @@ export function mapNotionPage(page: {
     warnings.push(`Opción desconocida: «${dropped}»`);
   }
 
-  const difficultyLabel = multiSelectNames(findProperty(properties, "DIFICULTAD DE GRABAR"))[0] ?? null;
-  const difficulty =
-    difficultyLabel && (DIFFICULTIES as readonly string[]).includes(difficultyLabel)
-      ? (difficultyLabel as Difficulty)
-      : null;
-  if (difficultyLabel && !difficulty) warnings.push(`Dificultad desconocida: «${difficultyLabel}»`);
+  // «DIFICULTAD DE GRABAR» admite varios valores a la vez en Notion, y aquí se
+  // quedaba sólo el primero. La columna de un valor se conserva -- con ese
+  // primero -- porque las gráficas que ya la leían siguen funcionando.
+  const difficultyLabels = multiSelectNames(findProperty(properties, "DIFICULTAD DE GRABAR"));
+  const difficulties = difficultyLabels.filter((label): label is Difficulty =>
+    (DIFFICULTIES as readonly string[]).includes(label),
+  );
+  for (const label of difficultyLabels) {
+    if (!difficulties.includes(label as Difficulty)) {
+      warnings.push(`Dificultad desconocida: «${label}»`);
+    }
+  }
+  const difficulty = difficulties[0] ?? null;
 
   const recordNames = multiSelectNames(findProperty(properties, "Tiempo de Grabacion"));
   const editNames = multiSelectNames(findProperty(properties, "Tiempo de Edicion"));
@@ -154,6 +167,7 @@ export function mapNotionPage(page: {
       is_edited: checkbox(findProperty(properties, "Editado")),
       has_thumbnail_ab: checkbox(findProperty(properties, "Miniatura A/B")),
       record_difficulty: difficulty,
+      record_difficulties: difficulties,
       record_minutes: record.minutes,
       edit_minutes: edit.minutes,
       edit_time_uncapped: edit.uncapped,
@@ -161,6 +175,11 @@ export function mapNotionPage(page: {
       edit_notes: plainText(findProperty(properties, "Notas de edicion")),
       video_url: firstFileUrl(findProperty(properties, "Videos")),
       final_url: firstFileUrl(findProperty(properties, "Listo")),
+      // El guion. Vive en el cuerpo de la página con la estructura
+      // HOOK / SCRIPT/NOTES / TAGS, y era lo único que la importación no
+      // traía: lo más valioso del módulo se quedaba fuera entero.
+      body: page.body ?? null,
+      icon: page.icon ?? null,
     },
     warnings,
   };

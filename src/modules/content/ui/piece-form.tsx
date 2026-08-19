@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ChipGroup } from "@/core/ui/chip-group";
+import { IconPicker } from "@/core/ui/icon-picker";
+import { TemplateBar } from "@/core/ui/template-bar";
+import type { Template } from "@/core/templates";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { createPiece, updatePiece, type ContentFormState } from "@/modules/content/actions";
 import {
@@ -44,15 +47,27 @@ const initial: ContentFormState = { error: null, success: false };
  * un vídeo» en un formulario de quince campos, que es la forma más segura de
  * que la idea no se apunte.
  */
-export function PieceForm({ piece }: { piece?: PieceRow }) {
+export function PieceForm({
+  piece,
+  templates = [],
+}: {
+  piece?: PieceRow;
+  templates?: Template[];
+}) {
   const editing = piece !== undefined;
   const [state, formAction, pending] = useActionState(
     editing ? updatePiece : createPiece,
     initial,
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const [applied, setApplied] = useState<Template | null>(null);
 
   useEffect(() => {
+    // Al crear se vacía el formulario, pero la plantilla se queda puesta: si
+    // acabas de apuntar un vídeo corto para TikTok, lo siguiente que apuntas
+    // suele ser otro igual, y quitarla obligaría a volver a elegirla cada vez.
+    // `reset()` devuelve los campos a sus valores por defecto, que con una
+    // plantilla aplicada son justo los suyos.
     if (state.success) {
       if (!editing) formRef.current?.reset();
       toast.success(editing ? "Pieza guardada." : "Pieza añadida.");
@@ -60,9 +75,50 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
     if (state.error) toast.error(state.error);
   }, [state, editing]);
 
+  /**
+   * De dónde sale el valor de cada campo.
+   *
+   * La plantilla pisa a la pieza y la pieza pisa al vacío. Los campos son no
+   * controlados, así que aplicar una plantilla remonta el formulario entero
+   * con la clave de abajo: es lo único que hace que las fichas de opción
+   * múltiple -- que guardan su propio estado -- también se enteren.
+   */
+  const payload = applied?.payload ?? {};
+  function value<T>(key: string, fallback: T): T {
+    return key in payload ? (payload[key] as T) : fallback;
+  }
+
   return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-4">
+    <form
+      key={applied?.id ?? "en-blanco"}
+      ref={formRef}
+      action={formAction}
+      className="flex flex-col gap-4"
+    >
       {editing ? <input type="hidden" name="id" value={piece.id} /> : null}
+
+      {!editing ? (
+        <TemplateBar
+          moduleId="content"
+          templates={templates}
+          colorToken="--mod-content"
+          onApply={setApplied}
+          currentValues={() => {
+            const data = new FormData(formRef.current!);
+            return {
+              payload: {
+                status: String(data.get("status") ?? "IDEA"),
+                content_type: String(data.get("content_type") ?? ""),
+                channels: data.getAll("channels").map(String),
+                platforms: data.getAll("platforms").map(String),
+                edit_styles: data.getAll("edit_styles").map(String),
+                record_difficulties: data.getAll("record_difficulties").map(String),
+              },
+              body: String(data.get("body") ?? "") || null,
+            };
+          }}
+        />
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Input
@@ -81,7 +137,7 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Estado">
-          <Select name="status" defaultValue={piece?.status ?? "IDEA"}>
+          <Select name="status" defaultValue={value("status", piece?.status ?? "IDEA")}>
             <SelectTrigger aria-label="Estado">
               <SelectValue />
             </SelectTrigger>
@@ -96,7 +152,7 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
         </Field>
 
         <Field label="Tipo">
-          <Select name="content_type" defaultValue={piece?.content_type ?? "VIDEO"}>
+          <Select name="content_type" defaultValue={value("content_type", piece?.content_type ?? "VIDEO")}>
             <SelectTrigger aria-label="Tipo de contenido">
               <SelectValue />
             </SelectTrigger>
@@ -125,7 +181,7 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
         <ChipGroup
           name="channels"
           options={CHANNELS}
-          defaultValue={piece?.channels ?? []}
+          defaultValue={value("channels", piece?.channels ?? [])}
           accent="--mod-content"
         />
       </Field>
@@ -134,7 +190,7 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
         <ChipGroup
           name="platforms"
           options={PLATFORMS}
-          defaultValue={piece?.platforms ?? []}
+          defaultValue={value("platforms", piece?.platforms ?? [])}
           accent="--mod-content"
         />
       </Field>
@@ -162,19 +218,19 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
+            {/*
+              En Notion «DIFICULTAD DE GRABAR» admite varios valores a la vez
+              y aquí se aplanaba a uno solo. Es un detalle pequeño, pero es de
+              los que hacen que una cifra de la pantalla de análisis no cuadre
+              con lo que uno recuerda.
+            */}
             <Field label="Dificultad de grabar">
-              <Select name="record_difficulty" defaultValue={piece?.record_difficulty ?? ""}>
-                <SelectTrigger aria-label="Dificultad de grabar">
-                  <SelectValue placeholder="Sin decidir" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIFFICULTIES.map((level) => (
-                    <SelectItem key={level} value={level}>
-                      {DIFFICULTY_LABELS[level]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ChipGroup
+                name="record_difficulties"
+                options={DIFFICULTIES.map((level) => DIFFICULTY_LABELS[level])}
+                defaultValue={value("record_difficulties", piece?.record_difficulties ?? [])}
+                accent="--mod-content"
+              />
             </Field>
 
             <Field label="Tiempo de grabación">
@@ -222,7 +278,7 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
             <ChipGroup
               name="edit_styles"
               options={EDIT_STYLES}
-              defaultValue={piece?.edit_styles ?? []}
+              defaultValue={value("edit_styles", piece?.edit_styles ?? [])}
               accent="--mod-content"
             />
           </Field>
@@ -269,7 +325,31 @@ export function PieceForm({ piece }: { piece?: PieceRow }) {
             defaultValue={piece?.notes ?? ""}
             placeholder="Notas"
           />
+          <IconPicker name="icon" defaultValue={piece?.icon} />
         </div>
+      </CollapsibleSection>
+
+      {/*
+        El guion.
+        Vive en el cuerpo de la página en Notion, con la estructura HOOK /
+        SCRIPT/NOTES / TAGS que traen todas tus piezas, y era lo único que la
+        importación no traía. Es el trabajo de verdad del módulo, así que va
+        desplegado de partida al editar y plegado al crear: una idea nueva no
+        tiene guion todavía.
+      */}
+      <CollapsibleSection
+        title="Guion"
+        subtitle="El gancho, el texto y las etiquetas."
+        defaultOpen={editing && (piece?.body ?? "") !== ""}
+      >
+        <Textarea
+          name="body"
+          rows={16}
+          maxLength={20000}
+          defaultValue={applied?.body ?? piece?.body ?? ""}
+          placeholder={"**HOOK:**\n\n**SCRIPT/NOTES:**\n\n**TAGS:**"}
+          className="font-mono text-sm"
+        />
       </CollapsibleSection>
     </form>
   );

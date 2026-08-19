@@ -85,3 +85,57 @@ describe("projectsIn", () => {
     expect(projectsIn(tasks)).toEqual(["Aquavita", "Trendy Sports"]);
   });
 });
+
+/**
+ * Lo que la primera importación dejaba fuera.
+ *
+ * Todo lo de aquí es campo que existía en Notion y no llegaba: se pierde en
+ * silencio -- sin error, sin aviso -- así que sin prueba no hay forma de saber
+ * si volvió a perderse.
+ */
+describe("mapNotionTask: lo que se quedaba fuera", () => {
+  const dateProp = (start: string, end?: string) => ({
+    type: "date",
+    date: { start, ...(end ? { end } : {}) },
+  });
+
+  it("trae el cuerpo de la página como descripción", () => {
+    // «Crear Inventario» lleva escrito dentro «Hacer inventario de trendy
+    // sports», y eso vive en el cuerpo, no en una propiedad.
+    const mapped = mapNotionTask({
+      ...page({}),
+      body: "Hacer inventario de trendy sports",
+    });
+    expect(mapped?.task.description).toBe("Hacer inventario de trendy sports");
+  });
+
+  it("deja la descripción en null cuando la lectura no pidió cuerpos", () => {
+    expect(mapNotionTask(page({}))?.task.description).toBeNull();
+  });
+
+  it("trae el icono de la página", () => {
+    expect(mapNotionTask({ ...page({}), icon: "🐳" })?.task.icon).toBe("🐳");
+    expect(mapNotionTask(page({}))?.task.icon).toBeNull();
+  });
+
+  it("conserva el último día de un rango", () => {
+    const mapped = mapNotionTask(page({ Fecha: dateProp("2026-03-11", "2026-03-14") }));
+    expect(mapped?.task.due_date).toBe("2026-03-11");
+    expect(mapped?.task.due_end).toBe("2026-03-14");
+  });
+
+  it("deja el fin en null cuando la fecha es un día suelto", () => {
+    const mapped = mapNotionTask(page({ Fecha: dateProp("2026-03-11") }));
+    expect(mapped?.task.due_end).toBeNull();
+  });
+
+  it("conserva la hora cuando la fecha la trae", () => {
+    const mapped = mapNotionTask(page({ Fecha: dateProp("2026-03-11T21:30:00.000-05:00") }));
+    expect(mapped?.task.due_time).toBe("21:30");
+  });
+
+  it("no inventa una hora en una fecha sin ella", () => {
+    // Poner «00:00» haría que todas las tareas vencieran de madrugada.
+    expect(mapNotionTask(page({ Fecha: dateProp("2026-03-11") }))?.task.due_time).toBeNull();
+  });
+});

@@ -94,6 +94,31 @@ export function dateStart(property: Property): string | null {
   return value?.start?.slice(0, 10) ?? null;
 }
 
+/**
+ * El último día de un rango, cuando la fecha lo es.
+ *
+ * Tus tareas de Notion admiten inicio y fin, y aquí todo se aplanaba al día
+ * suelto de `start`: lo que duraba tres días se archivaba como si ocurriera
+ * entero el primero.
+ */
+export function dateEnd(property: Property): string | null {
+  const value = property?.date as { end?: string | null } | null | undefined;
+  return value?.end?.slice(0, 10) ?? null;
+}
+
+/**
+ * La hora del día, cuando la fecha la traía.
+ *
+ * Se recorta de la cadena en lugar de convertir a `Date` por lo mismo que
+ * `dateStart`: convertirla la anclaría a la zona del servidor y las 21:00 en
+ * Bogotá pasarían a ser las 02:00 del día siguiente.
+ */
+export function dateStartTime(property: Property): string | null {
+  const value = property?.date as { start?: string } | null | undefined;
+  const start = value?.start;
+  return start && start.length > 10 ? start.slice(11, 16) : null;
+}
+
 /** La marca de tiempo completa, cuando la fecha sí traía hora. */
 export function dateStartInstant(property: Property): string | null {
   const value = property?.date as { start?: string } | null | undefined;

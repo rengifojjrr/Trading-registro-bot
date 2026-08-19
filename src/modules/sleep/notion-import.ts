@@ -87,6 +87,8 @@ export async function importSleepFromNotion(): Promise<ImportResult> {
       dream: night.dream,
       notes: night.notes,
       place: night.place,
+      self_reported: night.self_reported,
+      icon: night.icon,
       updated_at: new Date().toISOString(),
     });
   }

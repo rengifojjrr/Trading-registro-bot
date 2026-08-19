@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { shiftDate, todayIn } from "@/core/today";
+import { DayPicker } from "@/core/ui/day-picker";
 import { userTimezone } from "@/core/user-settings";
 import { completionFor, currentStreak, longestStreak, rateOver } from "@/modules/habits/domain/habits";
 import { fetchHabits } from "@/modules/habits/queries";
@@ -16,18 +17,36 @@ import { habitsDatabaseId } from "@/modules/habits/notion-import";
  *
  * Los activos arriba, marcables de un toque; los archivados abajo, con su
  * histórico intacto y un botón para retomarlos.
+ *
+ * El día se puede mover. Antes estaba fijo en hoy, así que un olvido de ayer
+ * no había forma de arreglarlo y el calendario de rachas dibujaba para siempre
+ * un agujero que no había ocurrido.
  */
-export default async function HabitsPage() {
+export default async function HabitsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dia?: string }>;
+}) {
+  const { dia } = await searchParams;
+
   const timezone = await userTimezone();
   const today = todayIn(timezone);
+
+  // Una fecha futura se ignora en lugar de aceptarse: marcar mañana no es un
+  // registro, es un deseo, y mezclarlos vuelve inútil el porcentaje.
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dia ?? "") && dia! <= today ? dia! : today;
+  const isToday = date === today;
+
   const habits = await fetchHabits(today);
 
   const active = habits.filter((h) => h.archivedAt === null);
   const archived = habits.filter((h) => h.archivedAt !== null);
 
+  const doneOn = (dates: string[]) => dates.includes(date);
+
   const completion = completionFor(
     active.map((h) => h.id),
-    active.filter((h) => h.doneToday).map((h) => ({ habitId: h.id, date: today })),
+    active.filter((h) => doneOn(h.dates)).map((h) => ({ habitId: h.id, date })),
   );
 
   const quarterStart = shiftDate(today, -90);
@@ -43,7 +62,7 @@ export default async function HabitsPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatTile
           size="lg"
-          label="Hoy"
+          label={isToday ? "Hoy" : "Ese día"}
           value={completion.total === 0 ? "--" : `${completion.done} de ${completion.total}`}
           sub={completion.percent === null ? "sin hábitos activos" : `${completion.percent}%`}
         />
@@ -59,10 +78,15 @@ export default async function HabitsPage() {
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <div className="flex flex-col gap-1">
-            <CardTitle>Los de hoy</CardTitle>
-            <CardDescription>Un toque para marcar. La racha no se rompe por no haber marcado todavía hoy.</CardDescription>
+            <CardTitle>{isToday ? "Los de hoy" : "Los de ese día"}</CardTitle>
+            <CardDescription>
+              Un toque para marcar. La racha no se rompe por no haber marcado todavía hoy.
+            </CardDescription>
           </div>
-          <NewHabit />
+          <div className="flex flex-wrap items-center gap-3">
+            <DayPicker date={date} today={today} basePath="/habitos" />
+            <NewHabit />
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {active.length === 0 ? (
@@ -76,8 +100,8 @@ export default async function HabitsPage() {
                 id={habit.id}
                 name={habit.name}
                 emoji={habit.emoji}
-                date={today}
-                doneToday={habit.doneToday}
+                date={date}
+                doneToday={doneOn(habit.dates)}
                 streak={currentStreak(habit.dates, today)}
                 rate={rateOver(habit.dates, quarterStart, today)}
                 archived={false}
@@ -102,8 +126,8 @@ export default async function HabitsPage() {
                 id={habit.id}
                 name={habit.name}
                 emoji={habit.emoji}
-                date={today}
-                doneToday={habit.doneToday}
+                date={date}
+                doneToday={doneOn(habit.dates)}
                 streak={currentStreak(habit.dates, today)}
                 rate={rateOver(habit.dates, quarterStart, today)}
                 archived

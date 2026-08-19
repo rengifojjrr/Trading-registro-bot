@@ -6,8 +6,15 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createProject, setProjectActive, type TaskFormState } from "@/modules/tasks/actions";
+import { COLOR_LABELS, PROJECT_COLORS, colorCss } from "@/core/notion-colors";
+import {
+  createProject,
+  setProjectActive,
+  updateProject,
+  type TaskFormState,
+} from "@/modules/tasks/actions";
 import type { ProjectRow } from "@/modules/tasks/queries";
+import type { ProjectColor } from "@/types/database";
 
 const initialState: TaskFormState = { error: null, success: false };
 
@@ -97,7 +104,33 @@ function ProjectRowItem({
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+      {/*
+        El color es lo que hace que reconozcas una tarjeta de un vistazo, como
+        en Notion, donde Trading es rojo y Aquavita marrón. La columna existía
+        desde el principio y nunca se escribía, así que la lista entera era
+        gris y todas las tarjetas se parecían.
+      */}
+      <select
+        value={project.color ?? "default"}
+        disabled={pending}
+        onChange={(event) =>
+          startTransition(async () => {
+            await updateProject(project.id, { color: event.target.value as ProjectColor });
+          })
+        }
+        aria-label={`Color de ${project.name}`}
+        className="size-5 shrink-0 cursor-pointer appearance-none rounded-full border-2 border-border"
+        style={{ backgroundColor: colorCss(project.color) }}
+      >
+        {PROJECT_COLORS.map((color) => (
+          <option key={color} value={color}>
+            {COLOR_LABELS[color]}
+          </option>
+        ))}
+      </select>
+
       <span className={archived ? "text-sm text-muted-foreground" : "text-sm font-medium"}>
+        {project.icon ? `${project.icon} ` : ""}
         {project.name}
       </span>
       <span className="text-xs tabular-nums text-muted-foreground">

@@ -1,8 +1,10 @@
 "use client";
 
 import { Archive, ArchiveRestore, Check, Flame, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
+import type { Route } from "next";
 
 import { cn } from "@/lib/utils";
 import { archiveHabit, toggleHabit } from "@/modules/habits/actions";
@@ -72,10 +74,10 @@ export function HabitRow({
       </button>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">
+        <Link href={`/habitos/${id}` as Route} className="truncate text-sm font-medium hover:underline">
           {emoji && done ? `${emoji} ` : ""}
           {name}
-        </span>
+        </Link>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           {streak > 0 ? (
             <span className="flex items-center gap-1">

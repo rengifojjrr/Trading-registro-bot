@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import type { Route } from "next";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,7 +74,10 @@ export default async function MealsPage({
               >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <Badge variant="outline">{MEAL_TYPE_LABELS[meal.meal_type]}</Badge>
-                  <span className="font-medium">{meal.name}</span>
+                  <Link href={`/comidas/${meal.id}` as Route} className="font-medium hover:underline">
+                    {meal.icon ? `${meal.icon} ` : ""}
+                    {meal.name}
+                  </Link>
                   <span className="ml-auto text-xs tabular-nums text-muted-foreground">
                     {formatDate(`${meal.meal_date}T00:00:00Z`, timezone)}
                   </span>

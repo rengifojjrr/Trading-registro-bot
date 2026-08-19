@@ -1,7 +1,7 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
-import { getNotionClient } from "@/lib/notion/client";
+import { readNotionDatabase } from "@/lib/notion/read-database";
 import { createClient } from "@/lib/supabase/server";
 
 import { mapNotionPage, type NotionMappedPiece } from "./domain/notion-mapping";
@@ -50,51 +50,16 @@ export async function importContentCalendar(): Promise<ImportResult> {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { ...EMPTY, error: "No hay sesión." };
 
-  const notion = getNotionClient();
-
-  let dataSourceId: string;
-  try {
-    const database = await notion.databases.retrieve({ database_id: databaseId });
-    const found = (database as { data_sources?: { id: string }[] }).data_sources?.[0]?.id;
-    if (!found) {
-      return { ...EMPTY, error: "La base de datos de Notion no tiene ningún data source." };
-    }
-    dataSourceId = found;
-  } catch {
-    return {
-      ...EMPTY,
-      error: "No se pudo abrir la base de datos de Notion. Revisa el identificador y los permisos.",
-    };
-  }
-
-  // Se leen todas las páginas antes de escribir nada: una importación a
-  // medias por un fallo de red a mitad de la paginación dejaría el tablero
-  // diciendo que faltan piezas que sí existen.
-  const pages: { id: string; properties: Record<string, unknown> }[] = [];
-  let cursor: string | undefined;
-
-  try {
-    do {
-      const response = await notion.dataSources.query({
-        data_source_id: dataSourceId,
-        start_cursor: cursor,
-        page_size: 100,
-      });
-
-      for (const result of response.results) {
-        if ("properties" in result) {
-          pages.push({
-            id: result.id,
-            properties: result.properties as unknown as Record<string, unknown>,
-          });
-        }
-      }
-
-      cursor = response.next_cursor ?? undefined;
-    } while (cursor);
-  } catch {
-    return { ...EMPTY, error: "Notion devolvió un error al leer las páginas." };
-  }
+  // El lector compartido: resuelve el data source, pagina y -- lo que aquí
+  // importa -- trae el cuerpo de cada página. El guion de cada pieza vive ahí,
+  // con la estructura HOOK / SCRIPT/NOTES / TAGS, y era lo único que esta
+  // importación no traía.
+  //
+  // Antes esto tenía su propia copia de la paginación. Una copia menos es un
+  // sitio menos donde arreglar el mismo fallo.
+  const read = await readNotionDatabase(databaseId, { withBodies: true });
+  if (!read.ok) return { ...EMPTY, error: read.error };
+  const pages = read.pages;
 
   const warnings = new Set<string>();
   const rows: (NotionMappedPiece & { user_id: string; updated_at: string })[] = [];

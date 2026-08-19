@@ -120,6 +120,7 @@ export const MODULES: ModuleManifest[] = [
     sections: [
       { href: "/tareas", label: "Hoy" },
       { href: "/tareas/todas", label: "Todas" },
+      { href: "/tareas/calendario", label: "Calendario" },
       { href: "/tareas/proyectos", label: "Proyectos" },
       { href: "/tareas/analisis", label: "Análisis" },
     ],

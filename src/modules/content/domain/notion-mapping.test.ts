@@ -139,3 +139,58 @@ describe("statusMappingIsComplete", () => {
     expect(statusMappingIsComplete()).toBe(true);
   });
 });
+
+describe("mapNotionPage: lo que se quedaba fuera", () => {
+  it("trae el guion desde el cuerpo de la página", () => {
+    // Todas tus piezas llevan dentro la estructura HOOK / SCRIPT/NOTES / TAGS,
+    // y es lo más valioso del módulo: era lo único que la importación no traía.
+    const body = "**HOOK:**\nUna pregunta\n**SCRIPT/NOTES:**\nEl texto\n**TAGS:**\n#trading";
+    const mapped = mapNotionPage({ ...page({}), body });
+    expect(mapped?.piece.body).toBe(body);
+  });
+
+  it("deja el guion en null cuando la lectura no pidió cuerpos", () => {
+    expect(mapNotionPage(page({}))?.piece.body).toBeNull();
+  });
+
+  it("trae el icono de la página", () => {
+    expect(mapNotionPage({ ...page({}), icon: "🐳" })?.piece.icon).toBe("🐳");
+    expect(mapNotionPage(page({}))?.piece.icon).toBeNull();
+  });
+
+  it("conserva las dificultades de grabar en plural", () => {
+    // En Notion es una lista de varios valores; la app se quedaba con el
+    // primero y tiraba el resto.
+    const mapped = mapNotionPage(
+      page({
+        "DIFICULTAD DE GRABAR": {
+          type: "multi_select",
+          multi_select: [{ name: "MEDIO" }, { name: "DIFICIL" }],
+        },
+      }),
+    );
+    expect(mapped?.piece.record_difficulties).toEqual(["MEDIO", "DIFICIL"]);
+    // La columna de un solo valor se queda con el primero, para que las
+    // gráficas que ya la leían sigan funcionando.
+    expect(mapped?.piece.record_difficulty).toBe("MEDIO");
+  });
+
+  it("descarta las dificultades que no conoce y avisa", () => {
+    const mapped = mapNotionPage(
+      page({
+        "DIFICULTAD DE GRABAR": {
+          type: "multi_select",
+          multi_select: [{ name: "IMPOSIBLE" }, { name: "FACIL" }],
+        },
+      }),
+    );
+    expect(mapped?.piece.record_difficulties).toEqual(["FACIL"]);
+    expect(mapped?.warnings).toContain("Dificultad desconocida: «IMPOSIBLE»");
+  });
+
+  it("deja la lista vacía cuando no hay dificultad", () => {
+    const mapped = mapNotionPage(page({}));
+    expect(mapped?.piece.record_difficulties).toEqual([]);
+    expect(mapped?.piece.record_difficulty).toBeNull();
+  });
+});

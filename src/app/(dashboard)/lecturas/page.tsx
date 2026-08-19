@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import type { Route } from "next";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,7 +79,9 @@ export default async function ReadingPage() {
                   <span className="tabular-nums text-muted-foreground">
                     {formatDate(`${s.session_date}T00:00:00Z`, timezone)}
                   </span>
-                  {s.bookTitle ? <span className="font-medium">{s.bookTitle}</span> : null}
+                  <Link href={`/lecturas/${s.id}` as Route} className="font-medium hover:underline">
+                    {s.bookTitle ?? "Lectura suelta"}
+                  </Link>
                   <span className="ml-auto tabular-nums" style={{ color: "var(--mod-reading)" }}>
                     {[s.minutes ? formatReadingTime(s.minutes) : null, s.pages ? `${s.pages} pág` : null]
                       .filter(Boolean)

@@ -1,3 +1,6 @@
+import Link from "next/link";
+import type { Route } from "next";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +69,13 @@ export default async function BooksPage() {
                   className="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2.5"
                 >
                   <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-medium">{book.title}</span>
+                    <Link
+                      href={`/lecturas/libros/${book.id}` as Route}
+                      className="font-medium hover:underline"
+                    >
+                      {book.icon ? `${book.icon} ` : ""}
+                      {book.title}
+                    </Link>
                     {book.author ? (
                       <span className="text-sm text-muted-foreground">{book.author}</span>
                     ) : null}

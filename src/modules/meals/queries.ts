@@ -11,6 +11,7 @@ export interface MealRow {
   name: string;
   notes: string | null;
   cook: string | null;
+  icon: string | null;
   ingredients: IngredientLike[];
 }
 
@@ -20,7 +21,7 @@ export async function fetchMeals(fromDate: string, toDate: string): Promise<Meal
 
   const { data: meals } = await supabase
     .from("meals_entries")
-    .select("id, meal_date, meal_type, name, notes, cook")
+    .select("id, meal_date, meal_type, name, notes, cook, icon")
     .eq("user_id", user.id)
     .gte("meal_date", fromDate)
     .lte("meal_date", toDate)
@@ -51,4 +52,35 @@ export async function fetchMeals(fromDate: string, toDate: string): Promise<Meal
   }
 
   return rows.map((m) => ({ ...m, ingredients: byMeal.get(m.id) ?? [] }));
+}
+
+/** Una comida sola, con sus ingredientes, para su ficha. */
+export async function fetchMeal(id: string): Promise<MealRow | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: meal } = await supabase
+    .from("meals_entries")
+    .select("id, meal_date, meal_type, name, notes, cook, icon")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!meal) return null;
+
+  const { data: ingredients } = await supabase
+    .from("meals_ingredients")
+    .select("name, quantity, unit")
+    .eq("meal_id", id)
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true });
+
+  return {
+    ...meal,
+    ingredients: (ingredients ?? []).map((i) => ({
+      name: i.name,
+      quantity: i.quantity === null ? null : Number(i.quantity),
+      unit: i.unit,
+    })),
+  };
 }

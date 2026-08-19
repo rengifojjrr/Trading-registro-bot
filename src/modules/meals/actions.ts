@@ -22,20 +22,40 @@ const schema = z.object({
   name: z.string().trim().min(1, "¿Qué comiste?").max(200),
   notes: emptyToNull(z.string().max(4000)),
   cook: emptyToNull(z.string().max(120)),
+  icon: emptyToNull(z.string().max(8)),
   ingredients: emptyToNull(z.string().max(8000)),
 });
 
-export async function saveMeal(_prev: MealFormState, formData: FormData): Promise<MealFormState> {
-  const user = await requireUser();
-
-  const parsed = schema.safeParse({
+/** Los campos del formulario, que crear y editar comparten. */
+function readForm(formData: FormData) {
+  return schema.safeParse({
     meal_date: formData.get("meal_date"),
     meal_type: formData.get("meal_type"),
     name: formData.get("name"),
     notes: formData.get("notes"),
     cook: formData.get("cook"),
+    icon: formData.get("icon"),
     ingredients: formData.get("ingredients"),
   });
+}
+
+/**
+ * Interpreta el bloque de ingredientes.
+ *
+ * Una línea por ingrediente: escribir tres campos por cada uno es tedioso y
+ * acaba en que no se apuntan.
+ */
+function ingredientsFrom(block: string | null) {
+  return (block ?? "")
+    .split("\n")
+    .map(parseIngredientLine)
+    .filter((i): i is NonNullable<typeof i> => i !== null);
+}
+
+export async function saveMeal(_prev: MealFormState, formData: FormData): Promise<MealFormState> {
+  const user = await requireUser();
+
+  const parsed = readForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
@@ -50,18 +70,14 @@ export async function saveMeal(_prev: MealFormState, formData: FormData): Promis
       name: parsed.data.name,
       notes: parsed.data.notes,
       cook: parsed.data.cook,
+      icon: parsed.data.icon,
     })
     .select("id")
     .maybeSingle();
 
   if (error || !meal) return { error: "No se pudo guardar la comida.", success: false };
 
-  // Una línea por ingrediente, interpretada. Escribir tres campos por
-  // ingrediente es tedioso y acaba en que no se apuntan.
-  const lines = (parsed.data.ingredients ?? "")
-    .split("\n")
-    .map(parseIngredientLine)
-    .filter((i): i is NonNullable<typeof i> => i !== null);
+  const lines = ingredientsFrom(parsed.data.ingredients);
 
   if (lines.length > 0) {
     await supabase.from("meals_ingredients").insert(
@@ -81,10 +97,74 @@ export async function saveMeal(_prev: MealFormState, formData: FormData): Promis
   return { error: null, success: true };
 }
 
-export async function deleteMeal(mealId: string, mealDate: string): Promise<void> {
+/**
+ * Edita una comida.
+ *
+ * No existía: guardar sólo creaba, así que un ingrediente mal escrito se
+ * arreglaba borrando la comida entera y tecleando los otros seis otra vez.
+ *
+ * Los ingredientes se reemplazan enteros en lugar de intentar casarlos uno a
+ * uno con los que había. El bloque de texto no tiene identidad -- nadie
+ * escribe «el tercero era cebolla» -- así que casarlos sería adivinar, y
+ * adivinar mal borra el que no tocaba.
+ */
+export async function updateMeal(
+  _prev: MealFormState,
+  formData: FormData,
+): Promise<MealFormState> {
   const user = await requireUser();
+
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) {
+    return { error: "Comida no encontrada.", success: false };
+  }
+
+  const parsed = readForm(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
   const supabase = await createClient();
-  await supabase.from("meals_entries").delete().eq("id", mealId).eq("user_id", user.id);
+  const { error } = await supabase
+    .from("meals_entries")
+    .update({
+      meal_date: parsed.data.meal_date,
+      meal_type: parsed.data.meal_type,
+      name: parsed.data.name,
+      notes: parsed.data.notes,
+      cook: parsed.data.cook,
+      icon: parsed.data.icon,
+    })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: "No se pudo guardar la comida.", success: false };
+
+  await supabase.from("meals_ingredients").delete().eq("meal_id", id).eq("user_id", user.id);
+
+  const lines = ingredientsFrom(parsed.data.ingredients);
+  if (lines.length > 0) {
+    await supabase.from("meals_ingredients").insert(
+      lines.map((ingredient, index) => ({
+        user_id: user.id,
+        meal_id: id,
+        name: ingredient.name,
+        quantity: ingredient.quantity,
+        unit: ingredient.unit,
+        sort_order: index,
+      })),
+    );
+  }
+
+  await republishDay(parsed.data.meal_date);
+  revalidateMeals();
+  revalidatePath(`/comidas/${id}`);
+  return { error: null, success: true };
+}
+
+/** Rehace la cuenta del día después de que la papelera se lleve una comida. */
+export async function afterMealRemoved(mealDate: string): Promise<void> {
+  await requireUser();
   await republishDay(mealDate);
   revalidateMeals();
 }

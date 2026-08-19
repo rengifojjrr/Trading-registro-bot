@@ -161,3 +161,26 @@ describe("labelledMinutes", () => {
     expect(labelledMinutes(["mucho"])).toBeNull();
   });
 });
+
+describe("mapNotionNight: lo que se quedaba fuera", () => {
+  it("guarda tu propia estimación de cuánto dormiste", () => {
+    // «Cuanto tiempo Dormí?» ya se leía para contrastarla con el reloj y se
+    // tiraba después. La diferencia entre lo que crees y lo que dicen las
+    // horas apuntadas es un dato por sí misma.
+    const mapped = mapNotionNight(
+      page({
+        "Cuanto tiempo Dormi": { type: "multi_select", multi_select: [{ name: "6 horas" }] },
+      }),
+    );
+    expect(mapped?.night.self_reported).toBe("6 horas");
+  });
+
+  it("deja la estimación en null cuando no la apuntaste", () => {
+    expect(mapNotionNight(page({}))?.night.self_reported).toBeNull();
+  });
+
+  it("trae el icono de la página", () => {
+    expect(mapNotionNight({ ...page({}), icon: "💤" })?.night.icon).toBe("💤");
+    expect(mapNotionNight(page({}))?.night.icon).toBeNull();
+  });
+});

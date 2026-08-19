@@ -1,9 +1,13 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { fetchModuleViews } from "@/core/module-views";
+import { fetchTemplates } from "@/core/templates";
 import { todayIn } from "@/core/today";
+import { SearchBox } from "@/core/ui/search-box";
+import { ViewBar } from "@/core/ui/view-bar";
 import { userTimezone } from "@/core/user-settings";
-import { countPieces } from "@/modules/content/domain/content";
+import { countPieces, matchesSearch } from "@/modules/content/domain/content";
 import { contentDatabaseId } from "@/modules/content/notion-import";
 import { fetchPieces } from "@/modules/content/queries";
 import { ContentBoard } from "@/modules/content/ui/content-board";
@@ -17,11 +21,30 @@ import { PieceForm } from "@/modules/content/ui/piece-form";
  * Calendar» -- y no un diseño nuevo. Su decisión más importante son los diez
  * estados: cada uno nombra un cuello de botella concreto en lugar del clásico
  * «pendiente / en curso / hecho», que no dice *qué* falta.
+ *
+ * Las cifras de arriba cuentan siempre el calendario entero, aunque haya un
+ * filtro puesto: son el estado del módulo, no el de la búsqueda, y hacerlas
+ * seguir al filtro convertiría «tres atrasadas» en un número que cambia según
+ * lo que uno haya tecleado.
  */
-export default async function ContentPage() {
+export default async function ContentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const term = q ?? "";
+
   const timezone = await userTimezone();
   const today = todayIn(timezone);
-  const pieces = await fetchPieces();
+
+  const [pieces, views, templates] = await Promise.all([
+    fetchPieces(),
+    fetchModuleViews("content"),
+    fetchTemplates("content"),
+  ]);
+
+  const visible = pieces.filter((piece) => matchesSearch(piece, term));
 
   const counts = countPieces(
     pieces.map((p) => ({
@@ -61,15 +84,22 @@ export default async function ContentPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <PieceForm />
+          <PieceForm templates={templates} />
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="pt-6">
-          <ContentBoard pieces={pieces} today={today} />
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <ViewBar moduleId="content" views={views} colorToken="--mod-content" />
+          <SearchBox placeholder="Buscar una pieza…" />
+        </div>
+
+        <Card>
+          <CardContent className="pt-6">
+            <ContentBoard pieces={visible} today={today} />
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

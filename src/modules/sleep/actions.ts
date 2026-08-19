@@ -25,6 +25,11 @@ const schema = z.object({
   dream: emptyToNull(z.string().max(8000)),
   notes: emptyToNull(z.string().max(4000)),
   place: emptyToNull(z.string().max(120)),
+  // Tu estimación de cuánto dormiste, la propiedad «Cuanto tiempo Dormí?» de
+  // Notion. Se guarda aparte de la duración calculada precisamente porque la
+  // diferencia entre las dos es el dato interesante.
+  self_reported: emptyToNull(z.string().max(60)),
+  icon: emptyToNull(z.string().max(8)),
 });
 
 /**
@@ -48,6 +53,8 @@ export async function saveSleepEntry(
     dream: formData.get("dream"),
     notes: formData.get("notes"),
     place: formData.get("place"),
+    self_reported: formData.get("self_reported"),
+    icon: formData.get("icon"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
@@ -77,6 +84,8 @@ export async function saveSleepEntry(
         dream: parsed.data.dream,
         notes: parsed.data.notes,
         place: parsed.data.place,
+        self_reported: parsed.data.self_reported,
+        icon: parsed.data.icon,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,sleep_date" },
@@ -103,10 +112,14 @@ export async function saveSleepEntry(
   return { error: null, success: true };
 }
 
-export async function deleteSleepEntry(id: string): Promise<void> {
-  const user = await requireUser();
-  const supabase = await createClient();
-  await supabase.from("sleep_entries").delete().eq("id", id).eq("user_id", user.id);
+/**
+ * Refresca después de borrar.
+ *
+ * Borrar ya no vive aquí: lo hace `DeleteButton` contra la papelera común, que
+ * es lo que da el «deshacer». Esto sólo repinta las tres pantallas.
+ */
+export async function afterSleepRemoved(): Promise<void> {
+  await requireUser();
   revalidateSleep();
 }
 
@@ -118,6 +131,7 @@ function revalidateSleep(): void {
   revalidatePath("/sueno");
   revalidatePath("/sueno/historial");
   revalidatePath("/sueno/analisis");
+  revalidatePath("/sueno/calendario");
   revalidatePath("/");
 }
 

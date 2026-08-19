@@ -98,6 +98,133 @@ export function countTasks(tasks: TaskLike[], today: string): TaskCounts {
   };
 }
 
+/**
+ * Cuántos días faltan, en negativo si ya pasó.
+ *
+ * Es la columna calculada «Días restantes» de tu base de Notion, que aparece
+ * en cinco de tus siete vistas -- o sea, es la cifra que miras. La app
+ * clasificaba por urgencia («vencida», «esta semana») pero nunca decía el
+ * número, y «vencida» sin más no distingue entre ayer y hace tres meses.
+ *
+ * Aritmética sobre cadenas ISO en UTC, igual que `urgencyOf`: convertir a
+ * `Date` en la zona del navegador desplaza el día y hace que «hoy» pase a ser
+ * «ayer» a partir de cierta hora.
+ */
+export function daysLeft(dueDate: string | null, today: string): number | null {
+  if (!dueDate) return null;
+
+  const due = Date.parse(`${dueDate}T00:00:00Z`);
+  const now = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(due) || Number.isNaN(now)) return null;
+
+  return Math.round((due - now) / 86_400_000);
+}
+
+/** «Faltan 3 días», «Vence hoy», «Hace 2 días». */
+export function daysLeftLabel(dueDate: string | null, today: string): string | null {
+  const days = daysLeft(dueDate, today);
+  if (days === null) return null;
+
+  if (days === 0) return "Vence hoy";
+  if (days === 1) return "Falta 1 día";
+  if (days === -1) return "Venció ayer";
+  return days > 0 ? `Faltan ${days} días` : `Venció hace ${-days} días`;
+}
+
+/**
+ * Las ventanas relativas de tus vistas de Notion.
+ *
+ * «Esta semana», «Este año» y «Próximas tareas» son filtros vivos allí: se
+ * recalculan solos cada día. Aquí las únicas dos ventanas eran «Hoy» y
+ * «Todas», y entre una y otra no había nada.
+ */
+export const RANGES = ["TODO", "HOY", "SEMANA", "MES", "ANO", "PROXIMAS"] as const;
+export type TaskRange = (typeof RANGES)[number];
+
+export const RANGE_LABELS: Record<TaskRange, string> = {
+  TODO: "Todas",
+  HOY: "Hoy",
+  SEMANA: "Esta semana",
+  MES: "Este mes",
+  ANO: "Este año",
+  PROXIMAS: "Próximas",
+};
+
+export function isTaskRange(value: string | undefined): value is TaskRange {
+  return value !== undefined && (RANGES as readonly string[]).includes(value);
+}
+
+/**
+ * Si una fecha cae dentro de la ventana.
+ *
+ * Una tarea sin fecha entra en «Todas» y en ninguna otra: meterla en «Esta
+ * semana» sería afirmar algo que nadie ha dicho, y dejarla fuera de todo la
+ * escondería para siempre.
+ */
+export function inRange(dueDate: string | null, today: string, range: TaskRange): boolean {
+  if (range === "TODO") return true;
+  if (!dueDate) return false;
+
+  switch (range) {
+    case "HOY":
+      return dueDate === today;
+    case "SEMANA": {
+      const { start, end } = weekBounds(today);
+      return dueDate >= start && dueDate <= end;
+    }
+    case "MES":
+      return dueDate.slice(0, 7) === today.slice(0, 7);
+    case "ANO":
+      return dueDate.slice(0, 4) === today.slice(0, 4);
+    case "PROXIMAS":
+      return dueDate > today;
+  }
+}
+
+/** De lunes a domingo, como tu calendario de Notion. */
+export function weekBounds(today: string): { start: string; end: string } {
+  const date = new Date(`${today}T00:00:00Z`);
+  // `getUTCDay()` da 0 el domingo; se convierte a 6 para que la semana empiece
+  // en lunes y el domingo cierre en lugar de abrir.
+  const offset = (date.getUTCDay() + 6) % 7;
+  return { start: addDaysIso(today, -offset), end: addDaysIso(today, 6 - offset) };
+}
+
+/** Por qué propiedad se agrupa la lista, como los tableros de Notion. */
+export const GROUPINGS = ["URGENCIA", "PROYECTO", "PRIORIDAD", "CATEGORIA", "ESTADO"] as const;
+export type TaskGrouping = (typeof GROUPINGS)[number];
+
+export const GROUPING_LABELS: Record<TaskGrouping, string> = {
+  URGENCIA: "Urgencia",
+  PROYECTO: "Proyecto",
+  PRIORIDAD: "Prioridad",
+  CATEGORIA: "Categoría",
+  ESTADO: "Estado",
+};
+
+export function isTaskGrouping(value: string | undefined): value is TaskGrouping {
+  return value !== undefined && (GROUPINGS as readonly string[]).includes(value);
+}
+
+/**
+ * Coincide con lo buscado.
+ *
+ * Mira título, notas, descripción y categorías: uno recuerda «lo del
+ * inventario» sin recordar si lo escribió en el título o dentro.
+ */
+export function matchesSearch(
+  task: { title: string; notes: string | null; description: string | null; categories: string[] },
+  term: string,
+): boolean {
+  const needle = term.trim().toLowerCase();
+  if (needle === "") return true;
+
+  return [task.title, task.notes ?? "", task.description ?? "", ...task.categories]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}
+
 const PRIORITY_WEIGHT: Record<TaskPriority, number> = { ALTA: 0, MEDIA: 1, BAJA: 2 };
 
 /**

@@ -44,6 +44,45 @@ export type SessionLabel =
 // Mirrors the trades.source check constraint.
 export type TradeSource = "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
 
+/**
+ * Espeja el enum `public.entity_kind`.
+ *
+ * Es a qué apuntan las tablas comunes de vida -- comentarios, adjuntos,
+ * vínculos y papelera -- cuando pueden apuntar a cualquier módulo.
+ */
+export type EntityKind =
+  | "SUENO"
+  | "HABITO"
+  | "TAREA"
+  | "PROYECTO"
+  | "COMIDA"
+  | "LECTURA"
+  | "LIBRO"
+  | "CONTENIDO";
+
+/** Los diez nombres de color de Notion, copiados en lugar de traducidos. */
+export type ProjectColor =
+  | "default"
+  | "gray"
+  | "brown"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink"
+  | "red";
+
+/**
+ * Lo que se archiva al borrar, para poder devolverlo con su mismo
+ * identificador. Los hijos van dentro porque restaurar una comida sin sus
+ * ingredientes sería devolver un nombre vacío.
+ */
+export interface TrashPayload {
+  row: Record<string, Json>;
+  children?: Record<string, Record<string, Json>[]>;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -100,6 +139,9 @@ export interface Database {
           dream: string | null;
           notes: string | null;
           place: string | null;
+          /** Tu estimación de cuánto dormiste, que no es la resta de las horas. */
+          self_reported: string | null;
+          icon: string | null;
           /** De qué página de Notion vino, cuando vino de ahí. */
           notion_page_id: string | null;
           created_at: string;
@@ -118,6 +160,8 @@ export interface Database {
           dream?: string | null;
           notes?: string | null;
           place?: string | null;
+          self_reported?: string | null;
+          icon?: string | null;
           notion_page_id?: string | null;
           updated_at?: string;
         }
@@ -174,6 +218,7 @@ export interface Database {
           genres: string[];
           total_pages: number | null;
           status: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+          icon: string | null;
           notion_page_id: string | null;
           created_at: string;
         },
@@ -185,6 +230,7 @@ export interface Database {
           genres?: string[];
           total_pages?: number | null;
           status?: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+          icon?: string | null;
           notion_page_id?: string | null;
         }
       >;
@@ -224,7 +270,9 @@ export interface Database {
           id: string;
           user_id: string;
           name: string;
-          color: string | null;
+          /** Uno de los diez nombres de color de Notion, no un hexadecimal. */
+          color: ProjectColor | null;
+          icon: string | null;
           is_active: boolean;
           sort_order: number;
           created_at: string;
@@ -233,7 +281,8 @@ export interface Database {
           id?: string;
           user_id: string;
           name: string;
-          color?: string | null;
+          color?: ProjectColor | null;
+          icon?: string | null;
           is_active?: boolean;
           sort_order?: number;
         }
@@ -248,8 +297,15 @@ export interface Database {
           status: "NO_INICIADA" | "EN_CURSO" | "HECHA";
           priority: "ALTA" | "MEDIA" | "BAJA";
           due_date: string | null;
+          /** El último día, cuando la tarea dura más de uno. */
+          due_end: string | null;
+          /** La hora del día, cuando la tiene. `HH:MM:SS`. */
+          due_time: string | null;
           categories: string[];
           notes: string | null;
+          /** El cuerpo de la página de Notion: lo que la tarea explica. */
+          description: string | null;
+          icon: string | null;
           completed_at: string | null;
           notion_page_id: string | null;
           created_at: string;
@@ -263,8 +319,12 @@ export interface Database {
           status?: "NO_INICIADA" | "EN_CURSO" | "HECHA";
           priority?: "ALTA" | "MEDIA" | "BAJA";
           due_date?: string | null;
+          due_end?: string | null;
+          due_time?: string | null;
           categories?: string[];
           notes?: string | null;
+          description?: string | null;
+          icon?: string | null;
           completed_at?: string | null;
           notion_page_id?: string | null;
           /** Se escribe sólo al importar, para conservar la fecha de Notion. */
@@ -284,6 +344,7 @@ export interface Database {
           name: string;
           notes: string | null;
           cook: string | null;
+          icon: string | null;
           notion_page_id: string | null;
           created_at: string;
         },
@@ -295,6 +356,7 @@ export interface Database {
           name: string;
           notes?: string | null;
           cook?: string | null;
+          icon?: string | null;
           notion_page_id?: string | null;
         }
       >;
@@ -354,7 +416,10 @@ export interface Database {
           has_script: boolean;
           is_edited: boolean;
           has_thumbnail_ab: boolean;
+          /** El primero de `record_difficulties`; se conserva por compatibilidad. */
           record_difficulty: string | null;
+          /** En Notion «DIFICULTAD DE GRABAR» admite varios valores a la vez. */
+          record_difficulties: string[];
           record_minutes: number | null;
           edit_minutes: number | null;
           /** El tiempo guardado es un suelo: «despues de las 10 deje de contar». */
@@ -365,6 +430,9 @@ export interface Database {
           final_url: string | null;
           url: string | null;
           notes: string | null;
+          /** El cuerpo de la página: el guion, que es el trabajo de verdad. */
+          body: string | null;
+          icon: string | null;
           notion_page_id: string | null;
           created_at: string;
           updated_at: string;
@@ -394,6 +462,7 @@ export interface Database {
           is_edited?: boolean;
           has_thumbnail_ab?: boolean;
           record_difficulty?: string | null;
+          record_difficulties?: string[];
           record_minutes?: number | null;
           edit_minutes?: number | null;
           edit_time_uncapped?: boolean;
@@ -403,8 +472,153 @@ export interface Database {
           final_url?: string | null;
           url?: string | null;
           notes?: string | null;
+          body?: string | null;
+          icon?: string | null;
           notion_page_id?: string | null;
           updated_at?: string;
+        }
+      >;
+
+      // --------------------------------------------- Vida: piezas comunes
+
+      /**
+       * Las seis tablas que siguen apuntan a filas de cualquier módulo, así
+       * que guardan a qué tipo de cosa apuntan. No hay clave foránea posible
+       * contra once tablas distintas: lo que las protege es la misma política
+       * de RLS que todo lo demás, y el borrado en cascada se hace explícito
+       * desde la aplicación.
+       */
+
+      core_comments: Table<
+        {
+          id: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          body: string;
+          updated_at?: string;
+        }
+      >;
+
+      core_attachments: Table<
+        {
+          id: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          /** Qué ranura ocupa: en contenido el montaje y la versión final no son lo mismo. */
+          slot: string;
+          storage_path: string;
+          file_name: string;
+          mime_type: string | null;
+          size_bytes: number | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          slot?: string;
+          storage_path: string;
+          file_name: string;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+        }
+      >;
+
+      core_relations: Table<
+        {
+          id: string;
+          user_id: string;
+          from_kind: EntityKind;
+          from_id: string;
+          to_kind: EntityKind;
+          to_id: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          from_kind: EntityKind;
+          from_id: string;
+          to_kind: EntityKind;
+          to_id: string;
+        }
+      >;
+
+      core_trash: Table<
+        {
+          id: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          label: string;
+          payload: TrashPayload;
+          deleted_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          entity_kind: EntityKind;
+          entity_id: string;
+          label: string;
+          payload: TrashPayload;
+        }
+      >;
+
+      core_module_views: Table<
+        {
+          id: string;
+          user_id: string;
+          module: string;
+          name: string;
+          path: string;
+          query: string;
+          sort_order: number;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          module: string;
+          name: string;
+          path: string;
+          query?: string;
+          sort_order?: number;
+        }
+      >;
+
+      core_templates: Table<
+        {
+          id: string;
+          user_id: string;
+          module: string;
+          name: string;
+          payload: Record<string, unknown>;
+          body: string | null;
+          is_default: boolean;
+          sort_order: number;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          module: string;
+          name: string;
+          payload?: Record<string, unknown>;
+          body?: string | null;
+          is_default?: boolean;
+          sort_order?: number;
         }
       >;
 

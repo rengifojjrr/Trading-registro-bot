@@ -59,3 +59,42 @@ export async function fetchHabits(today: string, windowDays = 120): Promise<Habi
     };
   });
 }
+
+/** Un hábito solo, con todo su historial, para su ficha. */
+export async function fetchHabit(
+  id: string,
+  today: string,
+  windowDays = 365,
+): Promise<HabitWithHistory | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const from = shiftDate(today, -windowDays);
+
+  const [{ data: definition }, { data: entries }] = await Promise.all([
+    supabase
+      .from("habits_definitions")
+      .select("id, name, emoji, archived_at")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("habits_entries")
+      .select("entry_date")
+      .eq("user_id", user.id)
+      .eq("habit_id", id)
+      .gte("entry_date", from)
+      .lte("entry_date", today),
+  ]);
+
+  if (!definition) return null;
+
+  const dates = (entries ?? []).map((e) => e.entry_date);
+  return {
+    id: definition.id,
+    name: definition.name,
+    emoji: definition.emoji,
+    archivedAt: definition.archived_at,
+    dates,
+    doneToday: dates.includes(today),
+  };
+}

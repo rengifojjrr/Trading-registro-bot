@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { saveMeal, type MealFormState } from "@/modules/meals/actions";
+import { IconPicker } from "@/core/ui/icon-picker";
+import { saveMeal, updateMeal, type MealFormState } from "@/modules/meals/actions";
 import { MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
+import type { MealRow } from "@/modules/meals/queries";
 
 const initial: MealFormState = { error: null, success: false };
 
@@ -21,39 +23,47 @@ const initial: MealFormState = { error: null, success: false };
  * queda como nombre suelto en vez de perderse. Ese campo es la razón entera
  * de traerse el planificador desde Notion, donde es un párrafo del que no
  * sale ninguna lista de la compra.
+ *
+ * El mismo formulario crea y edita. Antes sólo creaba, así que un ingrediente
+ * mal escrito se arreglaba borrando la comida entera y tecleando los otros
+ * seis otra vez.
  */
 export function MealForm({
   date,
   defaultType = "ALMUERZO",
+  meal,
 }: {
   date: string;
   defaultType?: MealType;
+  meal?: MealRow;
 }) {
-  const [state, formAction, pending] = useActionState(saveMeal, initial);
+  const editing = meal !== undefined;
+  const [state, formAction, pending] = useActionState(editing ? updateMeal : saveMeal, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (state.success) {
-      formRef.current?.reset();
-      toast.success("Comida registrada.");
+      if (!editing) formRef.current?.reset();
+      toast.success(editing ? "Comida guardada." : "Comida registrada.");
     }
     if (state.error) toast.error(state.error);
-  }, [state]);
+  }, [state, editing]);
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-4">
+      {editing ? <input type="hidden" name="id" value={meal.id} /> : null}
       {/* La fecha es un campo y no un valor oculto: esto es un planificador,
           y planificar es escribir el martes que viene, no sólo hoy. */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Input
           type="date"
           name="meal_date"
-          defaultValue={date}
+          defaultValue={meal?.meal_date ?? date}
           aria-label="Día de la comida"
           className="tabular-nums"
           required
         />
-        <Select name="meal_type" defaultValue={defaultType}>
+        <Select name="meal_type" defaultValue={meal?.meal_type ?? defaultType}>
           <SelectTrigger aria-label="Tipo de comida">
             <SelectValue />
           </SelectTrigger>
@@ -65,7 +75,13 @@ export function MealForm({
             ))}
           </SelectContent>
         </Select>
-        <Input name="name" placeholder="¿Qué se come?" maxLength={200} required />
+        <Input
+          name="name"
+          placeholder="¿Qué se come?"
+          defaultValue={meal?.name ?? ""}
+          maxLength={200}
+          required
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -76,6 +92,9 @@ export function MealForm({
           id="ingredients"
           name="ingredients"
           rows={4}
+          defaultValue={(meal?.ingredients ?? [])
+            .map((i) => [i.quantity, i.unit, i.name].filter(Boolean).join(" "))
+            .join("\n")}
           placeholder={"Uno por línea:\n200 g tomate\n2 huevos\nsal"}
         />
         <p className="text-xs text-muted-foreground">
@@ -84,14 +103,26 @@ export function MealForm({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Input name="cook" placeholder="Quién cocinó" maxLength={120} />
-        <Input name="notes" placeholder="Notas" maxLength={4000} />
+        <Input
+          name="cook"
+          placeholder="Quién cocinó"
+          defaultValue={meal?.cook ?? ""}
+          maxLength={120}
+        />
+        <Input
+          name="notes"
+          placeholder="Notas"
+          defaultValue={meal?.notes ?? ""}
+          maxLength={4000}
+        />
       </div>
+
+      <IconPicker name="icon" defaultValue={meal?.icon} />
 
       <div>
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="animate-spin" /> : null}
-          Guardar comida
+          {editing ? "Guardar cambios" : "Guardar comida"}
         </Button>
       </div>
     </form>

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
+import { PROJECT_COLORS, colorForName } from "@/core/notion-colors";
 import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
@@ -12,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importTasksFromNotion } from "@/modules/tasks/notion-import";
+import type { ProjectColor } from "@/types/database";
 
 export type TaskFormState = { error: string | null; success: boolean };
 
@@ -23,19 +25,35 @@ const schema = z.object({
   project_id: emptyToNull(z.string().uuid()),
   priority: z.enum(PRIORITIES).default("MEDIA"),
   due_date: emptyToNull(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  // Tus tareas de Notion admiten fecha de inicio a fin y hora concreta; aquí
+  // todo se aplanaba al último día, así que lo que duraba tres días se
+  // archivaba como si ocurriera entero el jueves.
+  due_end: emptyToNull(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  due_time: emptyToNull(z.string().regex(/^\d{2}:\d{2}$/)),
   notes: emptyToNull(z.string().max(4000)),
+  description: emptyToNull(z.string().max(20000)),
+  icon: emptyToNull(z.string().max(8)),
 });
 
-export async function createTask(_prev: TaskFormState, formData: FormData): Promise<TaskFormState> {
-  const user = await requireUser();
-
-  const parsed = schema.safeParse({
+/** Los campos que comparten crear y editar, ya validados. */
+function readForm(formData: FormData) {
+  return schema.safeParse({
     title: formData.get("title"),
     project_id: formData.get("project_id"),
     priority: formData.get("priority") || "MEDIA",
     due_date: formData.get("due_date"),
+    due_end: formData.get("due_end"),
+    due_time: formData.get("due_time"),
     notes: formData.get("notes"),
+    description: formData.get("description"),
+    icon: formData.get("icon"),
   });
+}
+
+export async function createTask(_prev: TaskFormState, formData: FormData): Promise<TaskFormState> {
+  const user = await requireUser();
+
+  const parsed = readForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
@@ -43,17 +61,56 @@ export async function createTask(_prev: TaskFormState, formData: FormData): Prom
   const supabase = await createClient();
   const { error } = await supabase.from("tasks_items").insert({
     user_id: user.id,
-    title: parsed.data.title,
-    project_id: parsed.data.project_id,
-    priority: parsed.data.priority,
-    due_date: parsed.data.due_date,
-    notes: parsed.data.notes,
+    ...parsed.data,
     categories: formData.getAll("categories").map(String),
   });
   if (error) return { error: "No se pudo crear la tarea.", success: false };
 
   await republish();
   revalidateTasks();
+  return { error: null, success: true };
+}
+
+/**
+ * Edita una tarea entera.
+ *
+ * No existía: la lista sólo sabía girar el estado y borrar, así que el título,
+ * la fecha, el proyecto, la prioridad, las categorías y las notas quedaban
+ * congelados en el momento de crearla, y un error de escritura obligaba a
+ * borrar y volver a empezar.
+ */
+export async function updateTask(
+  _prev: TaskFormState,
+  formData: FormData,
+): Promise<TaskFormState> {
+  const user = await requireUser();
+
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) {
+    return { error: "Tarea no encontrada.", success: false };
+  }
+
+  const parsed = readForm(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("tasks_items")
+    .update({
+      ...parsed.data,
+      categories: formData.getAll("categories").map(String),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: "No se pudo guardar la tarea.", success: false };
+
+  await republish();
+  revalidateTasks();
+  revalidatePath(`/tareas/${id}`);
   return { error: null, success: true };
 }
 
@@ -78,11 +135,15 @@ export async function setTaskStatus(taskId: string, status: string): Promise<voi
   revalidateTasks();
 }
 
-export async function deleteTask(taskId: string): Promise<void> {
-  const user = await requireUser();
-  const supabase = await createClient();
-  await supabase.from("tasks_items").delete().eq("id", taskId).eq("user_id", user.id);
-
+/**
+ * Recuenta después de borrar.
+ *
+ * Borrar ya no vive aquí: lo hace `DeleteButton` contra la papelera común, que
+ * es lo que da el «deshacer». Lo que sí sigue haciendo falta es rehacer las
+ * cuentas de la tarjeta de inicio, porque la papelera no sabe nada de ellas.
+ */
+export async function afterTaskRemoved(): Promise<void> {
+  await requireUser();
   await republish();
   revalidateTasks();
 }
@@ -111,13 +172,37 @@ export async function createProject(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("tasks_projects")
-    .insert({ user_id: user.id, name: parsed.data });
+  const { error } = await supabase.from("tasks_projects").insert({
+    user_id: user.id,
+    name: parsed.data,
+    // En Notion cada proyecto tiene su color y por eso reconoces una tarjeta
+    // sin leerla. Se asigna uno de entrada -- determinista a partir del
+    // nombre -- para que la lista nazca ya legible en lugar de gris entera.
+    color: colorForName(parsed.data),
+  });
   if (error) return { error: "No se pudo crear el proyecto.", success: false };
 
   revalidateTasks();
   return { error: null, success: true };
+}
+
+/** Cambia el color o el icono de un proyecto. */
+export async function updateProject(
+  projectId: string,
+  patch: { color?: ProjectColor; icon?: string | null },
+): Promise<void> {
+  const user = await requireUser();
+
+  if (patch.color !== undefined && !PROJECT_COLORS.includes(patch.color)) return;
+
+  const supabase = await createClient();
+  await supabase
+    .from("tasks_projects")
+    .update(patch)
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+
+  revalidateTasks();
 }
 
 /**
