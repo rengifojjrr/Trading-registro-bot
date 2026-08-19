@@ -482,3 +482,75 @@ describe("reconstructTrades -- la posición real del usuario", () => {
     expect(trades[0].totalExitQty.toString()).toBe("20");
   });
 });
+
+describe("un fill no se asigna dos veces al mismo papel", () => {
+  /**
+   * La base de datos lo exige: `trade_fills` lleva UNIQUE (raw_fill_id, role)
+   * global, no por operación. Sin esa restricción, dos operaciones podrían
+   * reclamar el mismo fill como entrada y el resultado se contaría dos veces
+   * sin que nada lo detectara.
+   *
+   * Aquí se comprueba del lado del motor, que es donde se decide el reparto:
+   * si el motor produjera dos asignaciones del mismo fill al mismo papel, la
+   * escritura reventaría con «duplicate key value violates unique constraint»
+   * y la reconstrucción se quedaría a medias -- que es exactamente lo que
+   * pasó al recuperar un fill que faltaba.
+   */
+  function papelesRepetidos(fills: ReconstructionFillInput[]): string[] {
+    const { trades } = reconstructTrades(fills);
+    const vistos = new Set<string>();
+    const repetidos: string[] = [];
+    for (const trade of trades) {
+      for (const a of trade.fillAllocations) {
+        const clave = `${a.rawFillId}:${a.role}`;
+        if (vistos.has(clave)) repetidos.push(clave);
+        vistos.add(clave);
+      }
+    }
+    return repetidos;
+  }
+
+  it("en una vuelta completa", () => {
+    expect(
+      papelesRepetidos([
+        fill({ id: "e1", side: "BUY", price: 63700, size: 20 }),
+        fill({ id: "s1", side: "SELL", price: 64000, size: 20 }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("cuando un fill cruza cero y se reparte entre dos operaciones", () => {
+    // El caso que de verdad roza la restricción: el fill que cruza es salida
+    // de la que cierra y entrada de la que abre. Dos asignaciones del mismo
+    // fill, pero con papeles distintos, así que cabe -- y tiene que caber.
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 63700, size: 20 }),
+      fill({ id: "cruza", side: "SELL", price: 64000, size: 50 }),
+      fill({ id: "cierra", side: "BUY", price: 63800, size: 30 }),
+    ];
+
+    expect(papelesRepetidos(fills)).toEqual([]);
+
+    const { trades } = reconstructTrades(fills);
+    const papelesDelQueCruza = trades
+      .flatMap((t) => t.fillAllocations)
+      .filter((a) => a.rawFillId === "cruza")
+      .map((a) => a.role)
+      .sort();
+    expect(papelesDelQueCruza).toEqual(["ENTRY", "EXIT"]);
+  });
+
+  it("con varias vueltas seguidas y un resto abierto al final", () => {
+    // La forma real de la semana del 11 al 19 de agosto de 2026: largo que
+    // cierra, corto que cierra, corto que se queda abierto.
+    expect(
+      papelesRepetidos([
+        fill({ id: "l1", side: "BUY", price: 64020, size: 43 }),
+        fill({ id: "l2", side: "SELL", price: 64090, size: 43 }),
+        fill({ id: "c1", side: "SELL", price: 64298, size: 60 }),
+        fill({ id: "c2", side: "BUY", price: 65190, size: 60 }),
+        fill({ id: "c3", side: "SELL", price: 67950, size: 150 }),
+      ]),
+    ).toEqual([]);
+  });
+});

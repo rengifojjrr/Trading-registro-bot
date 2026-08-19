@@ -67,8 +67,7 @@ export async function persistReconstruction(
       .from("trades")
       .select("id, opening_fill_id")
       .eq("account_id", params.accountId)
-      .eq("product_id", params.productId)
-      .not("opening_fill_id", "is", null),
+      .eq("product_id", params.productId),
   ]);
 
   const engineFills: ReconstructionFillInput[] = (rawFills ?? []).map((f) => ({
@@ -105,12 +104,65 @@ export async function persistReconstruction(
   );
 
   const existingByOpeningFillId = new Map(
-    (existingTrades ?? []).map((t) => [t.opening_fill_id as string, t.id]),
+    (existingTrades ?? [])
+      .filter((t) => t.opening_fill_id !== null)
+      .map((t) => [t.opening_fill_id as string, t.id]),
   );
+  /** Todas las operaciones de este (cuenta, producto), abran algo o no. */
+  const scopeTradeIds = (existingTrades ?? []).map((t) => t.id);
   const newOpeningFillIds = new Set(trades.map((t) => t.openingFillId));
   const orphanedOpeningFillIds = [...existingByOpeningFillId.keys()].filter(
     (id) => !newOpeningFillIds.has(id),
   );
+
+  // Las huérfanas se marcan **antes** de escribir, no después.
+  //
+  // Esta función hace N escrituras seguidas sin transacción, así que puede
+  // morirse a la mitad. Con el marcado al final, morirse a la mitad dejaba las
+  // operaciones viejas y las nuevas conviviendo, las dos visibles y las dos
+  // sumando: el panel llegó a enseñar +305 en un día en el que se ganaron 152,
+  // porque contaba el largo de 42 contratos y el de 43 a la vez. Marcándolas
+  // primero, un fallo a media escritura deja de menos, nunca de más -- que en
+  // una aplicación que cuenta dinero es la única dirección aceptable.
+  if (orphanedOpeningFillIds.length > 0) {
+    await supabase
+      .from("trades")
+      .update({ orphaned_at: new Date().toISOString() })
+      .eq("user_id", params.userId)
+      .in("opening_fill_id", orphanedOpeningFillIds)
+      .is("orphaned_at", null);
+  }
+
+  // Y se vacían los enlaces de fills de TODO el ámbito de una vez, no los de
+  // cada operación cuando le toca.
+  //
+  // `trade_fills` lleva UNIQUE (raw_fill_id, role) global, no por operación:
+  // un fill sólo puede estar asignado una vez como entrada y una como salida
+  // en toda la tabla. Es la restricción correcta -- sin ella, dos operaciones
+  // activas podrían reclamar el mismo fill y el P&L se contaría dos veces sin
+  // que nada lo detectara -- pero implica que, cuando un recálculo mueve los
+  // límites, la operación vieja no puede seguir agarrando sus enlaces
+  // mientras la nueva reclama los mismos. Borrando por operación, como se
+  // hacía antes, la vieja los retenía y la nueva chocaba:
+  // «duplicate key value violates unique constraint
+  // trade_fills_raw_fill_id_role_key», y la reconstrucción entera se quedaba a
+  // medias.
+  //
+  // La consecuencia es que una operación huérfana pierde sus enlaces. Se
+  // acepta a conciencia: la fila se queda -- con su dirección, su tamaño, sus
+  // precios y su resultado, que es lo que hace falta para auditarla -- y los
+  // enlaces pasan a describir el reparto vigente, que es lo único que pueden
+  // describir con esta restricción.
+  if (scopeTradeIds.length > 0) {
+    const { error: clearError } = await supabase
+      .from("trade_fills")
+      .delete()
+      .eq("user_id", params.userId)
+      .in("trade_id", scopeTradeIds);
+    if (clearError) {
+      throw new Error(`Failed to clear trade_fills for the recomputed scope: ${clearError.message}`);
+    }
+  }
 
   let tradesCreated = 0;
   let tradesUpdated = 0;
@@ -199,11 +251,8 @@ export async function persistReconstruction(
     if (trade.status === "CLOSED") tradesClosed += 1;
     touchedTradeIds.push(tradeId);
 
-    // Full replace of this trade's fill allocations -- cheap, derived data.
-    const { error: deleteError } = await supabase.from("trade_fills").delete().eq("trade_id", tradeId);
-    if (deleteError) {
-      throw new Error(`Failed to clear trade_fills for trade ${tradeId}: ${deleteError.message}`);
-    }
+    // Los enlaces de todo el ámbito ya se vaciaron arriba; aquí sólo se
+    // escriben los nuevos.
     if (trade.fillAllocations.length > 0) {
       const { error: fillsError } = await supabase.from("trade_fills").insert(
         trade.fillAllocations.map((a) => ({
@@ -223,20 +272,6 @@ export async function persistReconstruction(
   }
 
   await flagVerifiedFiguresThatMoved(params.userId, touchedTradeIds);
-
-  // Trades whose opening fill no longer starts a position are marked, never
-  // deleted. Keeping the row means the history stays auditable; marking it
-  // means the open-position views stop presenting it as something happening
-  // now. Without this, a phantom position left over from a missing fill
-  // survived every later sync untouched.
-  if (orphanedOpeningFillIds.length > 0) {
-    await supabase
-      .from("trades")
-      .update({ orphaned_at: new Date().toISOString() })
-      .eq("user_id", params.userId)
-      .in("opening_fill_id", orphanedOpeningFillIds)
-      .is("orphaned_at", null);
-  }
 
   return {
     tradesCreated,
