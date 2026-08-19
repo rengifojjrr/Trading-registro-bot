@@ -1,5 +1,6 @@
 import "server-only";
 
+import { colorForName } from "@/core/notion-colors";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import type { TaskPriority, TaskStatus } from "@/modules/tasks/domain/tasks";
@@ -57,7 +58,16 @@ export async function fetchProjects(includeArchived = false): Promise<ProjectRow
     .order("sort_order", { ascending: true });
 
   const { data } = await (includeArchived ? query : query.eq("is_active", true));
-  return data ?? [];
+
+  // Un proyecto sin color elegido se queda con uno derivado de su nombre, en
+  // lugar de gris. Los diez que llegaron de Notion nacieron sin color, y una
+  // lista entera del mismo tono es exactamente lo que hacía que todas las
+  // tarjetas se parecieran. Se deriva al leer y no se guarda: así hay una sola
+  // implementación, y elegir uno a mano lo sigue pisando.
+  return (data ?? []).map((project) => ({
+    ...project,
+    color: project.color ?? colorForName(project.name),
+  }));
 }
 
 export async function fetchTasks(): Promise<TaskRow[]> {
