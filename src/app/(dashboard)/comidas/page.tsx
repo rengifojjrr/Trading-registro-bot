@@ -1,4 +1,4 @@
-import { ShoppingBasket } from "lucide-react";
+import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -6,93 +6,67 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { shiftDate, todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
-import {
-  MEAL_TYPE_LABELS,
-  buildShoppingList,
-  formatShoppingAmount,
-} from "@/modules/meals/domain/meals";
+import { MEAL_TYPES, MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
 import { fetchMeals } from "@/modules/meals/queries";
 import { MealForm } from "@/modules/meals/ui/meal-form";
 
 /**
- * Comidas.
+ * Comidas: registrar.
  *
- * La lista de la compra de la semana es lo único que esto hace y Notion no
- * puede: allí los ingredientes son un párrafo, y de un párrafo no se suman
- * cantidades.
+ * El formulario acepta cualquier día, no sólo hoy: esto es un planificador, y
+ * planificar es escribir el martes que viene. La rejilla de la semana enlaza
+ * aquí con el día y el tipo ya puestos, para que rellenar un hueco sea un
+ * clic y no volver a elegirlo todo.
  */
-export default async function MealsPage() {
+export default async function MealsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fecha?: string; tipo?: string }>;
+}) {
   const timezone = await userTimezone();
   const today = todayIn(timezone);
-  const weekEnd = shiftDate(today, 7);
+  const { fecha, tipo } = await searchParams;
 
-  const meals = await fetchMeals(shiftDate(today, -60), weekEnd);
+  const date = isIsoDate(fecha) ? fecha : today;
+  const defaultType = isMealType(tipo) ? tipo : "ALMUERZO";
 
-  const upcoming = meals.filter((m) => m.meal_date >= today && m.meal_date <= weekEnd);
-  const shopping = buildShoppingList(upcoming.flatMap((m) => m.ingredients));
-  const recent = meals.filter((m) => m.meal_date < today);
+  const meals = await fetchMeals(shiftDate(today, -30), shiftDate(today, 14));
   const todayMeals = meals.filter((m) => m.meal_date === today);
+  const history = meals.filter((m) => m.meal_date <= today).slice(0, 30);
 
   return (
     <>
-      <PageHeader
-        title="Comidas"
-        description="Qué comes y qué hace falta comprar."
-      />
+      <PageHeader title="Registrar comida" description="Qué se come, y con qué. De ahí sale la compra." />
 
       <Card>
         <CardHeader>
-          <CardTitle>Registrar una comida</CardTitle>
+          <CardTitle>Nueva comida</CardTitle>
           <CardDescription>
             {todayMeals.length === 0
-              ? "Hoy todavía no hay ninguna."
+              ? "Hoy todavía no hay ninguna registrada."
               : `Hoy llevas ${todayMeals.length} ${todayMeals.length === 1 ? "comida" : "comidas"}.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <MealForm date={today} />
+          {/* Remontar al cambiar de hueco: los campos por defecto sólo se leen
+              al montar, y sin esto el enlace de la rejilla no cambiaría nada. */}
+          <MealForm key={`${date}-${defaultType}`} date={date} defaultType={defaultType} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShoppingBasket className="size-4" style={{ color: "var(--mod-meals)" }} aria-hidden />
-            Lista de la compra
-          </CardTitle>
-          <CardDescription>
-            De todo lo planificado desde hoy hasta dentro de una semana. Las cantidades se suman por
-            unidad, nunca entre unidades distintas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {shopping.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nada que comprar todavía. Registra comidas con ingredientes y aquí se juntan solas.
-            </p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-border text-sm">
-              {shopping.map((item) => (
-                <li key={item.name} className="flex items-center justify-between gap-4 py-2">
-                  <span>{item.name}</span>
-                  <span className="tabular-nums text-muted-foreground">{formatShoppingAmount(item)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Historial</CardTitle>
+          <CardTitle className="text-base">Últimas comidas</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          {[...todayMeals, ...recent].length === 0 ? (
+          {history.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin comidas registradas.</p>
           ) : (
-            [...todayMeals, ...recent].slice(0, 40).map((meal) => (
-              <div key={meal.id} className="flex flex-col gap-1 border-b border-border/60 pb-2 last:border-0 last:pb-0">
+            history.map((meal) => (
+              <div
+                key={meal.id}
+                className="flex flex-col gap-1 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+              >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <Badge variant="outline">{MEAL_TYPE_LABELS[meal.meal_type]}</Badge>
                   <span className="font-medium">{meal.name}</span>
@@ -110,6 +84,23 @@ export default async function MealsPage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+        <Link href="/comidas/semana" className="underline underline-offset-4 hover:text-foreground">
+          Ver la semana
+        </Link>
+        <Link href="/comidas/compra" className="underline underline-offset-4 hover:text-foreground">
+          Ver la lista de la compra
+        </Link>
+      </div>
     </>
   );
+}
+
+function isIsoDate(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isMealType(value: string | undefined): value is MealType {
+  return typeof value === "string" && (MEAL_TYPES as readonly string[]).includes(value);
 }

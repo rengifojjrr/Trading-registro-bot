@@ -74,8 +74,7 @@ export async function saveMeal(_prev: MealFormState, formData: FormData): Promis
   }
 
   await republishDay(parsed.data.meal_date);
-  revalidatePath("/comidas");
-  revalidatePath("/");
+  revalidateMeals();
   return { error: null, success: true };
 }
 
@@ -84,8 +83,7 @@ export async function deleteMeal(mealId: string, mealDate: string): Promise<void
   const supabase = await createClient();
   await supabase.from("meals_entries").delete().eq("id", mealId).eq("user_id", user.id);
   await republishDay(mealDate);
-  revalidatePath("/comidas");
-  revalidatePath("/");
+  revalidateMeals();
 }
 
 async function republishDay(date: string): Promise<void> {
@@ -99,4 +97,12 @@ async function republishDay(date: string): Promise<void> {
     .eq("meal_date", date);
 
   await publishDailyMetrics(date, [{ module: "meals", key: "comidas", value: count ?? 0 }]);
+}
+
+/** Las pantallas de Comidas miran los mismos datos, así que caducan a la vez. */
+function revalidateMeals(): void {
+  revalidatePath("/comidas");
+  revalidatePath("/comidas/semana");
+  revalidatePath("/comidas/compra");
+  revalidatePath("/");
 }

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { saveMeal, type MealFormState } from "@/modules/meals/actions";
-import { MEAL_TYPE_LABELS } from "@/modules/meals/domain/meals";
+import { MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
 
 const initial: MealFormState = { error: null, success: false };
 
@@ -22,7 +22,13 @@ const initial: MealFormState = { error: null, success: false };
  * de traerse el planificador desde Notion, donde es un párrafo del que no
  * sale ninguna lista de la compra.
  */
-export function MealForm({ date }: { date: string }) {
+export function MealForm({
+  date,
+  defaultType = "ALMUERZO",
+}: {
+  date: string;
+  defaultType?: MealType;
+}) {
   const [state, formAction, pending] = useActionState(saveMeal, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -36,10 +42,18 @@ export function MealForm({ date }: { date: string }) {
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-4">
-      <input type="hidden" name="meal_date" value={date} />
-
+      {/* La fecha es un campo y no un valor oculto: esto es un planificador,
+          y planificar es escribir el martes que viene, no sólo hoy. */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Select name="meal_type" defaultValue="ALMUERZO">
+        <Input
+          type="date"
+          name="meal_date"
+          defaultValue={date}
+          aria-label="Día de la comida"
+          className="tabular-nums"
+          required
+        />
+        <Select name="meal_type" defaultValue={defaultType}>
           <SelectTrigger aria-label="Tipo de comida">
             <SelectValue />
           </SelectTrigger>
@@ -51,7 +65,7 @@ export function MealForm({ date }: { date: string }) {
             ))}
           </SelectContent>
         </Select>
-        <Input name="name" placeholder="¿Qué comiste?" maxLength={200} required className="sm:col-span-2" />
+        <Input name="name" placeholder="¿Qué se come?" maxLength={200} required />
       </div>
 
       <div className="flex flex-col gap-1.5">

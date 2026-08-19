@@ -50,8 +50,7 @@ export async function createTask(_prev: TaskFormState, formData: FormData): Prom
   if (error) return { error: "No se pudo crear la tarea.", success: false };
 
   await republish();
-  revalidatePath("/tareas");
-  revalidatePath("/");
+  revalidateTasks();
   return { error: null, success: true };
 }
 
@@ -73,8 +72,7 @@ export async function setTaskStatus(taskId: string, status: string): Promise<voi
     .eq("user_id", user.id);
 
   await republish();
-  revalidatePath("/tareas");
-  revalidatePath("/");
+  revalidateTasks();
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
@@ -83,7 +81,67 @@ export async function deleteTask(taskId: string): Promise<void> {
   await supabase.from("tasks_items").delete().eq("id", taskId).eq("user_id", user.id);
 
   await republish();
+  revalidateTasks();
+}
+
+/**
+ * Crea un proyecto.
+ *
+ * Un proyecto es sólo un nombre bajo el que agrupar tareas; todo lo demás
+ * -- fechas, avance, responsables -- se deduce de las tareas que cuelgan de
+ * él, así que pedirlo por separado sería pedir dos veces lo mismo.
+ */
+export async function createProject(
+  _prev: TaskFormState,
+  formData: FormData,
+): Promise<TaskFormState> {
+  const user = await requireUser();
+
+  const parsed = z
+    .string()
+    .trim()
+    .min(1, "Ponle nombre al proyecto.")
+    .max(120)
+    .safeParse(formData.get("name"));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Nombre no válido.", success: false };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("tasks_projects")
+    .insert({ user_id: user.id, name: parsed.data });
+  if (error) return { error: "No se pudo crear el proyecto.", success: false };
+
+  revalidateTasks();
+  return { error: null, success: true };
+}
+
+/**
+ * Archiva o reactiva un proyecto.
+ *
+ * Archivar no borra: las tareas que colgaban de él siguen colgando, con su
+ * historial intacto. Borrar el proyecto dejaría huérfanas unas tareas que sí
+ * pasaron.
+ */
+export async function setProjectActive(projectId: string, isActive: boolean): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  await supabase
+    .from("tasks_projects")
+    .update({ is_active: isActive })
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+
+  revalidateTasks();
+}
+
+/** Las cuatro pantallas del módulo miran las mismas tareas. */
+function revalidateTasks(): void {
   revalidatePath("/tareas");
+  revalidatePath("/tareas/todas");
+  revalidatePath("/tareas/proyectos");
+  revalidatePath("/tareas/analisis");
   revalidatePath("/");
 }
 

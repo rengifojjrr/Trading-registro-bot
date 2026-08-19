@@ -36,8 +36,7 @@ export async function toggleHabit(habitId: string, date: string, done: boolean):
   }
 
   await republishDay(date);
-  revalidatePath("/habitos");
-  revalidatePath("/");
+  revalidateHabits();
 }
 
 /** Recalcula el día entero desde la base, no desde lo que creíamos tener. */
@@ -99,7 +98,7 @@ export async function createHabit(
     };
   }
 
-  revalidatePath("/habitos");
+  revalidateHabits();
   return { error: null, success: true };
 }
 
@@ -120,6 +119,13 @@ export async function archiveHabit(habitId: string, archived: boolean): Promise<
     .eq("id", habitId)
     .eq("user_id", user.id);
 
+  revalidateHabits();
+}
+
+/** Las pantallas de Hábitos miran los mismos datos, así que caducan a la vez. */
+function revalidateHabits(): void {
   revalidatePath("/habitos");
+  revalidatePath("/habitos/calendario");
+  revalidatePath("/habitos/rachas");
   revalidatePath("/");
 }

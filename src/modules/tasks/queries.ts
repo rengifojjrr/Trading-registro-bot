@@ -7,6 +7,7 @@ import type { TaskPriority, TaskStatus } from "@/modules/tasks/domain/tasks";
 export interface ProjectRow {
   id: string;
   name: string;
+  is_active: boolean;
 }
 
 export interface TaskRow {
@@ -19,17 +20,29 @@ export interface TaskRow {
   notes: string | null;
   project_id: string | null;
   projectName: string | null;
+  created_at: string;
+  /** Cuándo se marcó como hecha. Es lo que permite medir el ritmo de cierre. */
+  completed_at: string | null;
 }
 
-export async function fetchProjects(): Promise<ProjectRow[]> {
+/**
+ * Los proyectos.
+ *
+ * Por defecto sólo los activos, que es lo que va en un desplegable de «a qué
+ * proyecto pertenece esta tarea». La pantalla de proyectos pide también los
+ * archivados, porque ahí sí hay que poder reactivarlos.
+ */
+export async function fetchProjects(includeArchived = false): Promise<ProjectRow[]> {
   const user = await requireUser();
   const supabase = await createClient();
-  const { data } = await supabase
+
+  const query = supabase
     .from("tasks_projects")
-    .select("id, name")
+    .select("id, name, is_active")
     .eq("user_id", user.id)
-    .eq("is_active", true)
     .order("sort_order", { ascending: true });
+
+  const { data } = await (includeArchived ? query : query.eq("is_active", true));
   return data ?? [];
 }
 
@@ -40,7 +53,7 @@ export async function fetchTasks(): Promise<TaskRow[]> {
   const [{ data: tasks }, projects] = await Promise.all([
     supabase
       .from("tasks_items")
-      .select("id, title, status, priority, due_date, categories, notes, project_id")
+      .select("id, title, status, priority, due_date, categories, notes, project_id, created_at, completed_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     fetchProjects(),

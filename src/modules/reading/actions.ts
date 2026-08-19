@@ -60,8 +60,7 @@ export async function logReadingSession(
   if (error) return { error: "No se pudo guardar la lectura.", success: false };
 
   await republishDay(parsed.data.session_date);
-  revalidatePath("/lecturas");
-  revalidatePath("/");
+  revalidateReading();
   return { error: null, success: true };
 }
 
@@ -130,7 +129,7 @@ export async function createBook(
     };
   }
 
-  revalidatePath("/lecturas");
+  revalidateReading();
   return { error: null, success: true };
 }
 
@@ -145,5 +144,13 @@ export async function setBookStatus(bookId: string, status: string): Promise<voi
     .eq("id", bookId)
     .eq("user_id", user.id);
 
+  revalidateReading();
+}
+
+/** Las pantallas de Lecturas miran los mismos datos, así que caducan a la vez. */
+function revalidateReading(): void {
   revalidatePath("/lecturas");
+  revalidatePath("/lecturas/libros");
+  revalidatePath("/lecturas/analisis");
+  revalidatePath("/");
 }

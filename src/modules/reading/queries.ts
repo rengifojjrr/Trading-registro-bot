@@ -19,6 +19,12 @@ export interface SessionRow {
   id: string;
   book_id: string | null;
   bookTitle: string | null;
+  /**
+   * Los géneros del libro de esa sesión. Viajan con la sesión porque el
+   * análisis reparte minutos por género y el género vive en el libro: sin
+   * esto haría falta una segunda consulta por cada gráfica.
+   */
+  bookGenres: string[];
   session_date: string;
   started_at: string | null;
   minutes: number | null;
@@ -65,14 +71,18 @@ export async function fetchSessions(limit = 60): Promise<SessionRow[]> {
 
   const { data: books } =
     bookIds.length > 0
-      ? await supabase.from("reading_books").select("id, title").in("id", bookIds)
+      ? await supabase.from("reading_books").select("id, title, genres").in("id", bookIds)
       : { data: [] };
 
-  const titleById = new Map((books ?? []).map((b) => [b.id, b.title]));
+  const bookById = new Map((books ?? []).map((b) => [b.id, b]));
 
-  return rows.map((r) => ({
-    ...r,
-    score: r.score === null ? null : Number(r.score),
-    bookTitle: r.book_id ? (titleById.get(r.book_id) ?? null) : null,
-  }));
+  return rows.map((r) => {
+    const book = r.book_id ? bookById.get(r.book_id) : undefined;
+    return {
+      ...r,
+      score: r.score === null ? null : Number(r.score),
+      bookTitle: book?.title ?? null,
+      bookGenres: book?.genres ?? [],
+    };
+  });
 }

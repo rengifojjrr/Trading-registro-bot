@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +10,13 @@ import { fetchProjects, fetchTasks } from "@/modules/tasks/queries";
 import { NewTask } from "@/modules/tasks/ui/new-task";
 import { TaskList } from "@/modules/tasks/ui/task-list";
 
-/** Tareas, agrupadas por urgencia real en lugar de por fecha. */
+/**
+ * Tareas: hoy.
+ *
+ * Sólo lo vencido y lo de hoy. Enseñar aquí lo de dentro de un mes es
+ * exactamente lo que convierte una lista de tareas en una lista que ya no se
+ * mira: la pantalla de todos los días tiene que caber en la cabeza.
+ */
 export default async function TasksPage() {
   const timezone = await userTimezone();
   const today = todayIn(timezone);
@@ -21,10 +29,10 @@ export default async function TasksPage() {
 
   return (
     <>
-      <PageHeader title="Tareas" description="Lo vencido primero, que es lo que hay que decidir." />
+      <PageHeader title="Hoy" description="Lo vencido primero, que es lo que hay que decidir." />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile size="lg" label="Pendientes" value={String(counts.open)} />
+        <StatTile size="lg" label="Pendientes" value={String(counts.open)} sub="en total" />
         <StatTile
           size="lg"
           label="Vencidas"
@@ -47,9 +55,27 @@ export default async function TasksPage() {
 
       <Card>
         <CardContent className="pt-5">
-          <TaskList tasks={tasks} today={today} />
+          <TaskList
+            tasks={tasks}
+            today={today}
+            only={["VENCIDA", "HOY"]}
+            showDone={false}
+            emptyLabel="Nada vencido ni para hoy. Lo demás está en «Todas»."
+          />
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+        <Link href="/tareas/todas" className="underline underline-offset-4 hover:text-foreground">
+          Ver todas
+        </Link>
+        <Link href="/tareas/proyectos" className="underline underline-offset-4 hover:text-foreground">
+          Ver los proyectos
+        </Link>
+        <Link href="/tareas/analisis" className="underline underline-offset-4 hover:text-foreground">
+          Ver el análisis
+        </Link>
+      </div>
     </>
   );
 }

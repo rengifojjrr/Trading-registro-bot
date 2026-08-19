@@ -14,6 +14,7 @@ import {
   compareWithinGroup,
   urgencyOf,
   type TaskStatus,
+  type Urgency,
 } from "@/modules/tasks/domain/tasks";
 import type { TaskRow } from "@/modules/tasks/queries";
 
@@ -24,11 +25,29 @@ import type { TaskRow } from "@/modules/tasks/queries";
  * un mes. Aquí lo vencido va primero siempre, porque es lo que hay que
  * decidir: hacerlo, moverlo o borrarlo.
  */
-export function TaskList({ tasks, today }: { tasks: TaskRow[]; today: string }) {
+export function TaskList({
+  tasks,
+  today,
+  only,
+  showDone = true,
+  emptyLabel = "No hay tareas. Añade una arriba.",
+}: {
+  tasks: TaskRow[];
+  today: string;
+  /**
+   * Qué grupos de urgencia mostrar. La pantalla de «Hoy» pide sólo lo vencido
+   * y lo de hoy: enseñar ahí lo de dentro de un mes es exactamente lo que
+   * convierte una lista de tareas en una lista que no se mira.
+   */
+  only?: readonly Urgency[];
+  showDone?: boolean;
+  emptyLabel?: string;
+}) {
+  const visible = only ?? URGENCY_ORDER;
   const open = tasks.filter((t) => t.status !== "HECHA");
   const done = tasks.filter((t) => t.status === "HECHA");
 
-  const groups = URGENCY_ORDER.map((urgency) => ({
+  const groups = visible.map((urgency) => ({
     urgency,
     items: open
       .filter((t) => urgencyOf(t.due_date, today) === urgency)
@@ -40,13 +59,13 @@ export function TaskList({ tasks, today }: { tasks: TaskRow[]; today: string }) 
       ),
   })).filter((g) => g.items.length > 0);
 
-  if (open.length === 0 && done.length === 0) {
-    return <p className="text-sm text-muted-foreground">No hay tareas. Añade una arriba.</p>;
+  if (groups.length === 0 && (!showDone || done.length === 0)) {
+    return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
   }
 
   return (
     <div className="flex flex-col gap-5">
-      {open.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nada pendiente. Todo al día.</p>
       ) : null}
 
@@ -66,7 +85,7 @@ export function TaskList({ tasks, today }: { tasks: TaskRow[]; today: string }) 
         </div>
       ))}
 
-      {done.length > 0 ? (
+      {showDone && done.length > 0 ? (
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Hechas · {done.length}
