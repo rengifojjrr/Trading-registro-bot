@@ -1,7 +1,14 @@
 import { DateTime } from "luxon";
 import { describe, expect, it } from "vitest";
 
-import { clockFromTimestamp, formatSleepDuration, resolveSleepTimestamps, summarise } from "./sleep";
+import {
+  clockFromTimestamp,
+  defaultNightToLog,
+  formatSleepDuration,
+  nightLabel,
+  resolveSleepTimestamps,
+  summarise,
+} from "./sleep";
 
 const TZ = "America/Bogota";
 
@@ -111,5 +118,38 @@ describe("summarise", () => {
 
   it("sin datos no inventa una media", () => {
     expect(summarise([]).averageMinutes).toBeNull();
+  });
+});
+
+describe("defaultNightToLog", () => {
+  it("por la mañana propone la noche de ayer, que es la que se acaba de dormir", () => {
+    // 07:30 en Bogotá del 19 de agosto.
+    const morning = new Date("2026-08-19T12:30:00Z");
+    expect(defaultNightToLog(morning, "America/Bogota")).toBe("2026-08-18");
+  });
+
+  it("por la noche ya propone la de hoy", () => {
+    // 22:00 en Bogotá del 19 de agosto.
+    const evening = new Date("2026-08-20T03:00:00Z");
+    expect(defaultNightToLog(evening, "America/Bogota")).toBe("2026-08-19");
+  });
+
+  it("usa la zona del usuario y no la del servidor", () => {
+    // 21:00 UTC del 19 es todavía la tarde del 19 en Bogotá (16:00),
+    // así que la noche propuesta es la del 18, no la del 19.
+    const instant = new Date("2026-08-19T21:00:00Z");
+    expect(defaultNightToLog(instant, "America/Bogota")).toBe("2026-08-18");
+    expect(defaultNightToLog(instant, "UTC")).toBe("2026-08-19");
+  });
+
+  it("cae a UTC con una zona inválida en lugar de reventar", () => {
+    const instant = new Date("2026-08-19T21:00:00Z");
+    expect(defaultNightToLog(instant, "Nope/Nope")).toBe("2026-08-19");
+  });
+});
+
+describe("nightLabel", () => {
+  it("nombra la noche por su día de la semana", () => {
+    expect(nightLabel("2026-08-18")).toBe("Noche del martes 18 de agosto");
   });
 });

@@ -1,63 +1,81 @@
+import Link from "next/link";
+
 import { PageHeader } from "@/components/layout/page-header";
-import { StatTile } from "@/components/dashboard/stat-tile";
+import { Card, CardContent } from "@/components/ui/card";
 import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
-import { formatSleepDuration, summarise } from "@/modules/sleep/domain/sleep";
+import {
+  defaultNightToLog,
+  formatSleepDuration,
+  summarise,
+} from "@/modules/sleep/domain/sleep";
 import { fetchSleepEntries } from "@/modules/sleep/queries";
-import { SleepForm } from "@/modules/sleep/ui/sleep-form";
-import { SleepHistory } from "@/modules/sleep/ui/sleep-history";
+import { NightPicker } from "@/modules/sleep/ui/night-picker";
+import { SleepWizard } from "@/modules/sleep/ui/sleep-wizard";
 
 /**
- * Sueño.
+ * Sueño: registrar.
  *
- * La media de arriba es literalmente el número que hoy no existe: en Notion
- * la duración se guardaba como texto en una lista de opciones, así que no
- * había forma de promediarla. Aquí sale de restar dos instantes.
+ * La pantalla principal del módulo es el formulario, no el informe. Es lo
+ * único que se abre a diario, y con dos preguntas ya deja un dato que en
+ * Notion no existía: la duración como número, no como la etiqueta de texto
+ * «8 horas» de una lista de opciones.
+ *
+ * El historial y el análisis viven en sus propias secciones para que esta
+ * quepa entera en la pantalla del móvil a las siete de la mañana.
  */
-export default async function SleepPage() {
+export default async function SleepPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ noche?: string }>;
+}) {
   const timezone = await userTimezone();
-  const today = todayIn(timezone);
+  const { noche } = await searchParams;
+
+  const latest = defaultNightToLog(new Date(), timezone);
+  const date = isIsoDate(noche) && noche <= todayIn(timezone) ? noche : latest;
+
   const entries = await fetchSleepEntries();
+  const entry = entries.find((e) => e.sleep_date === date) ?? null;
 
   const last30 = entries.slice(0, 30);
-  const stat = summarise(
-    last30.map((e) => ({ durationMinutes: e.duration_minutes, score: e.score })),
-  );
-  const tonight = entries.find((e) => e.sleep_date === today) ?? null;
+  const stat = summarise(last30.map((e) => ({ durationMinutes: e.duration_minutes, score: e.score })));
 
   return (
     <>
       <PageHeader
-        title="Sueño"
-        description="Cuánto duermes de verdad, cómo te levantas y qué soñaste."
+        title="Registrar sueño"
+        description="Una pregunta cada vez. Con las dos horas basta; lo demás es de propina."
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatTile
-          size="lg"
-          label="Media de sueño"
-          value={formatSleepDuration(stat.averageMinutes)}
-          sub={`últimas ${last30.length} noches`}
-          description="Se calcula restando la hora a la que te acostaste de la hora a la que te levantaste. Las noches sin registrar se ignoran en lugar de contar como cero."
-        />
-        <StatTile
-          size="lg"
-          label="Puntaje medio"
-          value={stat.averageScore === null ? "--" : `${stat.averageScore}/10`}
-          sub="cómo la valoraste"
-        />
-        <StatTile
-          size="lg"
-          label="Anoche"
-          value={formatSleepDuration(tonight?.duration_minutes ?? null)}
-          sub={tonight ? "registrada" : "sin registrar"}
-          tone={tonight ? "neutral" : "neutral"}
-        />
+      <Card>
+        <CardContent className="flex flex-col gap-6 pt-6">
+          <NightPicker date={date} latest={latest} />
+          {/* Remontar al cambiar de noche: si no, los atajos de hora y el
+              puntaje se quedarían con los de la noche anterior. */}
+          <SleepWizard key={date} date={date} entry={entry} timezone={timezone} />
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          Tu media:{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {formatSleepDuration(stat.averageMinutes)}
+          </span>{" "}
+          en las últimas {last30.length} noches
+        </span>
+        <Link href="/sueno/analisis" className="underline underline-offset-4 hover:text-foreground">
+          Ver el análisis
+        </Link>
+        <Link href="/sueno/historial" className="underline underline-offset-4 hover:text-foreground">
+          Ver el historial
+        </Link>
       </div>
-
-      <SleepForm date={today} entry={tonight} timezone={timezone} />
-
-      <SleepHistory entries={entries} timezone={timezone} />
     </>
   );
+}
+
+function isIsoDate(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

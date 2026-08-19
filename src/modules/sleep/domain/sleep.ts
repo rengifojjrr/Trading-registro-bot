@@ -51,6 +51,30 @@ export const BEFORE_BED = [
 ] as const;
 
 /**
+ * Qué noche propone el formulario al abrirlo.
+ *
+ * El sueño se registra por la mañana, después de dormirlo, y a esa hora la
+ * noche que acaba de terminar es la de *ayer*: dormirse el 18 a las 23:00 y
+ * levantarse el 19 a las 7:00 es la noche del 18. Proponer el día en curso
+ * archivaba cada mañana bajo la noche siguiente, que aún no ha pasado.
+ *
+ * El corte está a las 18:00: antes de esa hora lo que se registra es la
+ * noche anterior; a partir de ahí ya se está pensando en la de hoy.
+ */
+export function defaultNightToLog(now: Date, timezone: string): string {
+  const dt = DateTime.fromJSDate(now).setZone(timezone);
+  const anchored = dt.isValid ? dt : DateTime.fromJSDate(now).setZone("UTC");
+  return (anchored.hour < 18 ? anchored.minus({ days: 1 }) : anchored).toISODate()!;
+}
+
+/** «Noche del martes 18» -- cómo se nombra una noche en pantalla. */
+export function nightLabel(date: string): string {
+  const dt = DateTime.fromISO(date).setLocale("es");
+  if (!dt.isValid) return date;
+  return `Noche del ${dt.toFormat("cccc d 'de' LLLL")}`;
+}
+
+/**
  * Convierte lo que se teclea en el formulario -- una noche y dos horas del
  * reloj -- en dos instantes.
  *

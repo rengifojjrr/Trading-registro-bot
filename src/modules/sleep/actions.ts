@@ -96,8 +96,7 @@ export async function saveSleepEntry(
   }
   await publishDailyMetrics(parsed.data.sleep_date, metrics);
 
-  revalidatePath("/sueno");
-  revalidatePath("/");
+  revalidateSleep();
   return { error: null, success: true };
 }
 
@@ -105,6 +104,16 @@ export async function deleteSleepEntry(id: string): Promise<void> {
   const user = await requireUser();
   const supabase = await createClient();
   await supabase.from("sleep_entries").delete().eq("id", id).eq("user_id", user.id);
+  revalidateSleep();
+}
+
+/**
+ * Las tres pantallas del módulo miran las mismas noches, así que las tres se
+ * quedan viejas a la vez. Y «Hoy» también, que lee la métrica publicada.
+ */
+function revalidateSleep(): void {
   revalidatePath("/sueno");
+  revalidatePath("/sueno/historial");
+  revalidatePath("/sueno/analisis");
   revalidatePath("/");
 }

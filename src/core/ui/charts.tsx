@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -17,6 +18,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { formatClockHours } from "@/core/clock";
 import { shiftDate } from "@/core/today";
 
 /**
@@ -29,7 +31,8 @@ import { shiftDate } from "@/core/today";
  *    morada y una de lecturas ámbar sin que ninguna sepa qué color es el
  *    suyo, y el modo claro las oscurece a la vez que al resto.
  *
- * 2. Sin leyenda ni rejilla vertical. En una serie de un solo dato la
+ * 2. Sin leyenda ni rejilla vertical -- salvo donde hay dos series y la
+ *    leyenda es la única forma de saber cuál es cuál. En una serie sola la
  *    leyenda repite el título de la tarjeta, y la rejilla vertical compite
  *    con las barras sin añadir nada.
  *
@@ -140,6 +143,129 @@ export function LineSeries({
           activeDot={{ r: 4 }}
         />
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Varias líneas sobre el mismo eje, para comparar dos medidas que comparten
+ * unidad: acostarse y levantarse, tareas creadas y terminadas.
+ *
+ * `format="clock"` dibuja el eje en horas del reloj, contando la madrugada
+ * como 24, 25, 26 -- ver `@/core/clock`. Es una cadena y no una función
+ * porque estas gráficas se dibujan desde componentes de servidor, y una
+ * función no cruza esa frontera.
+ */
+export function MultiLineSeries({
+  data,
+  series,
+  height = 220,
+  unit,
+  format,
+}: {
+  /**
+   * Una fila por punto del eje X; cada serie lee su propia clave. Un `null`
+   * deja hueco en esa línea -- que es lo correcto para un dato que falta, al
+   * contrario que un cero.
+   */
+  data: ({ label: string } & Record<string, number | string | null>)[];
+  series: { key: string; label: string; colorToken: string }[];
+  height?: number;
+  unit?: string;
+  format?: "clock";
+}) {
+  const tick = format === "clock" ? (v: number) => formatClockHours(v) : undefined;
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -6 }}>
+        <CartesianGrid stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" />
+        <YAxis {...AXIS} width={48} tickFormatter={tick} domain={["auto", "auto"]} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(value: unknown, name: unknown) => [
+            format === "clock" && typeof value === "number"
+              ? formatClockHours(value)
+              : `${String(value)}${unit ? ` ${unit}` : ""}`,
+            String(name),
+          ]}
+        />
+        <Legend
+          iconType="plainline"
+          wrapperStyle={{ fontSize: 12, color: "var(--muted-foreground)", paddingTop: 4 }}
+        />
+        {series.map((s) => (
+          <Line
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            name={s.label}
+            stroke={`var(${s.colorToken})`}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+            connectNulls
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+export interface DeltaPoint {
+  label: string;
+  /** Puede ser negativo: es una diferencia contra una referencia, no una cantidad. */
+  value: number;
+  /** Se enseña junto a la etiqueta -- «Leer · 12 noches» -- para dar peso al dato. */
+  note?: string;
+}
+
+/**
+ * Barras que salen de un cero central, hacia un lado o hacia el otro.
+ *
+ * Es la forma de una diferencia, y una diferencia no se dibuja como una
+ * cantidad: con barras normales, «media hora menos» y «media hora más»
+ * saldrían del mismo borde y habría que leer el número para saber cuál es
+ * cuál. Aquí el lado ya lo dice, y el color lo repite para quien no distinga
+ * la dirección de un vistazo.
+ */
+export function DeltaRanks({
+  data,
+  positiveToken = "--positive",
+  negativeToken = "--negative",
+  height = 240,
+  unit,
+}: {
+  data: DeltaPoint[];
+  positiveToken?: string;
+  negativeToken?: string;
+  height?: number;
+  unit?: string;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 8 }}>
+        <CartesianGrid stroke="var(--border)" horizontal={false} />
+        <XAxis type="number" {...AXIS} />
+        <YAxis type="category" dataKey="label" {...AXIS} width={140} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(value: unknown, _name: unknown, item: { payload?: DeltaPoint }) => [
+            `${typeof value === "number" && value > 0 ? "+" : ""}${String(value)}${unit ? ` ${unit}` : ""}`,
+            item?.payload?.note ?? "",
+          ]}
+        />
+        <ReferenceLine x={0} stroke="var(--muted-foreground)" />
+        <Bar dataKey="value" radius={2}>
+          {data.map((entry) => (
+            <Cell
+              key={entry.label}
+              fill={`var(${entry.value >= 0 ? positiveToken : negativeToken})`}
+            />
+          ))}
+        </Bar>
+      </BarChart>
     </ResponsiveContainer>
   );
 }
