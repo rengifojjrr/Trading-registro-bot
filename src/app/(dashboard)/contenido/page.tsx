@@ -4,8 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { countPieces } from "@/modules/content/domain/content";
+import { contentDatabaseId } from "@/modules/content/notion-import";
 import { fetchPieces } from "@/modules/content/queries";
 import { ContentBoard } from "@/modules/content/ui/content-board";
+import { NotionImportButton } from "@/modules/content/ui/notion-import-button";
 import { PieceForm } from "@/modules/content/ui/piece-form";
 
 /**
@@ -66,6 +68,20 @@ export default async function ContentPage() {
       <Card>
         <CardContent className="pt-6">
           <ContentBoard pieces={pieces} today={today} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Desde Notion</CardTitle>
+          <CardDescription>
+            Trae el calendario tal cual está allí. Va en una sola dirección: mientras el editor
+            trabaje en Notion, Notion manda en Contenido y esta pantalla refleja. Reimportar no
+            duplica -- cada pieza recuerda de qué página vino.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <NotionImportButton configured={contentDatabaseId() !== null} />
         </CardContent>
       </Card>
     </>

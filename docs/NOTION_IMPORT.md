@@ -44,3 +44,69 @@ Cada una de estas situaciones también queda anotada, operación por operación,
 ## Cuentas y productos que crea
 
 Una fila `accounts` por cada valor distinto de la propiedad `Cuenta` de Notion que realmente aparezca en los datos (no una por cada opción *definida* en el select de Notion, aunque nunca se haya usado). Igual para los productos sintéticos por ticker. Esto evita cuentas o productos vacíos que no representan nada real.
+
+---
+
+# El calendario de contenido (módulo Contenido)
+
+Esto es una importación **distinta e independiente** de la del diario de
+trading, y va en la dirección contraria.
+
+| | Trading | Contenido |
+|---|---|---|
+| Base de datos | `NOTION_DATABASE_ID` | `NOTION_CONTENT_DATABASE_ID` |
+| Dirección | La aplicación escribe hacia Notion (espejo de salida) | Notion se lee hacia la aplicación |
+| Cuándo corre | Cola con reintentos, tras cada cambio | A mano, desde el botón en `/contenido` |
+
+La razón de la dirección es quién trabaja dónde: el editor de vídeo usa el
+calendario de Notion a diario, así que mientras siga ahí, **Notion manda en
+Contenido y la aplicación refleja**. Dos direcciones exigirían resolver
+conflictos -- él cambia el estado allí, tú aquí, ¿cuál gana? -- y ese problema
+no hace falta tenerlo todavía. El día que se le abra esta aplicación, se apaga
+la importación y la dirección se invierte de golpe, sin un periodo en el que
+las dos escriban.
+
+## Qué se traduce
+
+La base de origen es **📷 Social Media Content Calendar**. El mapeo vive en
+`src/modules/content/domain/notion-mapping.ts` y está cubierto por tests, que
+es donde conviene mirar primero si algo llega mal.
+
+Tres decisiones que no son obvias:
+
+1. **Los tiempos dejan de ser texto.** En Notion, «Tiempo de Edicion» es un
+   multi-select con opciones como «2 Horas» o «1 Dia». De una etiqueta de texto
+   no sale una media, así que aquí se guardan minutos. El formulario de la
+   aplicación sigue ofreciendo exactamente las mismas opciones, de modo que
+   escribir en un sitio o en otro se siente igual.
+
+2. **«despues de las 10 deje de contar» se conserva como lo que es.** No es una
+   duración, es la ausencia de una. Se guarda su suelo (600 minutos) con la
+   marca `edit_time_uncapped`, y las gráficas dicen «10 h o más» en lugar de
+   afirmar diez exactas.
+
+3. **Las opciones desconocidas se descartan y se avisan.** Un canal o un estado
+   nuevo en Notion no se guarda: nuestras gráficas y filtros lo ignorarían
+   igual, y guardarlo daría la falsa impresión de que la aplicación lo usa. El
+   informe de la importación los lista uno por uno, que es la señal de que hay
+   que añadirlos en `domain/content.ts`.
+
+También se buscan las propiedades ignorando mayúsculas, tildes y espacios
+sobrantes. Tres del calendario real llevan un espacio de más -- ` resumen`,
+`Guión `, `Miniatura A/B ` -- y sin esta tolerancia, el día que alguien lo
+corrija en Notion la importación dejaría de traer esos campos sin decir nada.
+
+## Idempotencia
+
+Cada pieza guarda `notion_page_id`, con un índice único parcial sobre
+`(user_id, notion_page_id)`. Reimportar actualiza en lugar de duplicar, y el
+informe distingue cuántas eran nuevas de cuántas se actualizaron. Las piezas
+creadas dentro de la aplicación no tienen `notion_page_id` y la importación no
+las toca nunca.
+
+## Configuración
+
+`NOTION_CONTENT_DATABASE_ID` es el identificador de 32 caracteres de la URL del
+calendario. No es un secreto, pero se configura como variable de entorno para
+no fijar en el código la base de nadie. Hay que compartir esa base con la misma
+integración de Notion (menú «...» → Conexiones), igual que la de trading.

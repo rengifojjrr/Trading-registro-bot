@@ -16,6 +16,7 @@ import {
   STATUSES,
   countPieces,
 } from "@/modules/content/domain/content";
+import { importContentCalendar, type ImportResult } from "@/modules/content/notion-import";
 
 export type ContentFormState = { error: string | null; success: boolean };
 
@@ -256,4 +257,22 @@ async function republish(): Promise<void> {
     { module: "content", key: "en_cola", value: counts.inProgress },
     { module: "content", key: "atrasadas", value: counts.late },
   ]);
+}
+
+/**
+ * Trae el calendario desde Notion.
+ *
+ * Se dispara a mano y no por cron porque la importación es de sentido único
+ * y pisa lo que haya: si alguien está mirando el tablero y una importación
+ * automática le cambia el estado de una pieza debajo, la aplicación parece
+ * embrujada. Se pulsa cuando se quiere.
+ */
+export async function importFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importContentCalendar();
+  if (result.error === null) {
+    await republish();
+    revalidateContent();
+  }
+  return result;
 }

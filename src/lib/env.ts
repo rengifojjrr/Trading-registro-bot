@@ -33,6 +33,12 @@ const serverEnvSchema = z.object({
   // Optional Notion mirror (Phase 5). Absent unless the user opts in.
   NOTION_API_TOKEN: z.string().min(1).optional(),
   NOTION_DATABASE_ID: z.string().min(1).optional(),
+  // El calendario de contenido es otra base de datos distinta a la de
+  // trading, y la relación es la contraria: de trading escribimos hacia
+  // Notion, y de contenido leemos desde Notion mientras el editor trabaje
+  // allí. Un identificador de base de datos no es un secreto, pero se
+  // configura igual para no fijar en el código la base de nadie.
+  NOTION_CONTENT_DATABASE_ID: z.string().min(1).optional(),
 
   // Shared secret required on the Authorization header of /api/cron/* so
   // only the configured scheduler (Vercel Cron, pg_cron, or the local CLI
@@ -112,6 +118,7 @@ export function serverEnv() {
     COINBASE_PRODUCT_ID: process.env.COINBASE_PRODUCT_ID,
     NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
     NOTION_DATABASE_ID: process.env.NOTION_DATABASE_ID,
+    NOTION_CONTENT_DATABASE_ID: process.env.NOTION_CONTENT_DATABASE_ID,
     CRON_SECRET: process.env.CRON_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     ALERT_EMAIL_TO: process.env.ALERT_EMAIL_TO,
