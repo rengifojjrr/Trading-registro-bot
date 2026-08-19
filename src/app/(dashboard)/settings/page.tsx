@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+
+import { AppearancePanel } from "@/components/layout/appearance-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { AutoSyncToggle } from "@/components/settings/auto-sync-toggle";
 import { BackupExport } from "@/components/settings/backup-export";
@@ -5,6 +8,8 @@ import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
 import { RebuildHistory } from "@/components/settings/rebuild-history";
 import { SyncNow } from "@/components/settings/sync-now";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
 import { createClient } from "@/lib/supabase/server";
@@ -15,6 +20,7 @@ import { SettingsForm } from "./settings-form";
 export default async function SettingsPage() {
   const user = await requireUser();
   const supabase = await createClient();
+  const store = await cookies();
 
   const [{ data: settings }, { data: fieldMappingRows }, { data: verifications }, { count: closedCount }] =
     await Promise.all([
@@ -52,6 +58,27 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Configuración" />
+
+      {/*
+        Fuera del formulario a propósito. Todo lo de abajo se guarda en la
+        base de datos con «Guardar cambios» y vale para tu cuenta se abra
+        donde se abra; esto no se guarda en ningún sitio ni tiene botón:
+        se aplica al pulsar y vive sólo en este navegador. Meterlo dentro
+        pondría un botón de guardar debajo de algo que ya está aplicado.
+      */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Apariencia</CardTitle>
+          <CardDescription>
+            Cómo se ve la aplicación. Se aplica al momento, no hace falta guardar, y sólo cambia
+            este navegador.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AppearancePanel appearance={readAppearance((name) => store.get(name)?.value)} />
+        </CardContent>
+      </Card>
+
       {settings ? (
         <SettingsForm
           settings={settings}

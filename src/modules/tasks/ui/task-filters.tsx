@@ -85,7 +85,7 @@ function Row({
             className={cn(
               "rounded-full border px-2.5 py-0.5 text-sm transition-colors",
               active
-                ? "border-transparent font-medium text-white"
+                ? "border-transparent font-medium text-mod-foreground"
                 : "border-border text-muted-foreground hover:text-foreground",
             )}
             style={active ? { backgroundColor: "var(--mod-tasks)" } : undefined}

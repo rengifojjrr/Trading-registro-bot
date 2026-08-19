@@ -74,7 +74,7 @@ export function ViewBar({
               "group flex items-center gap-1 rounded-full border px-1 text-sm transition-colors",
               active ? "border-transparent" : "border-border hover:bg-muted",
             )}
-            style={active ? { backgroundColor: `var(${colorToken})`, color: "#fff" } : undefined}
+            style={active ? { backgroundColor: `var(${colorToken})`, color: "var(--mod-foreground)" } : undefined}
           >
             <Link href={href} className="flex items-center gap-1.5 py-1 pl-2">
               <Bookmark className="size-3.5" aria-hidden />

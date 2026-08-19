@@ -211,7 +211,7 @@ function HabitsSection({ day }: { day: DaySummary }) {
             className={cn(
               "rounded-full border px-2.5 py-1 text-xs transition-colors",
               habit.done
-                ? "border-transparent text-white"
+                ? "border-transparent text-mod-foreground"
                 : "border-border text-muted-foreground hover:text-foreground",
             )}
             style={habit.done ? { backgroundColor: "var(--mod-habits)" } : undefined}

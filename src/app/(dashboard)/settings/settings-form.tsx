@@ -78,7 +78,7 @@ export function SettingsForm({
   }, [state]);
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form action={formAction} className="flex flex-col gap-aire">
       <div
         role="tablist"
         aria-label="Secciones de configuración"
@@ -357,7 +357,7 @@ export function SettingsForm({
 
 function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
   return (
-    <div role="tabpanel" className={cn("flex-col gap-6", active ? "flex" : "hidden")}>
+    <div role="tabpanel" className={cn("flex-col gap-aire", active ? "flex" : "hidden")}>
       {children}
     </div>
   );

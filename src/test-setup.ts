@@ -44,6 +44,28 @@ if (!("DOMRect" in globalThis)) {
   } as unknown as typeof DOMRect;
 }
 
+// jsdom tampoco trae `matchMedia`, y el gráfico de velas lo necesita para
+// enterarse de que el sistema ha cambiado de claro a oscuro -- con el tema
+// en «automático», eso no deja ninguna marca en el DOM que observar, así que
+// no hay otra forma de saberlo.
+//
+// El sustituto dice siempre que no y no avisa nunca, que es exactamente lo
+// que hace un sistema en modo claro que nadie toca. Comprobar de verdad que
+// el gráfico se repinta al cambiar de paleta es cosa de la pasada de
+// Playwright, contra un navegador que sí tiene esto.
+if (typeof window !== "undefined" && !window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
 // Pointer capture and scrollIntoView are likewise absent from jsdom, and
 // Radix's Select calls them while opening its listbox -- without these,
 // clicking a <Select> throws before any option is ever rendered.

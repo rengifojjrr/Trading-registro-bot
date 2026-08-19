@@ -1,8 +1,10 @@
 import { Bell } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 
-import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { AppearanceLauncher } from "@/components/layout/appearance-launcher";
 import { Button } from "@/components/ui/button";
+import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,6 +15,7 @@ import { UserMenu } from "./user-menu";
 export async function Topbar({ userEmail }: { userEmail: string }) {
   const user = await requireUser();
   const supabase = await createClient();
+  const store = await cookies();
   const { count: unreadCount } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
@@ -27,7 +30,7 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="flex items-center gap-1">
-        <ThemeToggle />
+        <AppearanceLauncher appearance={readAppearance((name) => store.get(name)?.value)} />
         <Button
           variant="ghost"
           size="icon"
@@ -40,7 +43,7 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
             {unreadCount ? (
               // The count itself, not just a dot -- "something happened" and
               // "nine things happened" are different situations.
-              <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-negative px-1 text-[10px] font-medium text-white tabular-nums">
+              <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-negative px-1 text-[10px] font-medium text-negative-foreground tabular-nums">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             ) : null}

@@ -82,7 +82,7 @@ export function HabitMonths({
                       !day.inMonth && "invisible",
                       future && "cursor-default border-dashed border-border opacity-40",
                       !future && !done && "border-border text-muted-foreground hover:border-foreground/40",
-                      done && "border-transparent text-white",
+                      done && "border-transparent text-mod-foreground",
                     )}
                     style={done ? { backgroundColor: "var(--mod-habits)" } : undefined}
                   >

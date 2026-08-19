@@ -85,12 +85,15 @@ const MEASURE_COLOR = "#38bdf8";
 /**
  * lightweight-charts renders to <canvas>, which cannot read CSS custom
  * properties -- so the palette is resolved from the live computed styles
- * instead of being duplicated as literals. That matters now that the app
- * has a light theme: hardcoded dark values would leave the chart a black
- * rectangle on a white page, with P&L colours that no longer pass contrast.
+ * instead of being duplicated as literals. Con cinco paletas y tres estados
+ * de tema, duplicar valores aquí sería tener treinta juegos de colores que
+ * mantener a mano y que se desincronizarían el primer día.
  *
- * The fallbacks are the dark palette, used only if a token is missing (an
- * older cached stylesheet, or a test environment with no real CSS).
+ * Estos literales **no son una paleta**: son el último recurso para cuando
+ * `getComputedStyle` no devuelve nada, que en un navegador de verdad no
+ * pasa nunca -- ocurre en tests sin CSS real. Por eso da igual a qué paleta
+ * se parezcan; lo que importa es que el gráfico se dibuje en vez de quedarse
+ * en blanco.
  */
 const THEME_FALLBACK = {
   background: "hsl(222, 44%, 9%)",
@@ -364,15 +367,32 @@ export function TradeChart({
     return () => clearInterval(id);
   }, [playing, replayIndex, candles.length]);
 
-  // Bumped whenever the theme class on <html> changes, so the chart is
-  // rebuilt with the new palette. A canvas can't inherit CSS the way the
-  // rest of the UI does, so switching to light mode would otherwise leave a
-  // black rectangle in the middle of a white page.
+  // Bumped cada vez que cambia la apariencia, para volver a construir el
+  // gráfico con los colores nuevos. Un canvas no hereda el CSS como el
+  // resto de la interfaz, así que sin esto cambiar de paleta dejaría un
+  // rectángulo con los colores viejos en medio de la página.
+  //
+  // Se vigilan los atributos de apariencia y, además, la preferencia del
+  // sistema: con el tema en «automático» -- que es lo que viene de fábrica
+  // -- cambiar de claro a oscuro en el sistema operativo no toca el DOM, y
+  // el observador de mutaciones no se entera de nada.
   const [themeVersion, setThemeVersion] = useState(0);
   useEffect(() => {
-    const observer = new MutationObserver(() => setThemeVersion((v) => v + 1));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
+    const repintar = () => setThemeVersion((v) => v + 1);
+
+    const observer = new MutationObserver(repintar);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-paleta"],
+    });
+
+    const sistema = window.matchMedia("(prefers-color-scheme: dark)");
+    sistema.addEventListener("change", repintar);
+
+    return () => {
+      observer.disconnect();
+      sistema.removeEventListener("change", repintar);
+    };
   }, []);
 
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);

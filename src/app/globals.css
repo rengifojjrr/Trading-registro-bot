@@ -2,73 +2,46 @@
 @import "tw-animate-css";
 
 /*
- * Two themes, dark by default. Semantic --positive/--negative tokens exist
- * specifically for P&L polarity so charts/tables/badges never hardcode a
- * raw green/red.
+ * Los tokens. Ninguna pantalla escribe un color a mano: todas leen de aquí,
+ * así que cambiar de paleta es cambiar estos valores y nada más.
  *
- * Light mode was added because a chart is genuinely hard to read on a dark
- * screen in daylight. It is a deliberate choice rather than a copy of the
- * dark values: the P&L colours are darkened so they keep enough contrast
- * against white, since a green that reads well on near-black washes out
- * completely on paper-coloured backgrounds -- and misreading a profit as a
- * loss is the one mistake this palette must never cause.
+ * ── Los tres estados del tema ────────────────────────────────────────────
  *
- * The theme is applied by a data-theme attribute on <html>, set before
- * first paint by an inline script in layout.tsx, so there is no flash of
- * the wrong theme and no hydration mismatch.
+ * Son tres, no dos, y confundirlos es el fallo clásico. La preferencia del
+ * sistema operativo **no deja marca en el DOM**; sólo una elección explícita
+ * la deja. De ahí:
+ *
+ *   1. `:root` sin condiciones     → los valores de día, siempre definidos.
+ *   2. `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`
+ *                                  → el sistema pide oscuro y nadie eligió
+ *                                    claro a mano.
+ *   3. `:root[data-theme="dark"]`  → elegido a mano; gana sobre el sistema.
+ *
+ * La regla que se sigue de esto: **ningún color puede tener su única
+ * definición dentro de un `@media` o de un `[data-theme]`**. Si la tiene, en
+ * el estado sin marcar no se aplica y acabas pintando el texto de un tema
+ * sobre el fondo del otro. Por eso el bloque 1 está completo.
+ *
+ * Los bloques 2 y 3 llevan los mismos valores repetidos. No hay forma de
+ * evitarlo en CSS sin trucos ilegibles, así que hay un test
+ * (`globals.test.ts`) que lee este archivo y falla si los dos dejan de ser
+ * idénticos.
+ *
+ * ── Lo que NO cambia con la paleta ───────────────────────────────────────
+ *
+ * Los colores de estado y los siete tonos de módulo. «Correcto», «atención»
+ * y «error» significan lo mismo con cualquier paleta: no son decoración, son
+ * señales. Y en una aplicación que cuenta dinero, confundir una pérdida con
+ * una ganancia es el único error que no se puede permitir, así que
+ * --positive y --negative no son negociables.
+ *
+ * Las cinco paletas viven en `src/lib/appearance/palettes.ts` y se sirven
+ * como una hoja generada; lo de aquí es el juego base, que es también el que
+ * se aplica si por lo que sea no llega ningún atributo.
  */
+
+/* 1 · claro: la definición completa, sin condiciones. */
 :root {
-  --background: hsl(222 47% 6%);
-  --foreground: hsl(210 40% 96%);
-
-  --card: hsl(222 44% 9%);
-  --card-foreground: hsl(210 40% 96%);
-
-  --popover: hsl(222 44% 10%);
-  --popover-foreground: hsl(210 40% 96%);
-
-  --muted: hsl(217 33% 14%);
-  --muted-foreground: hsl(215 20% 65%);
-
-  --border: hsl(217 28% 18%);
-  --input: hsl(217 28% 18%);
-  --ring: hsl(199 89% 48%);
-
-  --primary: hsl(199 89% 48%);
-  --primary-foreground: hsl(222 47% 6%);
-
-  --secondary: hsl(217 33% 16%);
-  --secondary-foreground: hsl(210 40% 96%);
-
-  --accent: hsl(217 33% 18%);
-  --accent-foreground: hsl(210 40% 96%);
-
-  --destructive: hsl(0 72% 51%);
-  --destructive-foreground: hsl(210 40% 96%);
-
-  /* P&L polarity -- the only "brand" colors in the app. */
-  --positive: hsl(142 71% 45%);
-  --positive-foreground: hsl(144 61% 8%);
-  --negative: hsl(0 72% 51%);
-  --negative-foreground: hsl(0 0% 100%);
-  --warning: hsl(38 92% 50%);
-  --warning-foreground: hsl(38 92% 8%);
-
-  /* Un tono por módulo de Vida. Aquí distinguir sí es información: la
-     tarjeta y el encabezado de cada módulo se reconocen por el color antes
-     de leer el nombre. */
-  --mod-trading: hsl(199 74% 59%);
-  --mod-sleep: hsl(250 76% 75%);
-  --mod-habits: hsl(150 52% 54%);
-  --mod-reading: hsl(43 70% 58%);
-  --mod-tasks: hsl(342 74% 70%);
-  --mod-meals: hsl(24 74% 64%);
-  --mod-content: hsl(275 58% 71%);
-
-  --radius: 0.625rem;
-}
-
-.theme-light {
   --background: hsl(210 40% 98%);
   --foreground: hsl(222 47% 11%);
 
@@ -97,8 +70,9 @@
   --destructive: hsl(0 72% 45%);
   --destructive-foreground: hsl(0 0% 100%);
 
-  /* Darker than their dark-theme counterparts on purpose -- see the note
-     above: these must stay unmistakable against white. */
+  /* Polaridad del resultado. Más oscuros que sus equivalentes de noche a
+     propósito: un verde que se lee bien sobre negro se lava del todo sobre
+     un fondo color papel. */
   --positive: hsl(142 72% 29%);
   --positive-foreground: hsl(0 0% 100%);
   --negative: hsl(0 74% 42%);
@@ -106,8 +80,9 @@
   --warning: hsl(32 95% 38%);
   --warning-foreground: hsl(0 0% 100%);
 
-  /* Mismos tonos, oscurecidos para que sigan siendo legibles sobre blanco.
-     El azul de trading no puede lavarse justo donde se leen las cifras. */
+  /* Un tono por módulo. Aquí distinguir sí es información: la tarjeta y el
+     encabezado de cada módulo se reconocen por el color antes de leer el
+     nombre. */
   --mod-trading: hsl(199 82% 36%);
   --mod-sleep: hsl(250 58% 52%);
   --mod-habits: hsl(150 62% 28%);
@@ -115,6 +90,245 @@
   --mod-tasks: hsl(342 62% 45%);
   --mod-meals: hsl(22 74% 40%);
   --mod-content: hsl(275 48% 48%);
+
+  /* Lo que se escribe ENCIMA de un tono de módulo, cuando se usa de fondo:
+     una etiqueta marcada, el día de hoy en el calendario, un hábito hecho.
+     Tiene que darse la vuelta con el tema, porque los tonos también lo
+     hacen: de día son oscuros y saturados y piden texto blanco, de noche
+     son pasteles claros y el blanco encima se vuelve ilegible. */
+  --mod-foreground: hsl(0 0% 100%);
+
+  /* Sombra y brillo del bisel. Un token y no `rgb(0 0 0 / .2)` escrito en el
+     sitio porque una sombra negra sobre fondo oscuro no se ve, y un brillo
+     blanco sobre fondo claro tampoco: cada tema necesita los suyos. */
+  --sombra: hsl(222 47% 11% / 0.13);
+  --brillo: hsl(0 0% 100% / 0.85);
+
+  --radius: 0.625rem;
+  --aire: 1.5rem;
+}
+
+/* 2 · el sistema pide oscuro Y nadie eligió claro a mano. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: hsl(222 47% 6%);
+    --foreground: hsl(210 40% 96%);
+
+    --card: hsl(222 44% 9%);
+    --card-foreground: hsl(210 40% 96%);
+
+    --popover: hsl(222 44% 10%);
+    --popover-foreground: hsl(210 40% 96%);
+
+    --muted: hsl(217 33% 14%);
+    --muted-foreground: hsl(215 20% 65%);
+
+    --border: hsl(217 28% 18%);
+    --input: hsl(217 28% 18%);
+    --ring: hsl(199 89% 48%);
+
+    --primary: hsl(199 89% 48%);
+    --primary-foreground: hsl(222 47% 6%);
+
+    --secondary: hsl(217 33% 16%);
+    --secondary-foreground: hsl(210 40% 96%);
+
+    --accent: hsl(217 33% 18%);
+    --accent-foreground: hsl(210 40% 96%);
+
+    --destructive: hsl(0 72% 51%);
+    --destructive-foreground: hsl(210 40% 96%);
+
+    --positive: hsl(142 71% 45%);
+    --positive-foreground: hsl(144 61% 8%);
+    --negative: hsl(0 72% 51%);
+    --negative-foreground: hsl(0 0% 100%);
+    --warning: hsl(38 92% 50%);
+    --warning-foreground: hsl(38 92% 8%);
+
+    --mod-trading: hsl(199 74% 59%);
+    --mod-sleep: hsl(250 76% 75%);
+    --mod-habits: hsl(150 52% 54%);
+    --mod-reading: hsl(43 70% 58%);
+    --mod-tasks: hsl(342 74% 70%);
+    --mod-meals: hsl(24 74% 64%);
+    --mod-content: hsl(275 58% 71%);
+    --mod-foreground: hsl(222 47% 8%);
+
+    --sombra: hsl(222 60% 2% / 0.55);
+    --brillo: hsl(210 40% 96% / 0.07);
+  }
+}
+
+/* 3 · alguien eligió oscuro a mano: gana sobre el sistema. */
+:root[data-theme="dark"] {
+  --background: hsl(222 47% 6%);
+  --foreground: hsl(210 40% 96%);
+
+  --card: hsl(222 44% 9%);
+  --card-foreground: hsl(210 40% 96%);
+
+  --popover: hsl(222 44% 10%);
+  --popover-foreground: hsl(210 40% 96%);
+
+  --muted: hsl(217 33% 14%);
+  --muted-foreground: hsl(215 20% 65%);
+
+  --border: hsl(217 28% 18%);
+  --input: hsl(217 28% 18%);
+  --ring: hsl(199 89% 48%);
+
+  --primary: hsl(199 89% 48%);
+  --primary-foreground: hsl(222 47% 6%);
+
+  --secondary: hsl(217 33% 16%);
+  --secondary-foreground: hsl(210 40% 96%);
+
+  --accent: hsl(217 33% 18%);
+  --accent-foreground: hsl(210 40% 96%);
+
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(210 40% 96%);
+
+  --positive: hsl(142 71% 45%);
+  --positive-foreground: hsl(144 61% 8%);
+  --negative: hsl(0 72% 51%);
+  --negative-foreground: hsl(0 0% 100%);
+  --warning: hsl(38 92% 50%);
+  --warning-foreground: hsl(38 92% 8%);
+
+  --mod-trading: hsl(199 74% 59%);
+  --mod-sleep: hsl(250 76% 75%);
+  --mod-habits: hsl(150 52% 54%);
+  --mod-reading: hsl(43 70% 58%);
+  --mod-tasks: hsl(342 74% 70%);
+  --mod-meals: hsl(24 74% 64%);
+  --mod-content: hsl(275 58% 71%);
+  --mod-foreground: hsl(222 47% 8%);
+
+  --sombra: hsl(222 60% 2% / 0.55);
+  --brillo: hsl(210 40% 96% / 0.07);
+}
+
+/*
+ * ── Esquinas ─────────────────────────────────────────────────────────────
+ * Un solo token; de él salen las cuatro medidas de radio del sistema, así
+ * que ninguna pantalla se entera de que ha cambiado.
+ */
+:root[data-esquinas="rectas"] {
+  --radius: 0.1875rem;
+}
+:root[data-esquinas="suaves"] {
+  --radius: 0.625rem;
+}
+:root[data-esquinas="redondas"] {
+  --radius: 1.125rem;
+}
+
+/* La muestra del panel enseña el radio que le toca, no el que está puesto:
+   elegir entre tres nombres a ciegas no es elegir. */
+[data-muestra-esquinas="rectas"] {
+  border-radius: 0.1875rem;
+}
+[data-muestra-esquinas="suaves"] {
+  border-radius: 0.625rem;
+}
+[data-muestra-esquinas="redondas"] {
+  border-radius: 1.125rem;
+}
+
+/*
+ * ── Densidad ─────────────────────────────────────────────────────────────
+ * Mueve el hueco ENTRE bloques y nada más. Encoger la escala de espaciado
+ * entera es lo que parece que hay que hacer y es justo lo que no funciona:
+ * el texto se apelmaza contra los bordes de su tarjeta, se lee peor y no
+ * ganas ni una fila, porque lo que ocupa sitio son los huecos grandes.
+ */
+:root[data-densidad="compacta"] {
+  --aire: 0.875rem;
+}
+:root[data-densidad="normal"] {
+  --aire: 1.5rem;
+}
+:root[data-densidad="amplia"] {
+  --aire: 2.25rem;
+}
+
+/* La muestra del panel: tres barras separadas por el hueco de esa densidad,
+   a escala para que quepan en un botón. */
+[data-muestra-densidad="compacta"] {
+  gap: 0.1875rem;
+}
+[data-muestra-densidad="normal"] {
+  gap: 0.375rem;
+}
+[data-muestra-densidad="amplia"] {
+  gap: 0.5625rem;
+}
+
+/*
+ * ── Superficies ──────────────────────────────────────────────────────────
+ *
+ * Cinco formas de dibujar una tarjeta, en veinte líneas de CSS y sin tocar
+ * ninguna de las noventa y ocho pantallas que usan `<Card>`: todas traen
+ * `data-slot="card"`, y eso es todo lo que hace falta para alcanzarlas.
+ *
+ * Van sin `@layer` a propósito. En Tailwind v4 las utilidades viven en
+ * `@layer utilities`, y lo que está fuera de toda capa gana a lo que está
+ * dentro, sea cual sea la especificidad. Metidas en `@layer base` perderían
+ * contra el `bg-card` y el `shadow-sm` que la propia tarjeta trae puestos.
+ *
+ * Los colores salen de `color-mix` sobre los tokens en vez de ser valores
+ * propios: así una superficie no puede quedarse con el gris de otra paleta.
+ *
+ * El segundo selector de cada regla es la muestra del panel. Está aquí, y no
+ * copiada en el componente, porque un botón que promete «Vidrio» y enseña
+ * otra cosa es peor que no enseñar nada: la muestra tiene que salir de la
+ * misma declaración que la tarjeta de verdad o dejan de ser lo mismo en
+ * cuanto alguien retoque una.
+ */
+:root[data-superficie="vidrio"] [data-slot="card"],
+[data-muestra-superficie="vidrio"] {
+  background-color: color-mix(in srgb, var(--card) 62%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+
+:root[data-superficie="marco"] [data-slot="card"],
+[data-muestra-superficie="marco"] {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  box-shadow: none;
+}
+
+:root[data-superficie="bisel"] [data-slot="card"],
+[data-muestra-superficie="bisel"] {
+  box-shadow:
+    inset 0 1px 0 var(--brillo),
+    0 1px 2px var(--sombra),
+    0 6px 14px -8px var(--sombra);
+}
+
+:root[data-superficie="halo"] [data-slot="card"],
+[data-muestra-superficie="halo"] {
+  border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
+  box-shadow:
+    0 0 0 1px var(--sombra),
+    0 10px 34px -10px var(--sombra);
+}
+
+/*
+ * Cambiar de aspecto se ve, no se salta de golpe -- pero sólo si a quien
+ * mira no le molesta el movimiento.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  [data-slot="card"] {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+  }
 }
 
 @theme inline {
@@ -143,11 +357,16 @@
   --color-negative-foreground: var(--negative-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-mod-foreground: var(--mod-foreground);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Hace que `gap-aire`, `space-y-aire` y compañía existan, para que la
+     densidad se aplique escribiendo una clase y no un `style` a mano. */
+  --spacing-aire: var(--aire);
 
   --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
   --font-mono: var(--font-geist-mono, ui-monospace, "SF Mono", Menlo, monospace);
@@ -158,6 +377,8 @@
     @apply border-border outline-ring/50;
   }
   body {
+    /* Explícito y desde un token: un fondo transparente hereda el del
+       navegador y rompe uno de los dos temas. */
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01";
   }

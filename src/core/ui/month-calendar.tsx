@@ -98,7 +98,7 @@ export function MonthCalendar<T>({
                     className={cn(
                       "flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums transition-colors",
                       isToday
-                        ? "font-semibold text-white"
+                        ? "font-semibold text-mod-foreground"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                     style={isToday ? { backgroundColor: `var(${colorToken})` } : undefined}

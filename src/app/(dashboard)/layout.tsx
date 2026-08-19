@@ -36,7 +36,12 @@ export default async function DashboardLayout({
         <Topbar userEmail={user.email ?? ""} />
         <DemoDataBanner />
         <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">{children}</div>
+          {/* `gap-aire` y no `gap-6`: éste es el hueco entre bloques que
+              mueve la densidad. Es el único sitio donde hay que cambiarlo
+              porque es el único hueco de primer nivel de toda la
+              aplicación -- lo de dentro de cada tarjeta no se toca, que es
+              justo lo que hace que compactar no apelmace el texto. */}
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-aire">{children}</div>
         </main>
       </div>
     </div>
