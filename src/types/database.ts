@@ -267,6 +267,8 @@ export interface Database {
           notes?: string | null;
           completed_at?: string | null;
           notion_page_id?: string | null;
+          /** Se escribe sólo al importar, para conservar la fecha de Notion. */
+          created_at?: string;
           updated_at?: string;
         }
       >;

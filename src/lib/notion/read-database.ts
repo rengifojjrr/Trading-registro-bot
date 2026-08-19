@@ -18,6 +18,15 @@ import type { NotionProperties } from "./properties";
 export interface NotionPage {
   id: string;
   properties: NotionProperties;
+  /**
+   * Cuándo se creó la página en Notion.
+   *
+   * Hace falta porque varias bases no tienen columna de fecha propia y su
+   * única marca temporal es esta -- y porque sin ella, todo lo importado
+   * parece creado el día de la importación, que convierte cualquier gráfica
+   * de «cuántas entran por día» en un pico falso.
+   */
+  createdTime: string | null;
 }
 
 export type ReadResult =
@@ -56,6 +65,10 @@ export async function readNotionDatabase(databaseId: string): Promise<ReadResult
           pages.push({
             id: result.id,
             properties: result.properties as unknown as NotionProperties,
+            createdTime:
+              "created_time" in result && typeof result.created_time === "string"
+                ? result.created_time
+                : null,
           });
         }
       }

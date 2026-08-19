@@ -44,12 +44,25 @@ export async function importSleepFromNotion(): Promise<ImportResult> {
   let skipped = 0;
   let withoutClocks = 0;
 
+  // Una noche por fecha: la tabla lo exige y tiene razón, porque «cuánto
+  // dormí el martes» no admite dos respuestas. En Notion sí hay fechas
+  // repetidas -- alguna se apuntó dos veces, o una quedó mal fechada -- y sin
+  // esto la importación entera fallaría por un par de filas. Se queda la
+  // primera y se avisa de la otra por su fecha, para poder ir a arreglarla.
+  const seenDates = new Set<string>();
+
   for (const page of read.pages) {
     const mapped = mapNotionNight(page);
     if (!mapped) {
       skipped += 1;
       continue;
     }
+    if (seenDates.has(mapped.night.sleep_date)) {
+      skipped += 1;
+      warnings.add(`Dos noches con la fecha ${mapped.night.sleep_date}: sólo se trajo una.`);
+      continue;
+    }
+    seenDates.add(mapped.night.sleep_date);
     for (const warning of mapped.warnings) warnings.add(warning);
 
     const night = mapped.night;

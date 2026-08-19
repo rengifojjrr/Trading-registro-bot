@@ -39,7 +39,7 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
   if (!read.ok) return { ...EMPTY_RESULT, error: read.error };
 
   const warnings = new Set<string>();
-  const tasks: NotionMappedTask[] = [];
+  const tasks: (NotionMappedTask & { createdTime: string | null })[] = [];
   let skipped = 0;
 
   for (const page of read.pages) {
@@ -49,7 +49,7 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
       continue;
     }
     for (const warning of mapped.warnings) warnings.add(warning);
-    tasks.push(mapped.task);
+    tasks.push({ ...mapped.task, createdTime: page.createdTime });
   }
 
   if (tasks.length === 0) {
@@ -88,6 +88,10 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
     // «entra y sale» justo el día de la importación.
     completed_at:
       task.status === "HECHA" && task.due_date ? `${task.due_date}T12:00:00Z` : null,
+    // Cuándo se creó en Notion, no cuándo se importó. Sin esto la gráfica de
+    // «entra y sale» dibuja un pico de cincuenta tareas el día de la
+    // importación y ninguna antes.
+    ...(task.createdTime ? { created_at: task.createdTime } : {}),
     updated_at: new Date().toISOString(),
   }));
 
