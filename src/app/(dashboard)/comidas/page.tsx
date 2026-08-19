@@ -9,6 +9,9 @@ import { formatDate } from "@/lib/format";
 import { MEAL_TYPES, MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
 import { fetchMeals } from "@/modules/meals/queries";
 import { MealForm } from "@/modules/meals/ui/meal-form";
+import { NotionImportCard } from "@/core/ui/notion-import-card";
+import { runMealsFromNotion } from "@/modules/meals/actions";
+import { mealsDatabaseId } from "@/modules/meals/notion-import";
 
 /**
  * Comidas: registrar.
@@ -84,6 +87,15 @@ export default async function MealsPage({
           )}
         </CardContent>
       </Card>
+
+      <NotionImportCard
+        title="Desde Notion"
+        description="Trae el «🍳 Planificador de Comidas». El párrafo de ingredientes se parte en filas al entrar, que es lo que hace posible la lista de la compra."
+        label="Traer las comidas"
+        configured={mealsDatabaseId() !== null}
+        missingVariable="NOTION_MEALS_DATABASE_ID"
+        onImport={runMealsFromNotion}
+      />
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
         <Link href="/comidas/semana" className="underline underline-offset-4 hover:text-foreground">

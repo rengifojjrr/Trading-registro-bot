@@ -9,6 +9,9 @@ import { formatDate } from "@/lib/format";
 import { formatReadingTime, totalsFor } from "@/modules/reading/domain/reading";
 import { fetchBooks, fetchSessions } from "@/modules/reading/queries";
 import { LogReadingForm } from "@/modules/reading/ui/reading-forms";
+import { NotionImportCard } from "@/core/ui/notion-import-card";
+import { runReadingFromNotion } from "@/modules/reading/actions";
+import { readingDatabaseId } from "@/modules/reading/notion-import";
 
 /**
  * Lecturas: registrar.
@@ -87,6 +90,15 @@ export default async function ReadingPage() {
           )}
         </CardContent>
       </Card>
+
+      <NotionImportCard
+        title="Desde Notion"
+        description="Trae la base «Leer», deshaciendo los campos cruzados: allí los minutos están en «Cuantas Hojas» y el género en «Cuanto Tiempo lei ?»."
+        label="Traer las lecturas"
+        configured={readingDatabaseId() !== null}
+        missingVariable="NOTION_READING_DATABASE_ID"
+        onImport={runReadingFromNotion}
+      />
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
         <Link href="/lecturas/libros" className="underline underline-offset-4 hover:text-foreground">

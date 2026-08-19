@@ -9,6 +9,9 @@ import { countTasks } from "@/modules/tasks/domain/tasks";
 import { fetchProjects, fetchTasks } from "@/modules/tasks/queries";
 import { NewTask } from "@/modules/tasks/ui/new-task";
 import { TaskList } from "@/modules/tasks/ui/task-list";
+import { NotionImportCard } from "@/core/ui/notion-import-card";
+import { runTasksFromNotion } from "@/modules/tasks/actions";
+import { tasksDatabaseId } from "@/modules/tasks/notion-import";
 
 /**
  * Tareas: hoy.
@@ -64,6 +67,15 @@ export default async function TasksPage() {
           />
         </CardContent>
       </Card>
+
+      <NotionImportCard
+        title="Desde Notion"
+        description="Trae la «✅ To-Do Base de Datos» con sus estados, prioridades y categorías. Los proyectos se crean sólo si alguna tarea los usa de verdad."
+        label="Traer las tareas"
+        configured={tasksDatabaseId() !== null}
+        missingVariable="NOTION_TASKS_DATABASE_ID"
+        onImport={runTasksFromNotion}
+      />
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
         <Link href="/tareas/todas" className="underline underline-offset-4 hover:text-foreground">

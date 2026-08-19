@@ -12,6 +12,9 @@ import {
 import { fetchSleepEntries } from "@/modules/sleep/queries";
 import { NightPicker } from "@/modules/sleep/ui/night-picker";
 import { SleepWizard } from "@/modules/sleep/ui/sleep-wizard";
+import { NotionImportCard } from "@/core/ui/notion-import-card";
+import { runSleepFromNotion } from "@/modules/sleep/actions";
+import { sleepDatabaseId } from "@/modules/sleep/notion-import";
 
 /**
  * Sueño: registrar.
@@ -56,6 +59,15 @@ export default async function SleepPage({
           <SleepWizard key={date} date={date} entry={entry} timezone={timezone} />
         </CardContent>
       </Card>
+
+      <NotionImportCard
+        title="Desde Notion"
+        description="Trae las noches de la base «Dormir». Las dos horas de texto («2am», «10am») se vuelven aquí una duración de verdad, que es lo que allí no se podía promediar."
+        label="Traer las noches"
+        configured={sleepDatabaseId() !== null}
+        missingVariable="NOTION_SLEEP_DATABASE_ID"
+        onImport={runSleepFromNotion}
+      />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
         <span>

@@ -100,6 +100,8 @@ export interface Database {
           dream: string | null;
           notes: string | null;
           place: string | null;
+          /** De qué página de Notion vino, cuando vino de ahí. */
+          notion_page_id: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -116,6 +118,7 @@ export interface Database {
           dream?: string | null;
           notes?: string | null;
           place?: string | null;
+          notion_page_id?: string | null;
           updated_at?: string;
         }
       >;
@@ -171,6 +174,7 @@ export interface Database {
           genres: string[];
           total_pages: number | null;
           status: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+          notion_page_id: string | null;
           created_at: string;
         },
         {
@@ -181,6 +185,7 @@ export interface Database {
           genres?: string[];
           total_pages?: number | null;
           status?: "POR_LEER" | "LEYENDO" | "TERMINADO" | "ABANDONADO";
+          notion_page_id?: string | null;
         }
       >;
 
@@ -195,6 +200,7 @@ export interface Database {
           pages: number | null;
           score: string | null;
           summary: string | null;
+          notion_page_id: string | null;
           created_at: string;
         },
         {
@@ -207,6 +213,7 @@ export interface Database {
           pages?: number | null;
           score?: number | string | null;
           summary?: string | null;
+          notion_page_id?: string | null;
         }
       >;
 
@@ -244,6 +251,7 @@ export interface Database {
           categories: string[];
           notes: string | null;
           completed_at: string | null;
+          notion_page_id: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -258,6 +266,7 @@ export interface Database {
           categories?: string[];
           notes?: string | null;
           completed_at?: string | null;
+          notion_page_id?: string | null;
           updated_at?: string;
         }
       >;
@@ -273,6 +282,7 @@ export interface Database {
           name: string;
           notes: string | null;
           cook: string | null;
+          notion_page_id: string | null;
           created_at: string;
         },
         {
@@ -283,6 +293,7 @@ export interface Database {
           name: string;
           notes?: string | null;
           cook?: string | null;
+          notion_page_id?: string | null;
         }
       >;
 

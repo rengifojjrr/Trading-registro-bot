@@ -1,4 +1,16 @@
 import {
+  findProperty,
+  knownOnly,
+  multiSelectNames,
+  plainText,
+  selectName,
+  checkbox,
+  dateStart,
+  firstFileUrl,
+  type NotionProperties,
+} from "@/lib/notion/properties";
+
+import {
   CHANNELS,
   CONTENT_TYPES,
   DIFFICULTIES,
@@ -66,100 +78,6 @@ const TYPE_FROM_NOTION: Record<string, ContentType> = {
   Photo: "FOTO",
 };
 
-/**
- * Busca una propiedad ignorando mayúsculas, tildes y espacios sobrantes.
- *
- * Tres propiedades del calendario real llevan un espacio de más -- « resumen»,
- * «Guión », «Miniatura A/B » -- y ese espacio se escribió una vez y ahí se
- * quedó. Buscar por el nombre exacto haría que el día que alguien lo corrija
- * en Notion, la importación deje de traer esos campos sin decir nada.
- */
-function findProperty(
-  properties: Record<string, unknown>,
-  name: string,
-): Record<string, unknown> | null {
-  const wanted = normaliseKey(name);
-  for (const [key, value] of Object.entries(properties)) {
-    if (normaliseKey(key) === wanted) {
-      return value as Record<string, unknown>;
-    }
-  }
-  return null;
-}
-
-function normaliseKey(key: string): string {
-  return key
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function plainText(property: Record<string, unknown> | null): string | null {
-  if (!property) return null;
-  const items = (property.title ?? property.rich_text) as { plain_text?: string }[] | undefined;
-  if (!Array.isArray(items)) return null;
-  const text = items
-    .map((item) => item.plain_text ?? "")
-    .join("")
-    .trim();
-  return text === "" ? null : text;
-}
-
-function multiSelectNames(property: Record<string, unknown> | null): string[] {
-  const items = property?.multi_select as { name?: string }[] | undefined;
-  if (!Array.isArray(items)) return [];
-  return items.map((item) => item.name ?? "").filter((name) => name !== "");
-}
-
-function selectName(property: Record<string, unknown> | null): string | null {
-  const value = (property?.select ?? property?.status) as { name?: string } | null | undefined;
-  return value?.name ?? null;
-}
-
-function checkbox(property: Record<string, unknown> | null): boolean {
-  return property?.checkbox === true;
-}
-
-function dateStart(property: Record<string, unknown> | null): string | null {
-  const value = property?.date as { start?: string } | null | undefined;
-  const start = value?.start;
-  if (!start) return null;
-  // Una fecha con hora llega como ISO completo; nos quedamos con el día,
-  // que es la única precisión que la columna admite.
-  return start.slice(0, 10);
-}
-
-function firstFileUrl(property: Record<string, unknown> | null): string | null {
-  const files = property?.files as
-    | { external?: { url?: string }; file?: { url?: string } }[]
-    | undefined;
-  if (!Array.isArray(files)) return null;
-  for (const entry of files) {
-    const url = entry.external?.url ?? entry.file?.url;
-    if (url) return url;
-  }
-  return null;
-}
-
-/**
- * Sólo las opciones que conocemos.
- *
- * Una etiqueta nueva en Notion -- un canal que se añade el mes que viene --
- * se descarta en lugar de guardarse, porque nuestras gráficas y filtros la
- * ignorarían igual y guardarla daría la falsa impresión de que se está
- * usando. Se cuenta aparte y se informa al final de la importación.
- */
-function knownOnly(names: string[], allowed: readonly string[]): { kept: string[]; dropped: string[] } {
-  const kept: string[] = [];
-  const dropped: string[] = [];
-  for (const name of names) {
-    if (allowed.includes(name)) kept.push(name);
-    else dropped.push(name);
-  }
-  return { kept, dropped };
-}
-
 /** La primera etiqueta de tiempo elegida, traducida a minutos. */
 function timeFrom(names: string[], options: typeof RECORD_TIME_OPTIONS) {
   for (const name of names) {
@@ -177,7 +95,7 @@ export interface MappingResult {
 
 export function mapNotionPage(page: {
   id: string;
-  properties: Record<string, unknown>;
+  properties: NotionProperties;
 }): MappingResult | null {
   const properties = page.properties ?? {};
   const title = plainText(findProperty(properties, "Post"));

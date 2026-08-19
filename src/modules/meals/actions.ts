@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { MEAL_TYPES, parseIngredientLine } from "@/modules/meals/domain/meals";
+import type { ImportResult } from "@/lib/notion/read-database";
+import { importMealsFromNotion } from "@/modules/meals/notion-import";
 
 export type MealFormState = { error: string | null; success: boolean };
 
@@ -105,4 +108,18 @@ function revalidateMeals(): void {
   revalidatePath("/comidas/semana");
   revalidatePath("/comidas/compra");
   revalidatePath("/");
+}
+
+/**
+ * Trae los datos desde Notion.
+ *
+ * Se dispara a mano y no por cron: la importación es de sentido único y pisa
+ * lo que haya, así que una automática que cambie algo mientras se está
+ * mirando la pantalla hace que la aplicación parezca embrujada.
+ */
+export async function runMealsFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importMealsFromNotion();
+  if (result.error === null) revalidateMeals();
+  return result;
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
@@ -8,6 +9,8 @@ import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { resolveSleepTimestamps } from "@/modules/sleep/domain/sleep";
+import type { ImportResult } from "@/lib/notion/read-database";
+import { importSleepFromNotion } from "@/modules/sleep/notion-import";
 
 export type SleepFormState = { error: string | null; success: boolean };
 
@@ -116,4 +119,18 @@ function revalidateSleep(): void {
   revalidatePath("/sueno/historial");
   revalidatePath("/sueno/analisis");
   revalidatePath("/");
+}
+
+/**
+ * Trae los datos desde Notion.
+ *
+ * Se dispara a mano y no por cron: la importación es de sentido único y pisa
+ * lo que haya, así que una automática que cambie algo mientras se está
+ * mirando la pantalla hace que la aplicación parezca embrujada.
+ */
+export async function runSleepFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importSleepFromNotion();
+  if (result.error === null) revalidateSleep();
+  return result;
 }

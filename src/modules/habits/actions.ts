@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { completionFor } from "@/modules/habits/domain/habits";
+import type { ImportResult } from "@/lib/notion/read-database";
+import { importHabitsFromNotion } from "@/modules/habits/notion-import";
 
 /**
  * Marcar y desmarcar es la operación central del módulo, y tiene que costar
@@ -128,4 +131,18 @@ function revalidateHabits(): void {
   revalidatePath("/habitos/calendario");
   revalidatePath("/habitos/rachas");
   revalidatePath("/");
+}
+
+/**
+ * Trae los datos desde Notion.
+ *
+ * Se dispara a mano y no por cron: la importación es de sentido único y pisa
+ * lo que haya, así que una automática que cambie algo mientras se está
+ * mirando la pantalla hace que la aplicación parezca embrujada.
+ */
+export async function runHabitsFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importHabitsFromNotion();
+  if (result.error === null) revalidateHabits();
+  return result;
 }

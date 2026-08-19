@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { BOOK_STATUSES } from "@/modules/reading/domain/reading";
+import type { ImportResult } from "@/lib/notion/read-database";
+import { importReadingFromNotion } from "@/modules/reading/notion-import";
 
 export type ReadingFormState = { error: string | null; success: boolean };
 
@@ -153,4 +156,18 @@ function revalidateReading(): void {
   revalidatePath("/lecturas/libros");
   revalidatePath("/lecturas/analisis");
   revalidatePath("/");
+}
+
+/**
+ * Trae los datos desde Notion.
+ *
+ * Se dispara a mano y no por cron: la importación es de sentido único y pisa
+ * lo que haya, así que una automática que cambie algo mientras se está
+ * mirando la pantalla hace que la aplicación parezca embrujada.
+ */
+export async function runReadingFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importReadingFromNotion();
+  if (result.error === null) revalidateReading();
+  return result;
 }

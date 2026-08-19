@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+
 import { z } from "zod";
 
 import { publishDailyMetrics } from "@/core/metrics";
@@ -9,6 +10,8 @@ import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
+import type { ImportResult } from "@/lib/notion/read-database";
+import { importTasksFromNotion } from "@/modules/tasks/notion-import";
 
 export type TaskFormState = { error: string | null; success: boolean };
 
@@ -171,4 +174,18 @@ async function republish(): Promise<void> {
     { module: "tasks", key: "pendientes", value: counts.open },
     { module: "tasks", key: "vencidas", value: counts.overdue },
   ]);
+}
+
+/**
+ * Trae los datos desde Notion.
+ *
+ * Se dispara a mano y no por cron: la importación es de sentido único y pisa
+ * lo que haya, así que una automática que cambie algo mientras se está
+ * mirando la pantalla hace que la aplicación parezca embrujada.
+ */
+export async function runTasksFromNotion(): Promise<ImportResult> {
+  await requireUser();
+  const result = await importTasksFromNotion();
+  if (result.error === null) revalidateTasks();
+  return result;
 }

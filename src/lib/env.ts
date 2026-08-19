@@ -39,6 +39,13 @@ const serverEnvSchema = z.object({
   // allí. Un identificador de base de datos no es un secreto, pero se
   // configura igual para no fijar en el código la base de nadie.
   NOTION_CONTENT_DATABASE_ID: z.string().min(1).optional(),
+  // Las otras cuatro bases de Vida. Todas se leen, ninguna se escribe: la
+  // aplicación es el destino y Notion el origen mientras se haga la mudanza.
+  NOTION_SLEEP_DATABASE_ID: z.string().min(1).optional(),
+  NOTION_HABITS_DATABASE_ID: z.string().min(1).optional(),
+  NOTION_TASKS_DATABASE_ID: z.string().min(1).optional(),
+  NOTION_MEALS_DATABASE_ID: z.string().min(1).optional(),
+  NOTION_READING_DATABASE_ID: z.string().min(1).optional(),
 
   // Shared secret required on the Authorization header of /api/cron/* so
   // only the configured scheduler (Vercel Cron, pg_cron, or the local CLI
@@ -119,6 +126,11 @@ export function serverEnv() {
     NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
     NOTION_DATABASE_ID: process.env.NOTION_DATABASE_ID,
     NOTION_CONTENT_DATABASE_ID: process.env.NOTION_CONTENT_DATABASE_ID,
+    NOTION_SLEEP_DATABASE_ID: process.env.NOTION_SLEEP_DATABASE_ID,
+    NOTION_HABITS_DATABASE_ID: process.env.NOTION_HABITS_DATABASE_ID,
+    NOTION_TASKS_DATABASE_ID: process.env.NOTION_TASKS_DATABASE_ID,
+    NOTION_MEALS_DATABASE_ID: process.env.NOTION_MEALS_DATABASE_ID,
+    NOTION_READING_DATABASE_ID: process.env.NOTION_READING_DATABASE_ID,
     CRON_SECRET: process.env.CRON_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     ALERT_EMAIL_TO: process.env.ALERT_EMAIL_TO,

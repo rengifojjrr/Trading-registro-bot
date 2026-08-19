@@ -32,6 +32,7 @@ export const WOKE_HOW = [
   "Desperté durante la noche",
   "La alarma sonó y no me desperté",
   "Pesadilla",
+  "Karim me despertó",
 ] as const;
 
 export const BEFORE_BED = [
@@ -48,6 +49,7 @@ export const BEFORE_BED = [
   "Hacer trading",
   "Trabajar hasta tarde",
   "Trasnochar",
+  "Hablar con Luisa",
 ] as const;
 
 /**

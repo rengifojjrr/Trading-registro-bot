@@ -7,6 +7,9 @@ import { completionFor, currentStreak, longestStreak, rateOver } from "@/modules
 import { fetchHabits } from "@/modules/habits/queries";
 import { HabitRow } from "@/modules/habits/ui/habit-row";
 import { NewHabit } from "@/modules/habits/ui/new-habit";
+import { NotionImportCard } from "@/core/ui/notion-import-card";
+import { runHabitsFromNotion } from "@/modules/habits/actions";
+import { habitsDatabaseId } from "@/modules/habits/notion-import";
 
 /**
  * Hábitos.
@@ -109,6 +112,15 @@ export default async function HabitsPage() {
           </CardContent>
         </Card>
       ) : null}
+      <NotionImportCard
+        title="Desde Notion"
+        description="Trae el histórico de «📆Hábitos 2026». Allí cada hábito es una columna; aquí cada uno es una fila y cada día marcado, otra."
+        label="Traer el histórico"
+        configured={habitsDatabaseId() !== null}
+        missingVariable="NOTION_HABITS_DATABASE_ID"
+        onImport={runHabitsFromNotion}
+      />
+
     </>
   );
 }
