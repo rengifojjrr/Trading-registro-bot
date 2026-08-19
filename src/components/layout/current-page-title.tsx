@@ -2,25 +2,41 @@
 
 import { usePathname } from "next/navigation";
 
-import { NAV_LINKS } from "./nav-links";
+import { moduleForPath } from "@/core/registry";
+
+const SYSTEM_TITLES: Record<string, string> = {
+  "/": "Hoy",
+  "/activity": "Actividad",
+  "/settings": "Configuración",
+};
 
 /**
- * Shows which section you're in, on small screens only. The desktop
- * sidebar already highlights the active link, but on a phone the sidebar
- * is behind a hamburger, so the header read as three anonymous icons with
- * no indication of where you were.
+ * Dónde estás, sólo en pantallas pequeñas.
  *
- * Longest matching href wins so nested routes (e.g. /trades/<id>) resolve
- * to their section rather than to "/" -- which every path starts with.
+ * En escritorio la barra lateral ya marca la sección activa, pero en el
+ * móvil está detrás de un menú y la cabecera se leía como tres iconos
+ * anónimos.
+ *
+ * Muestra «Módulo · Sección» porque ahora una sección puede llamarse igual
+ * en dos módulos -- «Análisis» existe en sueño, lecturas, tareas y
+ * contenido -- y la sección sola no diría dónde estás.
  */
 export function CurrentPageTitle() {
   const pathname = usePathname();
 
-  const match = NAV_LINKS.filter((link) => (link.href === "/" ? pathname === "/" : pathname.startsWith(link.href))).sort(
-    (a, b) => b.href.length - a.href.length,
-  )[0];
+  const active = moduleForPath(pathname);
+  if (active) {
+    const section = active.sections
+      .filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`))
+      .sort((a, b) => b.href.length - a.href.length)[0];
 
-  if (!match) return null;
+    const label =
+      section && section.href !== active.href ? `${active.label} · ${section.label}` : active.label;
+    return <span className="text-sm font-medium text-foreground md:hidden">{label}</span>;
+  }
 
-  return <span className="text-sm font-medium text-foreground md:hidden">{match.label}</span>;
+  const system = SYSTEM_TITLES[pathname] ?? (pathname.startsWith("/settings") ? "Configuración" : null);
+  if (!system) return null;
+
+  return <span className="text-sm font-medium text-foreground md:hidden">{system}</span>;
 }
