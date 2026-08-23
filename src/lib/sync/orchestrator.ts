@@ -11,6 +11,7 @@ import { raiseNotification } from "@/lib/notifications/create";
 import { publishDailyMetricsFor } from "@/core/metrics";
 import { todayIn } from "@/core/today";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
+import { checkDailyLimits } from "@/lib/risk/check-daily-limits";
 import { describeGap, storedHighWaterMark, type FillGap } from "./gaps";
 import { findGapsForProduct } from "./gap-reader";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -131,6 +132,10 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
     // pregunta a Coinbase cuántos contratos hay y se compara. Es lo que
     // detecta que falta un fill por el medio -- el fallo que deja una
     // operación cerrada figurando como abierta sin que nada lo diga.
+    // Los topes que te pusiste, comprobados justo cuando pueden haber
+    // cambiado: una operación acaba de cerrarse.
+    await checkDailyLimits(account.user_id);
+
     const positions = await verifyPositions({
       adapter,
       userId: account.user_id,

@@ -162,9 +162,11 @@ export function SettingsForm({
               <Label htmlFor="active_venue" className="flex items-center gap-1.5">
                 Venue activo
                 <InfoHint label="Venue activo">
-                  CFM son los futuros regulados de EE. UU. y es la vía recomendada. INTX (perpetuos
-                  internacionales) se retira el 9 de septiembre de 2026 según Coinbase, así que su adaptador
-                  queda marcado como experimental.
+                  CFM son los futuros regulados de EE. UU., que es donde operas. INTX se ha quitado de
+                  aquí: Coinbase lo retira el 9 de septiembre de 2026 y su adaptador nunca llegó a
+                  implementarse, así que ofrecerlo era ofrecer una opción que no funciona y que además
+                  se muere. Si alguna vez hace falta el reemplazo -- la pasarela sobre Deribit -- entrará
+                  como su propio adaptador.
                 </InfoHint>
               </Label>
               <Select name="active_venue" defaultValue={settings.active_venue}>
@@ -172,8 +174,14 @@ export function SettingsForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FCM">CFM -- futuros EE. UU. (recomendado)</SelectItem>
-                  <SelectItem value="INTX">INTX -- perpetuos internacionales (experimental)</SelectItem>
+                  <SelectItem value="FCM">CFM -- futuros EE. UU.</SelectItem>
+                  {/* Se sigue ofreciendo INTX sólo si ya estaba elegido, para
+                      no dejar el desplegable sin la opción que la cuenta
+                      tiene guardada -- y con la etiqueta diciendo por qué no
+                      deberías quedarte ahí. */}
+                  {settings.active_venue === "INTX" ? (
+                    <SelectItem value="INTX">INTX -- retirado por Coinbase el 9-sep-2026</SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>

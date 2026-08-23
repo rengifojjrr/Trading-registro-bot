@@ -1572,7 +1572,10 @@ export interface Database {
             | "UNCLASSIFIED_FILL"
             | "MISSING_CONTRACT_SPEC"
             | "CALC_UNVERIFIED"
-            | "NOTION_ERROR";
+            | "NOTION_ERROR"
+            // No es una discrepancia: la aplicación está bien y quien se está
+            // pasando es quien opera. Mezclarlos haría imposible filtrarlos.
+            | "RISK_LIMIT";
           severity: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -1596,7 +1599,10 @@ export interface Database {
             | "UNCLASSIFIED_FILL"
             | "MISSING_CONTRACT_SPEC"
             | "CALC_UNVERIFIED"
-            | "NOTION_ERROR";
+            | "NOTION_ERROR"
+            // No es una discrepancia: la aplicación está bien y quien se está
+            // pasando es quien opera. Mezclarlos haría imposible filtrarlos.
+            | "RISK_LIMIT";
           severity?: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;

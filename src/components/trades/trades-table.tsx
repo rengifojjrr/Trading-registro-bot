@@ -46,7 +46,6 @@ export function TradesTable({
   search,
   accountsById,
   timezone,
-  onExport,
 }: {
   rows: TradeTableRow[];
   total: number;
@@ -58,7 +57,6 @@ export function TradesTable({
   accountsById: Record<string, string>;
   timezone: string;
   /** Exports every matching row, not just this page -- see the trades page. */
-  onExport: () => Promise<TradeTableRow[]>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -108,37 +106,26 @@ export function TradesTable({
     setParams({ q: value || null, page: null });
   }
 
-  async function exportCsv() {
+  /**
+   * El CSV lo arma el servidor, no el navegador.
+   *
+   * Antes se montaba aquí con papaparse: otro formateador de CSV, con otro
+   * juego de columnas, sin BOM -- así que Excel en Windows rompía los acentos
+   * -- y con las fechas tal cual salían. Dos formateadores del mismo dato
+   * acaban dando dos respuestas distintas; éste está en `lib/csv` con tests
+   * sobre el escapado, que es donde están los fallos de un CSV.
+   */
+  function exportCsv() {
     setIsExporting(true);
     try {
-      const allRows = await onExport();
-      const Papa = (await import("papaparse")).default;
-      const csv = Papa.unparse(
-        allRows.map((r) => ({
-          fecha_apertura: r.opened_at,
-          fecha_cierre: r.closed_at,
-          producto: r.product_id,
-          cuenta: accountsById[r.account_id] ?? r.account_id,
-          direccion: r.direction,
-          estado: r.status,
-          tamano_max: r.max_size,
-          entrada_wap: r.entry_wap,
-          salida_wap: r.exit_wap,
-          comisiones: r.total_commissions,
-          pnl_bruto: r.gross_pnl,
-          pnl_neto: r.net_pnl,
-          retorno_pct: r.return_pct,
-          sesion: r.session_effective,
-          origen: r.source,
-        })),
-      );
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `operaciones_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // Un enlace con `download`, no `router.push`: esto no es navegar a una
+      // pantalla, es descargar un archivo. El router intentaría renderizarlo
+      // como página. Los mismos parámetros que la tabla, así que se exporta
+      // lo que estás mirando.
+      const enlace = document.createElement("a");
+      enlace.href = `/api/export/trades?${searchParams.toString()}`;
+      enlace.download = "";
+      enlace.click();
     } finally {
       setIsExporting(false);
     }

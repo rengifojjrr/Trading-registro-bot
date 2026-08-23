@@ -11,8 +11,6 @@ import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
-import { fetchTradesForExport } from "./actions";
-
 export default async function TradesPage(props: PageProps<"/trades">) {
   const user = await requireUser();
   const supabase = await createClient();
@@ -79,10 +77,6 @@ export default async function TradesPage(props: PageProps<"/trades">) {
           search={pageParams.search ?? ""}
           accountsById={accountsById}
           timezone={timezone}
-          onExport={async () => {
-            "use server";
-            return fetchTradesForExport(searchParams);
-          }}
         />
       )}
     </>

@@ -29,23 +29,38 @@ export class IntxAdapter implements MarketDataPort {
   readonly venue = "INTX" as const;
 
   listFills(_params: CoinbaseListFillsParams): Promise<CoinbaseFill[]> {
-    throw new NotImplementedUntilPhase2("IntxAdapter.listFills");
+    throw new VenueRetirado("IntxAdapter.listFills");
   }
 
   listOrders(_orderIds: string[]): Promise<CoinbaseOrder[]> {
-    throw new NotImplementedUntilPhase2("IntxAdapter.listOrders");
+    throw new VenueRetirado("IntxAdapter.listOrders");
   }
 
   getProduct(_productId: string): Promise<CoinbaseProduct> {
-    throw new NotImplementedUntilPhase2("IntxAdapter.getProduct");
+    throw new VenueRetirado("IntxAdapter.getProduct");
   }
 }
 
-class NotImplementedUntilPhase2 extends Error {
+/**
+ * INTX no se va a implementar.
+ *
+ * Coinbase lo retira el 9 de septiembre de 2026 y lo sustituye por una
+ * pasarela sobre Deribit que a día de hoy no está documentada públicamente.
+ * Construir un adaptador para algo que se apaga en semanas, contra una API
+ * que nadie ha visto, es trabajo que nace caducado; cuando exista la
+ * pasarela entrará como su propio adaptador, que es exactamente para lo que
+ * está la separación por venues.
+ *
+ * Mientras tanto el mensaje dice qué hacer, no sólo qué falta: quien acabe
+ * aquí es porque tiene `COINBASE_PRODUCT_VENUE=INTX` en el entorno.
+ */
+class VenueRetirado extends Error {
   constructor(method: string) {
     super(
-      `${method} is not implemented yet, and INTX itself retires 2026-09-09 per Coinbase. Confirm you actually need this venue before Phase 2 builds it out -- see docs/COINBASE_INTEGRATION.md.`,
+      `${method}: el venue INTX no está implementado y Coinbase lo retira el 9 de septiembre de 2026. ` +
+        "Pon COINBASE_PRODUCT_VENUE=FCM, que es donde están los futuros regulados de EE. UU. " +
+        "Ver docs/COINBASE_INTEGRATION.md.",
     );
-    this.name = "NotImplementedUntilPhase2";
+    this.name = "VenueRetirado";
   }
 }
