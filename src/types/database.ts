@@ -1575,7 +1575,10 @@ export interface Database {
             | "NOTION_ERROR"
             // No es una discrepancia: la aplicación está bien y quien se está
             // pasando es quien opera. Mezclarlos haría imposible filtrarlos.
-            | "RISK_LIMIT";
+            | "RISK_LIMIT"
+            // Tampoco es un fallo: los números están bien, lo que falta es lo
+            // que solo puedes escribir tú.
+            | "JOURNAL_PENDING";
           severity: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -1602,7 +1605,10 @@ export interface Database {
             | "NOTION_ERROR"
             // No es una discrepancia: la aplicación está bien y quien se está
             // pasando es quien opera. Mezclarlos haría imposible filtrarlos.
-            | "RISK_LIMIT";
+            | "RISK_LIMIT"
+            // Tampoco es un fallo: los números están bien, lo que falta es lo
+            // que solo puedes escribir tú.
+            | "JOURNAL_PENDING";
           severity?: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;

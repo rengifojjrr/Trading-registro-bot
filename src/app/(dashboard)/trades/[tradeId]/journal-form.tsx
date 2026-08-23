@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { TemplatePicker } from "@/components/journal/template-picker";
 import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +92,11 @@ export function JournalForm({
   contractSize: number | null;
 }) {
   const [state, formAction, pending] = useActionState(saveJournalEntry, initialState);
+
+  // Controlado solo el recuadro de notas, porque las plantillas escriben en él.
+  // El resto del formulario sigue sin control: un `defaultValue` no se pierde al
+  // re-renderizar y aquí no hace falta nada más.
+  const [notes, setNotes] = useState(journalEntry?.notes ?? "");
 
   useEffect(() => {
     if (state.success) toast.success("Diario guardado.");
@@ -289,7 +295,17 @@ export function JournalForm({
             </Field>
 
             <Field label="Notas" htmlFor="notes">
-              <Textarea id="notes" name="notes" rows={4} autoComplete="off" defaultValue={journalEntry?.notes ?? ""} />
+              <div className="flex flex-col gap-2">
+                <Textarea
+                  id="notes"
+                  name="notes"
+                  rows={notes.trim() === "" ? 4 : 10}
+                  autoComplete="off"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+                <TemplatePicker value={notes} onChange={setNotes} />
+              </div>
             </Field>
           </div>
 

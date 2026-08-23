@@ -5,7 +5,9 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { BuyAndHoldCard } from "@/components/behaviour/buy-and-hold-card";
 import { CommissionDragCard } from "@/components/behaviour/commission-drag-card";
 import { DailyLimitsCard } from "@/components/behaviour/daily-limits-card";
+import { LifeCrossCard } from "@/components/behaviour/life-cross-card";
 import { MistakeCostTable } from "@/components/behaviour/mistake-cost-table";
+import { PlaybookAdherenceCard } from "@/components/behaviour/playbook-adherence-card";
 import { StreakSizingCard } from "@/components/behaviour/streak-sizing-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +21,10 @@ import {
   deriveBuyAndHoldInputs,
 } from "@/lib/analytics/behaviour";
 import { fetchTradesWithBehaviour } from "@/lib/analytics/behaviour-queries";
+import { compareByHabits, compareBySleep } from "@/lib/analytics/life-correlation";
+import { fetchLifeTradingDays } from "@/lib/analytics/life-queries";
+import { computePlaybookAdherence } from "@/lib/journal/rules";
+import { fetchPlaybookAdherenceInputs } from "@/lib/journal/rules-queries";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
@@ -97,6 +103,18 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
     }
   }
 
+  // El cruce con sueño y hábitos ignora los filtros de la barra a propósito:
+  // necesita un año de días para tener muestra a los dos lados, y con el filtro
+  // de «este mes» puesto siempre diría «todavía no se sabe». Lo dice la tarjeta.
+  const lifeDays = await fetchLifeTradingDays({ userId: user.id, timezone });
+  const sleepCross = compareBySleep(lifeDays);
+  const habitsCross = compareByHabits(lifeDays);
+
+  // El guion tampoco se filtra: se marca en pocas operaciones y con el filtro
+  // puesto nunca llegaría al mínimo de muestra que hace falta para comparar.
+  const playbookInputs = await fetchPlaybookAdherenceInputs(user.id);
+  const playbook = computePlaybookAdherence(playbookInputs.trades, playbookInputs.items);
+
   return (
     <>
       <PageHeader
@@ -155,6 +173,8 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
         </CardHeader>
       </Card>
 
+      <LifeCrossCard sleep={sleepCross} habits={habitsCross} />
+      {playbookInputs.items.length > 0 ? <PlaybookAdherenceCard adherence={playbook} /> : null}
       <MistakeCostTable rows={mistakes} />
       <StreakSizingCard effect={streaks} />
       <CommissionDragCard drag={drag} />
