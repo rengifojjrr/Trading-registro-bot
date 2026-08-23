@@ -26,12 +26,16 @@ const PAGES = [
   // Los módulos de vida. Se quedaron fuera de esta lista durante meses, que
   // es exactamente por qué merecen estar: la mitad de la aplicación no tenía
   // ni siquiera la prueba de que sus páginas cargan.
-  { path: "/dia", heading: /día/i },
-  { path: "/sueno", heading: /sueño/i },
+  //
+  // Los títulos son los reales, no los que uno esperaría: /tareas encabeza
+  // «Hoy» y /comidas «Registrar comida». Ponerlos a ojo dejaría la prueba
+  // roja sin que nada estuviera roto, y una prueba que falla siempre deja de
+  // leerse. (`/dia` no está: solo existe `/dia/[fecha]`.)
+  { path: "/sueno", heading: /registrar sueño/i },
   { path: "/habitos", heading: /hábitos/i },
-  { path: "/tareas", heading: /tareas/i },
-  { path: "/comidas", heading: /comidas/i },
-  { path: "/lecturas", heading: /lecturas/i },
+  { path: "/tareas", heading: /hoy/i },
+  { path: "/comidas", heading: /registrar comida/i },
+  { path: "/lecturas", heading: /registrar lectura/i },
   { path: "/contenido", heading: /contenido/i },
 ];
 
