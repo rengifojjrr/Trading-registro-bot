@@ -66,6 +66,9 @@ export type TradeSource = "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED
  * vínculos y papelera -- cuando pueden apuntar a cualquier módulo.
  */
 export type EntityKind =
+  // La operación va al mismo enum que los módulos de vida a propósito: «dónde
+  // está lo que borré» tiene que tener una sola respuesta.
+  | "OPERACION"
   | "SUENO"
   | "HABITO"
   | "TAREA"

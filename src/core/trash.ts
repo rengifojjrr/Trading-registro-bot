@@ -124,7 +124,9 @@ export async function restoreFromTrash(trashId: string): Promise<boolean> {
   const meta = ENTITIES[entry.entity_kind];
   const payload = entry.payload;
 
-  const { error } = await untyped(supabase.from(meta.table)).insert(payload.row);
+  const { error } = await untyped(supabase.from(meta.table)).insert(
+    withoutGenerated(payload.row, meta.generatedColumns),
+  );
   if (error) return false;
 
   for (const [table, rows] of Object.entries(payload.children ?? {})) {
@@ -133,6 +135,29 @@ export async function restoreFromTrash(trashId: string): Promise<boolean> {
 
   await supabase.from("core_trash").delete().eq("id", trashId).eq("user_id", user.id);
   return true;
+}
+
+/**
+ * La fila sin las columnas que Postgres calcula solo.
+ *
+ * El archivo se hace con un `select *`, que las trae, y el insert de vuelta
+ * las rechaza entero: «cannot insert a non-DEFAULT value into column». Como se
+ * recalculan solas, quitarlas no pierde nada.
+ *
+ * Esto tumbaba la restauración de una noche de sueño desde que existe la
+ * papelera, y no se notó porque nadie había recuperado ninguna. Los fallos de
+ * lo que sólo se usa el mal día son así: se descubren el mal día.
+ */
+function withoutGenerated(
+  row: Record<string, Json>,
+  generated: string[] | undefined,
+): Record<string, Json> {
+  if (!generated || generated.length === 0) return row;
+  const limpia: Record<string, Json> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (!generated.includes(key)) limpia[key] = value;
+  }
+  return limpia;
 }
 
 export async function listTrash(limit = 100): Promise<TrashRow[]> {

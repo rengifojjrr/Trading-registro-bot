@@ -40,6 +40,22 @@ export interface EntityMeta {
    * restaurar una comida devolvería un nombre sin ingredientes.
    */
   children?: { table: string; foreignKey: string }[];
+  /**
+   * Columnas que Postgres calcula solo (`GENERATED ALWAYS AS`).
+   *
+   * Hay que quitarlas antes de devolver la fila: el archivo se hace con un
+   * `select *`, que las trae, y Postgres rechaza el insert entero con «cannot
+   * insert a non-DEFAULT value into column». Como se recalculan solas, quitarlas
+   * no pierde nada.
+   *
+   * Esto tumbaba la restauración de una noche de sueño desde que existe la
+   * papelera, y no se notó porque nadie había recuperado ninguna -- que es
+   * exactamente cómo son los fallos de las cosas que sólo se usan el mal día.
+   *
+   * Si una migración añade una columna generada, tiene que aparecer aquí en el
+   * mismo commit. Nada lo comprueba automáticamente.
+   */
+  generatedColumns?: string[];
 }
 
 export const ENTITIES: Record<EntityKind, EntityMeta> = {
@@ -51,6 +67,7 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     iconColumn: "icon",
     detailBase: "/sueno/historial",
     colorToken: "--mod-sleep",
+    generatedColumns: ["duration_minutes"],
   },
   HABITO: {
     kind: "HABITO",
@@ -116,6 +133,43 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     iconColumn: "icon",
     detailBase: "/contenido",
     colorToken: "--mod-content",
+  },
+  /**
+   * La operación, en la misma papelera que todo lo demás.
+   *
+   * Borrarla era inmediato y definitivo mientras los siete módulos de vida ya
+   * borraban con red debajo -- y se lleva por delante la entrada de diario
+   * escrita sobre ella, que suele valer más que los números. La asimetría iba
+   * al revés de lo razonable: la red puesta donde menos se pierde y quitada
+   * donde más.
+   *
+   * Los hijos son todo lo que cuelga de la operación y no se recalcula desde
+   * los fills. `trade_fills` no está: se reconstruye sola, y devolverla desde
+   * una copia archivada podría contradecir lo que el motor calcula hoy.
+   */
+  OPERACION: {
+    kind: "OPERACION",
+    label: "Operación",
+    table: "trades",
+    titleColumn: "product_id",
+    iconColumn: null,
+    detailBase: "/trades",
+    colorToken: "--mod-trading",
+    children: [
+      { table: "journal_entries", foreignKey: "trade_id" },
+      { table: "trade_comments", foreignKey: "trade_id" },
+      { table: "trade_tags", foreignKey: "trade_id" },
+      { table: "trade_mistakes", foreignKey: "trade_id" },
+      { table: "trade_playbook_checks", foreignKey: "trade_id" },
+      { table: "trade_verifications", foreignKey: "trade_id" },
+      { table: "chart_drawings", foreignKey: "trade_id" },
+      // Las capturas se archivan como filas y el fichero se queda donde
+      // estaba, en Storage: borrar la fila nunca borró la imagen. Así vuelven
+      // apuntando al mismo sitio. Dejarlas fuera habría hecho que la promesa
+      // de «vuelve entero» fuera falsa justo en lo que no se puede rehacer.
+      { table: "trade_screenshots", foreignKey: "trade_id" },
+    ],
+    generatedColumns: ["duration_seconds", "total_commissions", "session_effective"],
   },
 };
 

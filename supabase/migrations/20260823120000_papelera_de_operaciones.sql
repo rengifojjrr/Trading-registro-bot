@@ -1,0 +1,15 @@
+-- Las operaciones también se pueden deshacer.
+--
+-- Los siete módulos de vida llevaban meses borrando con red debajo: la fila se
+-- archiva entera, sale un aviso de «deshacer», y treinta días después se va del
+-- todo. Borrar una operación, mientras tanto, era inmediato y definitivo -- y
+-- se lleva por delante la entrada de diario escrita sobre ella, que suele valer
+-- más que los números.
+--
+-- La asimetría iba al revés de lo razonable: la red estaba puesta donde menos
+-- se pierde y quitada donde más.
+--
+-- Va al mismo enum y a la misma papelera en lugar de a una tabla propia porque
+-- «dónde está lo que borré» tiene que tener una sola respuesta. Dos papeleras
+-- son dos sitios donde mirar y uno donde no se mira.
+alter type public.entity_kind add value if not exists 'OPERACION';

@@ -6,18 +6,23 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { deleteTrade } from "@/app/(dashboard)/trades/[tradeId]/actions";
+import { restoreAction } from "@/core/actions";
 import { Button } from "@/components/ui/button";
 
 /**
- * Removes a trade the user entered themselves.
+ * Archiva una operación que la persona metió ella misma.
  *
- * Says what goes before asking, because the row in the table is the least
- * of it: an imported trade with no prices still carries the journal entry
- * written about it, and that reflection is usually worth more than the
- * numbers. Confirming blind is how people lose the part they cared about.
+ * Dice qué se va antes de preguntar, porque la fila de la tabla es lo de
+ * menos: una operación importada sin precios sigue llevando encima el diario
+ * que se escribió sobre ella, y eso suele valer más que los números.
  *
- * Not offered for Coinbase-synced trades -- those are recomputed from the
- * raw fills, so deleting one just means it reappears on the next sync.
+ * Ya no borra de verdad -- archiva, con «Deshacer» en el propio aviso y treinta
+ * días en la Papelera. Aun así se sigue preguntando: la confirmación es lo que
+ * evita el borrado accidental, y deshacer es lo que lo arregla cuando pasa.
+ *
+ * No se ofrece para operaciones sincronizadas de Coinbase: esas las recalcula
+ * el motor desde los fills, así que borrarlas sólo significa que vuelven en la
+ * siguiente sincronización.
  */
 export function DeleteTrade({
   tradeId,
@@ -42,7 +47,31 @@ export function DeleteTrade({
         setConfirming(false);
         return;
       }
-      toast.success("Operación borrada.");
+      // Deshacer aquí y no sólo en Papelera: el caso normal es un dedo
+      // torcido, y mandar a alguien a otra página a arreglar su propio
+      // resbalón de hace dos segundos es la parte que hace que el borrado
+      // siga dando miedo aunque tenga red debajo.
+      toast.success("Operación borrada.", {
+        description: hasJournal
+          ? "El diario se ha archivado con ella y vuelve entero al recuperarla."
+          : "Se guarda 30 días en la Papelera.",
+        action: result.trashId
+          ? {
+              label: "Deshacer",
+              onClick: () => {
+                startTransition(async () => {
+                  const ok = await restoreAction(result.trashId as string, "/trades");
+                  if (ok) {
+                    toast.success("Operación recuperada.");
+                    router.push(`/trades/${tradeId}`);
+                  } else {
+                    toast.error("No se pudo recuperar. Sigue en la Papelera.");
+                  }
+                });
+              },
+            }
+          : undefined,
+      });
       router.push("/trades");
     });
   }
@@ -66,9 +95,10 @@ export function DeleteTrade({
     <div className="flex flex-col gap-2 rounded-md border border-negative/50 bg-negative/5 px-3 py-2 text-sm">
       <p className="font-medium text-negative">¿Borrar esta operación?</p>
       <p className="text-xs text-muted-foreground">
-        Se borra la operación
+        Se va la operación
         {hasJournal ? ", su entrada de diario (notas, estado emocional, etiquetas de error)" : ""}, sus
-        capturas, comentarios y dibujos del gráfico. No se puede deshacer.
+        capturas, comentarios y dibujos del gráfico. Todo se archiva junto: puedes deshacerlo al
+        momento o recuperarlo entero desde la Papelera durante 30 días.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="destructive" onClick={run} disabled={pending}>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { moveToTrash } from "@/core/trash";
 import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { enqueueNotionSync } from "@/lib/notion/sync";
@@ -353,20 +354,22 @@ export async function deleteTradeScreenshot(
 const DELETABLE_SOURCES = ["NOTION_IMPORT", "CSV_IMPORT", "MANUAL", "DEMO_SEED"] as const;
 
 /**
- * Removes a trade and everything hanging off it.
+ * Archiva una operación con todo lo que cuelga de ella.
  *
- * The cascade reaches the journal entry, tags, mistakes, comments,
- * screenshots and chart drawings, which is why the UI states plainly what
- * will go before asking. A trade imported from Notion with no prices still
- * carries the reflection written about it, and that is usually the part
- * worth more than the row.
+ * Antes la borraba de verdad, y con ella se iba la entrada de diario escrita
+ * sobre ella -- que suele valer más que los números. Los siete módulos de vida
+ * llevaban meses borrando con red debajo, así que la asimetría iba al revés de
+ * lo razonable: la red estaba puesta donde menos se pierde y quitada donde más.
  *
- * The audit entry keeps a compact record of what was removed -- product,
- * dates, size, result -- so the history shows a deletion happened and what
- * it was, without becoming a backup of the very thing the user asked to
- * delete.
+ * Ahora va a la misma papelera que todo lo demás: se puede deshacer al momento
+ * desde el aviso, o recuperar durante treinta días desde Papelera.
+ *
+ * Devuelve el identificador de la entrada de papelera, que es lo que el aviso
+ * de «deshacer» necesita.
  */
-export async function deleteTrade(tradeId: string): Promise<{ error: string | null }> {
+export async function deleteTrade(
+  tradeId: string,
+): Promise<{ error: string | null; trashId?: string }> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -391,8 +394,8 @@ export async function deleteTrade(tradeId: string): Promise<{ error: string | nu
     .select("id", { count: "exact", head: true })
     .eq("trade_id", tradeId);
 
-  const { error } = await supabase.from("trades").delete().eq("id", tradeId).eq("user_id", user.id);
-  if (error) return { error: "No se pudo borrar la operación." };
+  const trashId = await moveToTrash("OPERACION", tradeId);
+  if (!trashId) return { error: "No se pudo borrar la operación." };
 
   await recordAudit({
     userId: user.id,
@@ -407,11 +410,13 @@ export async function deleteTrade(tradeId: string): Promise<{ error: string | nu
       closed_at: trade.closed_at,
       max_size: trade.max_size,
       net_pnl: trade.net_pnl,
-      journal_entries_deleted: journalCount ?? 0,
+      journal_entries_archived: journalCount ?? 0,
+      trash_id: trashId,
     },
   });
 
   revalidatePath("/trades");
+  revalidatePath("/papelera");
   revalidatePath("/");
-  return { error: null };
+  return { error: null, trashId };
 }
