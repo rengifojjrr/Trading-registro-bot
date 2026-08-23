@@ -130,6 +130,18 @@ export class CoinbaseRestClient {
       if (!hasMore) return;
       cursor = nextCursor;
     }
+
+    // Quedarse sin páginas con Coinbase diciendo que hay más es un hueco en
+    // los datos, y un hueco en los datos no puede pasar en silencio.
+    //
+    // Antes se salía del bucle sin más y la sincronización se daba por buena
+    // con parte del histórico: exactamente la forma de fallo que dejó una
+    // compra sin registrar y convirtió una semana de operaciones en una
+    // posición fantasma. Un error ruidoso deja las cifras viejas -- que se
+    // sabe que son viejas -- en vez de cifras nuevas y falsas.
+    throw new Error(
+      `Coinbase sigue devolviendo páginas de ${path} después de ${maxPages}. La sincronización se detiene en vez de guardar un histórico incompleto.`,
+    );
   }
 }
 

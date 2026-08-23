@@ -37,6 +37,13 @@ export interface GateEvidence {
   positionCheck: { matched: boolean } | null;
   /** Órdenes cuyos fills guardados no cuadran con lo que Coinbase dice. */
   fillGaps: number;
+  /**
+   * Ajustes de Coinbase que el motor aparta por no tener confirmada su
+   * semántica. Cuentan igual que un hueco: el efecto sobre las cifras es el
+   * mismo -- la posición calculada puede no ser la real -- aunque la causa y
+   * el remedio sean distintos.
+   */
+  unclassifiedFills: number;
   /** Si ha habido al menos una sincronización que terminara bien. */
   hasSyncedSuccessfully: boolean;
 }
@@ -65,6 +72,14 @@ export function evaluateValidationGate(evidence: GateEvidence): GateResult {
         evidence.fillGaps === 0
           ? "Cada orden de Coinbase cuadra con los fills guardados."
           : `${evidence.fillGaps} orden(es) se ejecutaron por más de lo que tenemos guardado. Mientras falte un fill, la posición reconstruida no puede cuadrar.`,
+    },
+    {
+      label: "Ningún ajuste de Coinbase queda sin aplicar",
+      passed: evidence.unclassifiedFills === 0,
+      detail:
+        evidence.unclassifiedFills === 0
+          ? "Todos los movimientos recibidos son ejecuciones normales."
+          : `Coinbase envió ${evidence.unclassifiedFills} ajuste(s) -- reversiones o correcciones -- que el cálculo aparta porque su significado exacto no está confirmado. Aplicarlos a ojo movería la posición en la dirección equivocada, así que se apartan; pero mientras estén ahí, la posición calculada puede no ser la real.`,
     },
     {
       label: "La posición coincide con la que reporta Coinbase",

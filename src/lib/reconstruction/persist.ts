@@ -5,6 +5,7 @@ import { raiseNotification } from "@/lib/notifications/create";
 import { calculatePnl } from "@/lib/pnl/calculate";
 import { classifySession } from "@/lib/sessions/classify";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/types/database";
 import {
   changedFigures,
   describeChangedFigures,
@@ -108,68 +109,22 @@ export async function persistReconstruction(
       .filter((t) => t.opening_fill_id !== null)
       .map((t) => [t.opening_fill_id as string, t.id]),
   );
-  /** Todas las operaciones de este (cuenta, producto), abran algo o no. */
-  const scopeTradeIds = (existingTrades ?? []).map((t) => t.id);
   const newOpeningFillIds = new Set(trades.map((t) => t.openingFillId));
   const orphanedOpeningFillIds = [...existingByOpeningFillId.keys()].filter(
     (id) => !newOpeningFillIds.has(id),
   );
 
-  // Las huérfanas se marcan **antes** de escribir, no después.
+  // Todo lo que sigue va en **una sola transacción**, dentro de
+  // `persist_reconstruction`. El cálculo se queda aquí, que es donde está
+  // probado; sólo baja la escritura, que es la parte que tiene que ser
+  // todo-o-nada.
   //
-  // Esta función hace N escrituras seguidas sin transacción, así que puede
-  // morirse a la mitad. Con el marcado al final, morirse a la mitad dejaba las
-  // operaciones viejas y las nuevas conviviendo, las dos visibles y las dos
-  // sumando: el panel llegó a enseñar +305 en un día en el que se ganaron 152,
-  // porque contaba el largo de 42 contratos y el de 43 a la vez. Marcándolas
-  // primero, un fallo a media escritura deja de menos, nunca de más -- que en
-  // una aplicación que cuenta dinero es la única dirección aceptable.
-  if (orphanedOpeningFillIds.length > 0) {
-    await supabase
-      .from("trades")
-      .update({ orphaned_at: new Date().toISOString() })
-      .eq("user_id", params.userId)
-      .in("opening_fill_id", orphanedOpeningFillIds)
-      .is("orphaned_at", null);
-  }
-
-  // Y se vacían los enlaces de fills de TODO el ámbito de una vez, no los de
-  // cada operación cuando le toca.
-  //
-  // `trade_fills` lleva UNIQUE (raw_fill_id, role) global, no por operación:
-  // un fill sólo puede estar asignado una vez como entrada y una como salida
-  // en toda la tabla. Es la restricción correcta -- sin ella, dos operaciones
-  // activas podrían reclamar el mismo fill y el P&L se contaría dos veces sin
-  // que nada lo detectara -- pero implica que, cuando un recálculo mueve los
-  // límites, la operación vieja no puede seguir agarrando sus enlaces
-  // mientras la nueva reclama los mismos. Borrando por operación, como se
-  // hacía antes, la vieja los retenía y la nueva chocaba:
-  // «duplicate key value violates unique constraint
-  // trade_fills_raw_fill_id_role_key», y la reconstrucción entera se quedaba a
-  // medias.
-  //
-  // La consecuencia es que una operación huérfana pierde sus enlaces. Se
-  // acepta a conciencia: la fila se queda -- con su dirección, su tamaño, sus
-  // precios y su resultado, que es lo que hace falta para auditarla -- y los
-  // enlaces pasan a describir el reparto vigente, que es lo único que pueden
-  // describir con esta restricción.
-  if (scopeTradeIds.length > 0) {
-    const { error: clearError } = await supabase
-      .from("trade_fills")
-      .delete()
-      .eq("user_id", params.userId)
-      .in("trade_id", scopeTradeIds);
-    if (clearError) {
-      throw new Error(`Failed to clear trade_fills for the recomputed scope: ${clearError.message}`);
-    }
-  }
-
-  let tradesCreated = 0;
-  let tradesUpdated = 0;
-  let tradesClosed = 0;
-  const touchedTradeIds: string[] = [];
-
-  for (const trade of trades) {
+  // Antes eran entre diez y cien escrituras sueltas contra PostgREST, cada
+  // una su propia transacción, y morirse a la mitad no era teórico: pasó, y
+  // dejó la operación nueva creada, las viejas sin marcar como huérfanas y
+  // las siguientes sin crear. El panel enseñó +305 dólares en un día en el
+  // que se ganaron 152, porque contaba dos versiones de la misma operación.
+  const payload = trades.map((trade) => {
     const pnl = calculatePnl({
       direction: trade.direction,
       entryWap: trade.entryWap,
@@ -180,21 +135,17 @@ export async function persistReconstruction(
       exitCommissions: trade.exitCommissions,
       contractSize: params.contractSize,
     });
-    const sessionComputed = classifySession(trade.openedAt);
 
-    // Only a trade built entirely from imported fills counts as CSV_IMPORT.
-    // If even one fill came from the API, the trade is still checkable
-    // against Coinbase, so it stays COINBASE_SYNC and keeps appearing in
-    // the validation queue.
+    // Sólo una operación construida enteramente con fills importados cuenta
+    // como CSV_IMPORT. Si uno solo vino de la API, la operación se puede
+    // seguir comprobando contra Coinbase y sigue siendo COINBASE_SYNC.
     const source =
       trade.fillAllocations.length > 0 &&
       trade.fillAllocations.every((a) => importedFillIds.has(a.rawFillId))
-        ? ("CSV_IMPORT" as const)
-        : ("COINBASE_SYNC" as const);
+        ? "CSV_IMPORT"
+        : "COINBASE_SYNC";
 
-    const row = {
-      user_id: params.userId,
-      account_id: params.accountId,
+    return {
       product_id: trade.productId,
       opening_fill_id: trade.openingFillId,
       direction: trade.direction,
@@ -216,60 +167,40 @@ export async function persistReconstruction(
       entries_count: trade.entriesCount,
       exits_count: trade.exitsCount,
       reconstruction_version: params.algorithmVersion,
-      session_computed: sessionComputed,
+      session_computed: classifySession(trade.openedAt),
       source,
-      // A trade the recomputation produces is current by definition. Clearing
-      // this matters as much as setting it: a fill that arrives late can make
-      // a previously-orphaned trade real again, and it must come back rather
-      // than stay marked as gone.
-      orphaned_at: null,
+      allocations: trade.fillAllocations.map((a) => ({
+        raw_fill_id: a.rawFillId,
+        role: a.role,
+        allocated_size: a.allocatedSize,
+        allocated_commission: a.allocatedCommission,
+        sequence_no: a.sequenceNo,
+      })),
     };
+  });
 
-    const existingId = existingByOpeningFillId.get(trade.openingFillId);
-    let tradeId: string;
+  const { data: written, error: writeError } = await supabase.rpc("persist_reconstruction", {
+    p_user_id: params.userId,
+    p_account_id: params.accountId,
+    p_product_id: params.productId,
+    p_orphaned_opening_fill_ids: orphanedOpeningFillIds,
+    p_trades: payload as unknown as Json,
+  });
 
-    if (existingId) {
-      const { error } = await supabase.from("trades").update(row).eq("id", existingId);
-      if (error) {
-        throw new Error(`Failed to update trade ${existingId} (opening_fill_id ${trade.openingFillId}): ${error.message}`);
-      }
-      tradeId = existingId;
-      tradesUpdated += 1;
-    } else {
-      const { data: inserted, error } = await supabase
-        .from("trades")
-        .insert(row)
-        .select("id")
-        .single();
-      if (error || !inserted) {
-        throw new Error(`Failed to insert trade for opening_fill_id ${trade.openingFillId}: ${error?.message}`);
-      }
-      tradeId = inserted.id;
-      tradesCreated += 1;
-    }
-
-    if (trade.status === "CLOSED") tradesClosed += 1;
-    touchedTradeIds.push(tradeId);
-
-    // Los enlaces de todo el ámbito ya se vaciaron arriba; aquí sólo se
-    // escriben los nuevos.
-    if (trade.fillAllocations.length > 0) {
-      const { error: fillsError } = await supabase.from("trade_fills").insert(
-        trade.fillAllocations.map((a) => ({
-          user_id: params.userId,
-          trade_id: tradeId,
-          raw_fill_id: a.rawFillId,
-          role: a.role,
-          allocated_size: a.allocatedSize,
-          allocated_commission: a.allocatedCommission,
-          sequence_no: a.sequenceNo,
-        })),
-      );
-      if (fillsError) {
-        throw new Error(`Failed to insert trade_fills for trade ${tradeId}: ${fillsError.message}`);
-      }
-    }
+  if (writeError) {
+    throw new Error(`Failed to persist the reconstruction: ${writeError.message}`);
   }
+
+  const result = (written ?? {}) as {
+    created?: number;
+    updated?: number;
+    closed?: number;
+    touched?: string[];
+  };
+  const tradesCreated = result.created ?? 0;
+  const tradesUpdated = result.updated ?? 0;
+  const tradesClosed = result.closed ?? 0;
+  const touchedTradeIds = result.touched ?? [];
 
   await flagVerifiedFiguresThatMoved(params.userId, touchedTradeIds);
 

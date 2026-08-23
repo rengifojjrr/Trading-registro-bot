@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
  * se vuelve invisible en dos días, y entonces el rojo tampoco se ve.
  */
 export function SyncStatusBar({ status }: { status: SyncStatus }) {
-  const { severity, health, fillGaps, positionMatches, autoSyncEnabled } = status;
+  const { severity, health, fillGaps, unclassifiedFills, positionMatches, autoSyncEnabled, expiring } =
+    status;
 
   const Icono = severity === "ok" ? CheckCircle2 : severity === "watch" ? Clock : AlertTriangle;
 
@@ -29,10 +30,14 @@ export function SyncStatusBar({ status }: { status: SyncStatus }) {
     positionMatches === false
       ? "Los contratos que la aplicación cree abiertos no son los que dice Coinbase."
       : null,
+    unclassifiedFills > 0
+      ? `Coinbase envió ${unclassifiedFills} ajuste(s) -- reversiones o correcciones -- que el cálculo aparta porque su significado exacto no está confirmado. No se pueden recuperar volviendo a pedir: el dato está, lo que falta es saber cómo aplicarlo.`
+      : null,
     health.freshness === "STALE" || health.freshness === "NEVER" || health.freshness === "LATE"
       ? health.message
       : null,
-  ].filter((p): p is string => p !== null);
+    ...expiring.map((e) => e.message),
+  ].filter((p): p is string => p !== null && p !== undefined);
 
   return (
     <div

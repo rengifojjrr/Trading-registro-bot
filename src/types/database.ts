@@ -1764,7 +1764,26 @@ export interface Database {
       >;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      /**
+       * Escribe una reconstrucción completa en una sola transacción.
+       *
+       * El cálculo vive en `lib/reconstruction/engine.ts`, que es donde está
+       * probado; esto sólo baja la escritura, que es la parte que tiene que
+       * ser todo-o-nada. Ver la migración
+       * `20260819180000_reconstruccion_atomica.sql`.
+       */
+      persist_reconstruction: {
+        Args: {
+          p_user_id: string;
+          p_account_id: string;
+          p_product_id: string;
+          p_orphaned_opening_fill_ids: string[];
+          p_trades: Json;
+        };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
   };
 }

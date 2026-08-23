@@ -7,6 +7,7 @@ const todoBien = (over: Partial<GateEvidence> = {}): GateEvidence => ({
   manualMatches: 0,
   positionCheck: { matched: true },
   fillGaps: 0,
+  unclassifiedFills: 0,
   hasSyncedSuccessfully: true,
   ...over,
 });
@@ -59,9 +60,18 @@ describe("puerta de la sincronización automática", () => {
     expect(gate.checks.at(-1)?.detail).toContain("7 operación(es)");
   });
 
-  it("devuelve las cuatro pruebas siempre, para poder enseñarlas como lista", () => {
+  it("no se abre si Coinbase mandó ajustes que el cálculo no sabe aplicar", () => {
+    // Una reversión sin aplicar mueve la posición tanto como un fill que
+    // falta. Aplicarla a ojo la movería en la dirección contraria, así que se
+    // aparta -- y mientras esté apartada, las cifras no son de fiar.
+    const gate = evaluateValidationGate(todoBien({ unclassifiedFills: 2 }));
+    expect(gate.canEnable).toBe(false);
+    expect(gate.blockedReason).toContain("ajuste");
+  });
+
+  it("devuelve las cinco pruebas siempre, para poder enseñarlas como lista", () => {
     const gate = evaluateValidationGate(todoBien({ fillGaps: 3, positionCheck: null }));
-    expect(gate.checks).toHaveLength(4);
+    expect(gate.checks).toHaveLength(5);
     expect(gate.checks.filter((c) => !c.passed)).toHaveLength(2);
   });
 
