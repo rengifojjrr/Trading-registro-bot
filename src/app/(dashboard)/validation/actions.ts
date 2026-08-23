@@ -6,6 +6,7 @@ import { z } from "zod";
 import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
 import { snapshotFigures } from "@/lib/validation/figures";
+import { readGateEvidence } from "@/lib/validation/evidence";
 import { evaluateValidationGate } from "@/lib/validation/gate";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database";
@@ -106,22 +107,7 @@ export async function setAutoSyncEnabled(enabled: boolean): Promise<{ error: str
   const supabase = await createClient();
 
   if (enabled) {
-    const [{ data: verifications }, { count: closedCount }] = await Promise.all([
-      supabase.from("trade_verifications").select("matches").eq("user_id", user.id),
-      supabase
-        .from("trades")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("status", "CLOSED")
-        .is("orphaned_at", null),
-    ]);
-
-    const rows = verifications ?? [];
-    const gate = evaluateValidationGate({
-      matching: rows.filter((v) => v.matches).length,
-      mismatching: rows.filter((v) => !v.matches).length,
-      available: closedCount ?? 0,
-    });
+    const gate = evaluateValidationGate(await readGateEvidence(user.id));
 
     if (!gate.canEnable) {
       return { error: gate.blockedReason ?? "Todavía no se puede activar." };

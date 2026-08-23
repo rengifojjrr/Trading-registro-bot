@@ -1,56 +1,98 @@
 /**
- * The rule that decides whether automatic syncing may be turned on.
+ * La regla que decide si se puede encender la sincronización automática.
  *
- * Kept as a pure function so the exact criterion is testable and stated in
- * one place: docs/VALIDATION_CHECKLIST.md requires 20-50 trades checked
- * by hand against Coinbase with *zero* material differences. A single
- * recorded mismatch blocks the gate -- the point of the check is to catch
- * a systematic reconstruction error, and "20 verified, 1 wrong" is
- * evidence of exactly that, not a rounding quibble.
+ * Antes pedía **veinte operaciones revisadas a mano** contra Coinbase, sin
+ * ninguna diferencia. La intención era buena -- no confiar en cifras
+ * automáticas hasta comprobarlas -- pero en la práctica hizo lo contrario de
+ * lo que buscaba: nadie tecleó veinte revisiones, la puerta nunca se abrió, la
+ * sincronización automática nunca se encendió, la conciliación diaria nunca
+ * corrió, y la aplicación pasó ocho días enseñando una posición fantasma de
+ * 151 contratos que no existía. La comprobación pensada para evitar cifras
+ * falsas fue la razón de que nadie las detectara.
+ *
+ * Ahora la puerta se abre con **pruebas que la propia aplicación produce**, y
+ * son más fuertes que el recuento manual:
+ *
+ * - la posición reconstruida coincide con la que Coinbase reporta,
+ * - ninguna orden tiene fills sin registrar,
+ * - y ninguna revisión manual quedó marcada como distinta.
+ *
+ * Veinte comparaciones puntuales de hace un mes no dicen nada de lo que pasó
+ * anoche. Estas tres se rehacen en cada sincronización, así que la puerta no
+ * sólo se abre: se vuelve a cerrar sola si algo deja de cuadrar. Las
+ * revisiones a mano siguen contando -- una diferencia apuntada bloquea -- pero
+ * ya no hay una cuota que cumplir antes de que la aplicación pueda cuidarse.
  */
 
-export const REQUIRED_VERIFICATIONS = 20;
-
-export interface VerificationTally {
-  /** Trades checked and confirmed to match Coinbase. */
-  matching: number;
-  /** Trades checked and found NOT to match. Any of these blocks the gate. */
-  mismatching: number;
-  /** Closed trades that exist and could still be checked. */
-  available: number;
+export interface GateEvidence {
+  /** Revisiones a mano marcadas como distintas a Coinbase. Cualquiera bloquea. */
+  manualMismatches: number;
+  /** Revisiones a mano confirmadas. Informativas: ya no hay cuota. */
+  manualMatches: number;
+  /**
+   * Cómo fue la última comparación de posición contra Coinbase.
+   * `null` cuando nunca se ha podido preguntar (sin credenciales, o el venue
+   * no expone posiciones).
+   */
+  positionCheck: { matched: boolean } | null;
+  /** Órdenes cuyos fills guardados no cuadran con lo que Coinbase dice. */
+  fillGaps: number;
+  /** Si ha habido al menos una sincronización que terminara bien. */
+  hasSyncedSuccessfully: boolean;
 }
 
 export interface GateResult {
   canEnable: boolean;
-  /** Why not, in the user's language. Null when the gate is open. */
+  /** Por qué no, en el idioma del usuario. Null cuando la puerta está abierta. */
   blockedReason: string | null;
-  /** 0-100, for a progress indicator. Capped at 100. */
-  progressPct: number;
-  remaining: number;
+  /** Las pruebas, una a una, para poder enseñarlas como lista de comprobación. */
+  checks: { label: string; passed: boolean; detail: string }[];
 }
 
-export function evaluateValidationGate(tally: VerificationTally): GateResult {
-  const remaining = Math.max(0, REQUIRED_VERIFICATIONS - tally.matching);
-  const progressPct = Math.min(100, (tally.matching / REQUIRED_VERIFICATIONS) * 100);
+export function evaluateValidationGate(evidence: GateEvidence): GateResult {
+  const checks: GateResult["checks"] = [
+    {
+      label: "Ha sincronizado con Coinbase al menos una vez",
+      passed: evidence.hasSyncedSuccessfully,
+      detail: evidence.hasSyncedSuccessfully
+        ? "Hay al menos una sincronización terminada correctamente."
+        : "Todavía no ha habido ninguna sincronización que terminara bien.",
+    },
+    {
+      label: "No falta ninguna ejecución por registrar",
+      passed: evidence.fillGaps === 0,
+      detail:
+        evidence.fillGaps === 0
+          ? "Cada orden de Coinbase cuadra con los fills guardados."
+          : `${evidence.fillGaps} orden(es) se ejecutaron por más de lo que tenemos guardado. Mientras falte un fill, la posición reconstruida no puede cuadrar.`,
+    },
+    {
+      label: "La posición coincide con la que reporta Coinbase",
+      passed: evidence.positionCheck?.matched === true,
+      detail:
+        evidence.positionCheck === null
+          ? "Todavía no se ha podido comparar la posición con Coinbase."
+          : evidence.positionCheck.matched
+            ? "Los contratos abiertos que calcula la aplicación son los que dice Coinbase."
+            : "Lo que la aplicación cree abierto no es lo que dice Coinbase.",
+    },
+    {
+      label: "Ninguna revisión a mano quedó marcada como distinta",
+      passed: evidence.manualMismatches === 0,
+      detail:
+        evidence.manualMismatches === 0
+          ? evidence.manualMatches > 0
+            ? `${evidence.manualMatches} operación(es) revisadas a mano, todas coinciden.`
+            : "No hay ninguna diferencia apuntada."
+          : `Hay ${evidence.manualMismatches} operación(es) marcadas como diferentes a Coinbase.`,
+    },
+  ];
 
-  if (tally.mismatching > 0) {
-    return {
-      canEnable: false,
-      blockedReason: `Hay ${tally.mismatching} operación(es) marcadas como diferentes a Coinbase. Resuélvelas antes de activar la sincronización automática -- una diferencia sistemática es justo lo que esta revisión existe para detectar.`,
-      progressPct,
-      remaining,
-    };
-  }
+  const fallida = checks.find((c) => !c.passed);
 
-  if (tally.matching < REQUIRED_VERIFICATIONS) {
-    // Being honest about an account that simply doesn't have enough
-    // history yet, rather than implying the user is being slow.
-    const reason =
-      tally.available < REQUIRED_VERIFICATIONS
-        ? `Necesitas revisar ${REQUIRED_VERIFICATIONS} operaciones cerradas y por ahora solo tienes ${tally.available}. Sigue operando (o importa tu histórico) y vuelve aquí.`
-        : `Llevas ${tally.matching} de ${REQUIRED_VERIFICATIONS} operaciones revisadas.`;
-    return { canEnable: false, blockedReason: reason, progressPct, remaining };
-  }
-
-  return { canEnable: true, blockedReason: null, progressPct: 100, remaining: 0 };
+  return {
+    canEnable: fallida === undefined,
+    blockedReason: fallida ? fallida.detail : null,
+    checks,
+  };
 }

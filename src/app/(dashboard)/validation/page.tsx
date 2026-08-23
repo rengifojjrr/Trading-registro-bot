@@ -1,4 +1,4 @@
-import { ShieldCheck } from "lucide-react";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
-import { evaluateValidationGate, REQUIRED_VERIFICATIONS } from "@/lib/validation/gate";
+import { readGateEvidence } from "@/lib/validation/evidence";
+import { evaluateValidationGate } from "@/lib/validation/gate";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,15 +18,16 @@ import { cn } from "@/lib/utils";
  * Everything else in this app is built on the assumption that the
  * reconstruction engine turns Coinbase's fills into the right trades.
  * Automated tests prove the code does what the code says; this proves what
- * the code says matches the real account. Until it passes, the cron job
- * deliberately skips this account (see api/cron/sync).
+ * the code says matches the real account. Ya no bloquea nada: la puerta de la
+ * sincronización automática se decide con las comprobaciones que la propia
+ * aplicación rehace en cada pasada (ver lib/validation/gate.ts). Revisar a
+ * mano sigue detectando errores de criterio que ninguna máquina ve.
  */
 export default async function ValidationPage() {
   const user = await requireUser();
   const supabase = await createClient();
 
-  const [{ data: settings }, { data: trades }, { data: verifications }, { count: closedCount }] =
-    await Promise.all([
+  const [{ data: settings }, { data: trades }, { data: verifications }] = await Promise.all([
       supabase
         .from("app_settings")
         .select("timezone, auto_sync_enabled")
@@ -43,23 +45,13 @@ export default async function ValidationPage() {
         .order("opened_at", { ascending: false })
         .limit(50),
       supabase.from("trade_verifications").select("trade_id, matches, note").eq("user_id", user.id),
-      supabase
-        .from("trades")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("status", "CLOSED")
-        .is("orphaned_at", null),
     ]);
 
   const timezone = settings?.timezone || "UTC";
   const verificationByTradeId = new Map((verifications ?? []).map((v) => [v.trade_id, v]));
   const rows = verifications ?? [];
 
-  const gate = evaluateValidationGate({
-    matching: rows.filter((v) => v.matches).length,
-    mismatching: rows.filter((v) => !v.matches).length,
-    available: closedCount ?? 0,
-  });
+  const gate = evaluateValidationGate(await readGateEvidence(user.id));
 
   const verifiableTrades: VerifiableTrade[] = (trades ?? []).map((t) => {
     const v = verificationByTradeId.get(t.id);
@@ -95,43 +87,62 @@ export default async function ValidationPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-1.5 text-foreground">
-            Progreso de la revisión
-            <InfoHint label="Progreso de la revisión">
-              Se piden {REQUIRED_VERIFICATIONS} operaciones revisadas sin ninguna diferencia. No es burocracia:
-              es la única forma de detectar un error sistemático en el cálculo, que los tests automáticos no
-              pueden ver porque comprueban que el código haga lo que el código dice.
+            ¿Se puede confiar en las cifras?
+            <InfoHint label="Cómo se decide">
+              Antes esto pedía veinte operaciones revisadas a mano. La intención era buena y el efecto fue
+              el contrario: nadie tecleó veinte revisiones, la puerta nunca se abrió, la conciliación diaria
+              nunca corrió, y la app pasó ocho días enseñando una posición que no existía. Ahora la decisión
+              sale de pruebas que la propia app rehace en cada sincronización, así que la puerta también se
+              vuelve a cerrar sola si algo deja de cuadrar.
             </InfoHint>
           </CardTitle>
           <CardDescription>
             {settings?.auto_sync_enabled
-              ? "La sincronización automática ya está activa."
-              : "La sincronización automática está desactivada hasta completar esto."}
+              ? "La sincronización automática está activa."
+              : gate.canEnable
+                ? "Todo cuadra. Puedes activar la sincronización automática desde Configuración → General."
+                : "La sincronización automática está desactivada hasta que todo esto cuadre."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-bold tabular-nums">
-              {matching}/{REQUIRED_VERIFICATIONS}
-            </span>
-            {mismatching > 0 ? <Badge variant="negative">{mismatching} con diferencias</Badge> : null}
-            {gate.canEnable ? <Badge variant="positive">Listo para activar</Badge> : null}
-          </div>
+        <CardContent className="flex flex-col gap-2">
+          {gate.checks.map((check) => (
+            <div key={check.label} className="flex items-start gap-2">
+              {check.passed ? (
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-positive" aria-hidden />
+              ) : (
+                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-negative" aria-hidden />
+              )}
+              <div className="flex flex-col">
+                <span
+                  className={cn(
+                    "text-sm font-medium",
+                    check.passed ? "text-foreground" : "text-negative",
+                  )}
+                >
+                  {check.label}
+                </span>
+                <span className="text-xs text-muted-foreground">{check.detail}</span>
+              </div>
+            </div>
+          ))}
 
-          <div className="h-2 overflow-hidden rounded-full bg-secondary">
-            <div
-              className={cn("h-full transition-all", mismatching > 0 ? "bg-negative" : "bg-positive")}
-              style={{ width: `${gate.progressPct.toFixed(1)}%` }}
-            />
-          </div>
-
-          {gate.blockedReason ? (
-            <p className="text-sm text-muted-foreground">{gate.blockedReason}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Puedes activar la sincronización automática desde Configuración → General.
-            </p>
-          )}
+          {mismatching > 0 ? (
+            <Badge variant="negative" className="self-start">
+              {mismatching} revisión(es) con diferencias
+            </Badge>
+          ) : null}
         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Revisar a mano</CardTitle>
+          <CardDescription>
+            Ya no hace falta para activar nada, y sigue mereciendo la pena: comparar una operación contra
+            Coinbase con tus propios ojos detecta errores de criterio que ninguna comprobación automática
+            sabe ver. Llevas {matching} revisada(s).
+          </CardDescription>
+        </CardHeader>
       </Card>
 
       {verifiableTrades.length === 0 ? (

@@ -1,60 +1,76 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateValidationGate, REQUIRED_VERIFICATIONS } from "./gate";
+import { evaluateValidationGate, type GateEvidence } from "./gate";
 
-describe("evaluateValidationGate", () => {
-  it("opens once enough trades match with no mismatches", () => {
-    const result = evaluateValidationGate({
-      matching: REQUIRED_VERIFICATIONS,
-      mismatching: 0,
-      available: 50,
-    });
+const todoBien = (over: Partial<GateEvidence> = {}): GateEvidence => ({
+  manualMismatches: 0,
+  manualMatches: 0,
+  positionCheck: { matched: true },
+  fillGaps: 0,
+  hasSyncedSuccessfully: true,
+  ...over,
+});
 
-    expect(result.canEnable).toBe(true);
-    expect(result.blockedReason).toBeNull();
-    expect(result.progressPct).toBe(100);
-    expect(result.remaining).toBe(0);
+describe("puerta de la sincronización automática", () => {
+  it("se abre con las pruebas que la propia aplicación produce", () => {
+    // Y sin pedir ninguna revisión a mano: la cuota de veinte fue justo lo que
+    // mantuvo la puerta cerrada mientras el panel enseñaba una posición
+    // fantasma.
+    const gate = evaluateValidationGate(todoBien());
+    expect(gate.canEnable).toBe(true);
+    expect(gate.blockedReason).toBeNull();
+    expect(gate.checks.every((c) => c.passed)).toBe(true);
   });
 
-  it("stays closed while fewer than the required trades have been checked", () => {
-    const result = evaluateValidationGate({ matching: 5, mismatching: 0, available: 50 });
-    expect(result.canEnable).toBe(false);
-    expect(result.remaining).toBe(REQUIRED_VERIFICATIONS - 5);
-    expect(result.blockedReason).toContain("5");
+  it("no se abre si falta alguna ejecución por registrar", () => {
+    // Es el fallo que lo empezó todo: un fill perdido descuadra la posición y
+    // funde varias operaciones en una sola.
+    const gate = evaluateValidationGate(todoBien({ fillGaps: 1 }));
+    expect(gate.canEnable).toBe(false);
+    expect(gate.blockedReason).toContain("guardado");
   });
 
-  it("a single recorded mismatch blocks the gate even with the quota met", () => {
-    // The whole point of the check is catching a systematic error, so
-    // "20 right, 1 wrong" must not pass.
-    const result = evaluateValidationGate({
-      matching: REQUIRED_VERIFICATIONS,
-      mismatching: 1,
-      available: 50,
-    });
-
-    expect(result.canEnable).toBe(false);
-    expect(result.blockedReason).toContain("diferentes");
+  it("no se abre si la posición no coincide con Coinbase", () => {
+    const gate = evaluateValidationGate(todoBien({ positionCheck: { matched: false } }));
+    expect(gate.canEnable).toBe(false);
+    expect(gate.blockedReason).toContain("Coinbase");
   });
 
-  it("a mismatch blocks even when there are far more matches than required", () => {
-    const result = evaluateValidationGate({ matching: 200, mismatching: 1, available: 300 });
-    expect(result.canEnable).toBe(false);
+  it("no se abre si nunca se ha podido comparar la posición", () => {
+    // No saber no es lo mismo que cuadrar.
+    expect(evaluateValidationGate(todoBien({ positionCheck: null })).canEnable).toBe(false);
   });
 
-  it("explains that the account lacks history, rather than implying the user is behind", () => {
-    const result = evaluateValidationGate({ matching: 3, mismatching: 0, available: 3 });
-    expect(result.canEnable).toBe(false);
-    expect(result.blockedReason).toContain("solo tienes 3");
+  it("una sola revisión a mano marcada como distinta bloquea", () => {
+    // Aunque todo lo automático cuadre: si una persona miró y no le salió,
+    // eso pesa más que cualquier comprobación de la máquina.
+    const gate = evaluateValidationGate(todoBien({ manualMatches: 50, manualMismatches: 1 }));
+    expect(gate.canEnable).toBe(false);
+    expect(gate.blockedReason).toContain("diferentes");
   });
 
-  it("never reports more than 100% progress", () => {
-    const result = evaluateValidationGate({ matching: 999, mismatching: 0, available: 999 });
-    expect(result.progressPct).toBe(100);
+  it("no se abre antes de la primera sincronización", () => {
+    expect(evaluateValidationGate(todoBien({ hasSyncedSuccessfully: false })).canEnable).toBe(false);
   });
 
-  it("is closed for a brand-new account with nothing to check", () => {
-    const result = evaluateValidationGate({ matching: 0, mismatching: 0, available: 0 });
-    expect(result.canEnable).toBe(false);
-    expect(result.progressPct).toBe(0);
+  it("cuenta las revisiones a mano cuando las hay, sin exigirlas", () => {
+    const gate = evaluateValidationGate(todoBien({ manualMatches: 7 }));
+    expect(gate.canEnable).toBe(true);
+    expect(gate.checks.at(-1)?.detail).toContain("7 operación(es)");
+  });
+
+  it("devuelve las cuatro pruebas siempre, para poder enseñarlas como lista", () => {
+    const gate = evaluateValidationGate(todoBien({ fillGaps: 3, positionCheck: null }));
+    expect(gate.checks).toHaveLength(4);
+    expect(gate.checks.filter((c) => !c.passed)).toHaveLength(2);
+  });
+
+  it("el motivo que se enseña es el de la primera prueba que falla", () => {
+    // Enseñar las cuatro a la vez convierte «arregla esto» en «arregla estas
+    // cuatro cosas», y la primera suele ser la causa de las demás.
+    const gate = evaluateValidationGate(
+      todoBien({ hasSyncedSuccessfully: false, fillGaps: 2 }),
+    );
+    expect(gate.blockedReason).toContain("sincronización");
   });
 });

@@ -11,11 +11,11 @@ import { MistakeTagger } from "@/components/trades/mistake-tagger";
 import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
 import { TradeSummary } from "@/components/trades/trade-summary";
-import { SyncFreshnessBanner } from "@/components/dashboard/sync-freshness-banner";
+import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
 import { DeleteTrade } from "@/components/trades/delete-trade";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { MAX_FILLS_RENDERED } from "@/lib/fills";
-import { readSyncHealth } from "@/lib/sync/read-health";
+import { readSyncStatus } from "@/lib/sync/read-status";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
@@ -226,7 +226,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       {/* Only for an open position: a closed trade's figures are final, so
           being a day behind changes nothing about them. An "open" position
           that was actually closed is a claim about right now. */}
-      {trade.status === "OPEN" ? <SyncFreshnessBanner health={await readSyncHealth()} /> : null}
+      {trade.status === "OPEN" ? <SyncStatusBar status={await readSyncStatus(user.id)} /> : null}
 
       <TradeSummary trade={trade} accountName={account?.name ?? "--"} timezone={timezone} />
 

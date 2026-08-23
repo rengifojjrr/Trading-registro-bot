@@ -13,6 +13,7 @@ import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
 import { createClient } from "@/lib/supabase/server";
+import { readGateEvidence } from "@/lib/validation/evidence";
 import { evaluateValidationGate } from "@/lib/validation/gate";
 
 import { SettingsForm } from "./settings-form";
@@ -22,8 +23,7 @@ export default async function SettingsPage() {
   const supabase = await createClient();
   const store = await cookies();
 
-  const [{ data: settings }, { data: fieldMappingRows }, { data: verifications }, { count: closedCount }] =
-    await Promise.all([
+  const [{ data: settings }, { data: fieldMappingRows }] = await Promise.all([
       supabase
         .from("app_settings")
         .select(
@@ -32,13 +32,6 @@ export default async function SettingsPage() {
         .eq("user_id", user.id)
         .single(),
       supabase.from("notion_field_mappings").select("internal_field, enabled").eq("user_id", user.id),
-      supabase.from("trade_verifications").select("matches").eq("user_id", user.id),
-      supabase
-        .from("trades")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("status", "CLOSED")
-        .is("orphaned_at", null),
     ]);
 
   const disabledFields = new Set((fieldMappingRows ?? []).filter((r) => !r.enabled).map((r) => r.internal_field));
@@ -49,12 +42,7 @@ export default async function SettingsPage() {
     enabled: !disabledFields.has(m.internalField),
   }));
 
-  const verificationRows = verifications ?? [];
-  const gate = evaluateValidationGate({
-    matching: verificationRows.filter((v) => v.matches).length,
-    mismatching: verificationRows.filter((v) => !v.matches).length,
-    available: closedCount ?? 0,
-  });
+  const gate = evaluateValidationGate(await readGateEvidence(user.id));
 
   return (
     <>

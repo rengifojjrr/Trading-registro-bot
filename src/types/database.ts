@@ -1685,6 +1685,13 @@ export interface Database {
           unrealized_pnl: string | null;
           raw_payload: Json;
           snapshotted_at: string;
+          sync_run_id: string | null;
+          // Las dos mitades de la comparación, en las mismas unidades y con
+          // signo: negativo es corto. `number_of_contracts` viene de Coinbase
+          // sin signo y con la dirección aparte, que no se puede restar.
+          reconstructed_size: string | null;
+          venue_size: string | null;
+          matches: boolean | null;
         },
         {
           id?: string;
@@ -1695,8 +1702,14 @@ export interface Database {
           number_of_contracts?: string | number | null;
           avg_entry_price?: string | number | null;
           unrealized_pnl?: string | number | null;
-          raw_payload: Json;
+          // Opcional desde que la instantánea se guarda también cuando sólo
+          // se compara el tamaño: exigirlo obligaría a inventar un payload.
+          raw_payload?: Json;
           snapshotted_at?: string;
+          sync_run_id?: string | null;
+          reconstructed_size?: string | number | null;
+          venue_size?: string | number | null;
+          matches?: boolean | null;
         }
       >;
 

@@ -11,7 +11,8 @@ import { raiseNotification } from "@/lib/notifications/create";
 import { publishDailyMetricsFor } from "@/core/metrics";
 import { todayIn } from "@/core/today";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
-import { describeGap, findFillGaps, storedHighWaterMark, type FillGap } from "./gaps";
+import { describeGap, storedHighWaterMark, type FillGap } from "./gaps";
+import { findGapsForProduct } from "./gap-reader";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPositions } from "./verify-positions";
 import type { Json } from "@/types/database";
@@ -475,7 +476,7 @@ async function repairFillGaps(params: {
 }): Promise<{ recovered: number; remaining: FillGap[] }> {
   const { adapter, userId, accountId, productId, runId } = params;
 
-  const gaps = await findGapsForAccount(userId, accountId, productId);
+  const gaps = await findGapsForProduct(userId, accountId, productId);
   if (gaps.length === 0) return { recovered: 0, remaining: [] };
 
   let recovered = 0;
@@ -495,7 +496,7 @@ async function repairFillGaps(params: {
   // Se vuelve a cuadrar contra la base de datos en vez de suponer que lo
   // recuperado tapa el hueco: puede que Coinbase no devuelva el fill, y en ese
   // caso hay que decirlo, no dar el problema por resuelto.
-  const remaining = await findGapsForAccount(userId, accountId, productId);
+  const remaining = await findGapsForProduct(userId, accountId, productId);
 
   if (remaining.length > 0) {
     await raiseNotification({
@@ -526,56 +527,6 @@ async function repairFillGaps(params: {
 
   return { recovered, remaining };
 }
-
-/** Lee el cuadre por orden y aplica la regla, que vive en `gaps.ts`. */
-async function findGapsForAccount(
-  userId: string,
-  accountId: string,
-  productId: string,
-): Promise<FillGap[]> {
-  const supabase = createAdminClient();
-
-  // `order_fill_tallies` es una vista y los tipos generados sólo cubren
-  // tablas, así que el cliente tipado no la conoce. El tipo se pierde aquí,
-  // en una línea y con el motivo escrito, en vez de repartir `as never` por
-  // el archivo; la forma la garantiza la propia migración, que es quien
-  // define las cinco columnas que se piden abajo.
-  const { data, error } = await (supabase.from as unknown as UntypedFrom)("order_fill_tallies")
-    .select("order_id, expected_size, expected_fills, stored_size, stored_count")
-    .eq("user_id", userId)
-    .eq("account_id", accountId)
-    .eq("product_id", productId);
-
-  if (error || !data) return [];
-
-  return findFillGaps(
-    data.map((row) => ({
-      orderId: row.order_id,
-      filledSize: row.expected_size,
-      numberOfFills: row.expected_fills === null ? null : Number(row.expected_fills),
-    })),
-    data.map((row) => ({
-      orderId: row.order_id,
-      storedSize: row.stored_size,
-      storedCount: row.stored_count,
-    })),
-  );
-}
-
-interface TallyRow {
-  order_id: string;
-  expected_size: string | null;
-  expected_fills: string | null;
-  stored_size: string;
-  stored_count: number;
-}
-
-/** Lo justo de la cadena de `.eq()` que hace falta para leer la vista. */
-interface TallyQuery extends PromiseLike<{ data: TallyRow[] | null; error: unknown }> {
-  eq: (column: string, value: string) => TallyQuery;
-}
-
-type UntypedFrom = (table: string) => { select: (columns: string) => TallyQuery };
 
 async function upsertRawOrders(
   adapter: MarketDataPort,

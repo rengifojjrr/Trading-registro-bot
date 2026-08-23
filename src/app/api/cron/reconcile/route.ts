@@ -22,10 +22,22 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
+
+  // Sin filtrar por `auto_sync_enabled`.
+  //
+  // Antes se saltaba a todo el mundo que no tuviera la sincronización
+  // automática encendida, que es justamente quien más necesita esto: quien no
+  // sincroniza solo es quien acumula huecos. El resultado fue que en ocho días
+  // no corrió ni una vez -- cero filas en `reconciliation_runs` -- mientras la
+  // aplicación enseñaba una posición fantasma.
+  //
+  // Y el interruptor no protege de nada aquí. Conciliar es leer de Coinbase y
+  // comparar; lo único que escribe son los fills que faltaban, que es la
+  // reparación, no un riesgo. La puerta de validación existe para no *confiar*
+  // en cifras automáticas, no para dejar de comprobarlas.
   const { data: eligibleSettings } = await supabase
     .from("app_settings")
-    .select("user_id, timezone")
-    .eq("auto_sync_enabled", true);
+    .select("user_id, timezone");
 
   if (!eligibleSettings || eligibleSettings.length === 0) {
     return NextResponse.json({ ranFor: 0, results: [] });

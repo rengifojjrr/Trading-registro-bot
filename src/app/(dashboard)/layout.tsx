@@ -1,6 +1,7 @@
 import { DemoDataBanner } from "@/components/layout/demo-data-banner";
 import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
 import { Sidebar } from "@/components/layout/sidebar";
+import { SyncOnVisit } from "@/components/layout/sync-on-visit";
 import { Topbar } from "@/components/layout/topbar";
 import { requireUser } from "@/lib/auth/require-user";
 
@@ -33,6 +34,9 @@ export default async function DashboardLayout({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* Abrir la aplicación es la señal más fiable de que quieres ver
+            datos ciertos, así que es cuando se piden. */}
+        <SyncOnVisit />
         <Topbar userEmail={user.email ?? ""} />
         <DemoDataBanner />
         <main className="flex-1 px-4 py-6 md:px-8 md:py-8">

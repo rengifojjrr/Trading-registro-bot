@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   comparePositions,
   describeMismatch,
+  signedVenueSize,
   type PositionMismatch,
   type ReconstructedPosition,
 } from "./position-check";
@@ -95,9 +96,19 @@ export async function verifyPositions(params: {
 
   const ours = await reconstructedPositions(userId, accountId);
   const mismatches = comparePositions(ours, venue);
-  if (mismatches.length === 0) return { checked: true, mismatches: [] };
 
   const supabase = createAdminClient();
+
+  // La instantánea se guarda **siempre**, cuadre o no.
+  //
+  // Antes sólo se dejaba rastro de los descuadres, y eso hace indistinguibles
+  // dos situaciones que no se parecen en nada: «se comprobó y coincidía» y «no
+  // se llegó a comprobar». La segunda es justamente la que esconde el fallo, y
+  // sin fila no hay forma de saber en cuál de las dos estabas. También es lo
+  // que permite responder «¿desde cuándo?» en vez de sólo «¿ahora mismo?».
+  await snapshotPositions({ userId, accountId, runId, ours, venue, mismatches });
+
+  if (mismatches.length === 0) return { checked: true, mismatches: [] };
 
   await supabase.from("reconciliation_discrepancies").insert(
     mismatches.map((mismatch) => ({
@@ -128,4 +139,50 @@ export async function verifyPositions(params: {
   });
 
   return { checked: true, mismatches };
+}
+
+/**
+ * Deja constancia de las dos mitades de la comparación, producto a producto.
+ *
+ * Se recorren los dos lados y no sólo el nuestro: un producto que Coinbase
+ * reporta y del que aquí no hay ninguna operación abierta es exactamente el
+ * caso que hay que registrar -- posición que existe y la aplicación no ve.
+ */
+async function snapshotPositions(params: {
+  userId: string;
+  accountId: string;
+  runId: string;
+  ours: ReconstructedPosition[];
+  venue: CoinbaseFuturesPosition[];
+  mismatches: PositionMismatch[];
+}): Promise<void> {
+  const { userId, accountId, runId, ours, venue, mismatches } = params;
+  const supabase = createAdminClient();
+
+  const nuestroPorProducto = new Map(ours.map((p) => [p.productId, p.size]));
+  const suyoPorProducto = new Map(
+    venue.map((p) => [p.product_id, signedVenueSize(p)?.toString() ?? null]),
+  );
+  const descuadrados = new Set(mismatches.map((m) => m.productId));
+
+  const productos = new Set([...nuestroPorProducto.keys(), ...suyoPorProducto.keys()]);
+  if (productos.size === 0) return;
+
+  const { error } = await supabase.from("position_snapshots").insert(
+    [...productos].map((productId) => ({
+      user_id: userId,
+      account_id: accountId,
+      sync_run_id: runId,
+      product_id: productId,
+      reconstructed_size: nuestroPorProducto.get(productId) ?? "0",
+      venue_size: suyoPorProducto.get(productId) ?? null,
+      matches: !descuadrados.has(productId),
+    })),
+  );
+
+  if (error) {
+    // Que no se pueda dejar constancia no puede tumbar una sincronización que
+    // ya trajo los fills y reconstruyó bien.
+    console.error("[sync] no se pudo guardar la instantánea de posición", error);
+  }
 }
