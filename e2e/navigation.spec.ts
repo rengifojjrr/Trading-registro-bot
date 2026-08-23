@@ -12,13 +12,27 @@ const PAGES = [
   { path: "/trades", heading: /operaciones/i },
   { path: "/journal", heading: /diario/i },
   { path: "/analytics", heading: /análisis/i },
+  { path: "/behaviour", heading: /comportamiento/i },
+  { path: "/review", heading: /revisión/i },
   { path: "/risk", heading: /riesgo/i },
   { path: "/strategies", heading: /estrategias/i },
   { path: "/reports", heading: /reportes/i },
   { path: "/validation", heading: /validación/i },
+  { path: "/reconciliation", heading: /conciliación/i },
   { path: "/import", heading: /importar/i },
   { path: "/activity", heading: /actividad/i },
+  { path: "/papelera", heading: /papelera/i },
   { path: "/settings", heading: /configuración/i },
+  // Los módulos de vida. Se quedaron fuera de esta lista durante meses, que
+  // es exactamente por qué merecen estar: la mitad de la aplicación no tenía
+  // ni siquiera la prueba de que sus páginas cargan.
+  { path: "/dia", heading: /día/i },
+  { path: "/sueno", heading: /sueño/i },
+  { path: "/habitos", heading: /hábitos/i },
+  { path: "/tareas", heading: /tareas/i },
+  { path: "/comidas", heading: /comidas/i },
+  { path: "/lecturas", heading: /lecturas/i },
+  { path: "/contenido", heading: /contenido/i },
 ];
 
 skipWithoutCredentials();

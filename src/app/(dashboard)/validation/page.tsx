@@ -3,6 +3,7 @@ import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { InfoHint } from "@/components/shared/info-hint";
+import { AsOfRebuild } from "@/components/validation/as-of-rebuild";
 import { VerificationList, type VerifiableTrade } from "@/components/validation/verification-list";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,6 +134,8 @@ export default async function ValidationPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <AsOfRebuild />
 
       <Card>
         <CardHeader>
