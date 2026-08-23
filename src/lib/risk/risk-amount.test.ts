@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPercentOfCapital, formatRMultiple, readRisk } from "./risk-amount";
+import { formatPercentOfCapital, formatRMultiple, readRisk, riskFromStop } from "./risk-amount";
 
 describe("readRisk", () => {
   it("pone el riesgo en escala del capital", () => {
@@ -101,5 +101,59 @@ describe("formato", () => {
     expect(formatRMultiple(-1)).toBe("−1R");
     expect(formatRMultiple(0)).toBe("0R");
     expect(formatRMultiple(null)).toBeNull();
+  });
+});
+
+describe("riesgo deducido del stop", () => {
+  it("saca de dónde pusiste el stop lo que no hacía falta teclear", () => {
+    // 43 contratos nano comprados a 63.604 con el stop en 63.100: la
+    // distancia por el tamaño por el multiplicador. Nada que estimar.
+    expect(
+      riskFromStop({
+        direction: "LONG",
+        entryWap: 63604,
+        stopLossPrice: 63100,
+        size: 43,
+        contractSize: 0.01,
+      }),
+    ).toBeCloseTo(216.72, 2);
+  });
+
+  it("en un corto el stop está por encima", () => {
+    expect(
+      riskFromStop({
+        direction: "SHORT",
+        entryWap: 67950,
+        stopLossPrice: 68500,
+        size: 150,
+        contractSize: 0.01,
+      }),
+    ).toBeCloseTo(825, 2);
+  });
+
+  it("un stop del lado equivocado no es riesgo", () => {
+    // Un stop por encima del precio en una compra es un objetivo mal
+    // apuntado; tratarlo como riesgo daría la cifra con el signo cambiado.
+    expect(
+      riskFromStop({ direction: "LONG", entryWap: 63604, stopLossPrice: 64000, size: 43, contractSize: 0.01 }),
+    ).toBeNull();
+  });
+
+  it("un stop justo en la entrada tampoco", () => {
+    expect(
+      riskFromStop({ direction: "LONG", entryWap: 63604, stopLossPrice: 63604, size: 43, contractSize: 0.01 }),
+    ).toBeNull();
+  });
+
+  it("sin stop apuntado no se inventa nada", () => {
+    expect(
+      riskFromStop({ direction: "LONG", entryWap: 63604, stopLossPrice: null, size: 43, contractSize: 0.01 }),
+    ).toBeNull();
+  });
+
+  it("sin tamaño de contrato no se calcula a ojo", () => {
+    expect(
+      riskFromStop({ direction: "LONG", entryWap: 63604, stopLossPrice: 63100, size: 43, contractSize: null }),
+    ).toBeNull();
   });
 });

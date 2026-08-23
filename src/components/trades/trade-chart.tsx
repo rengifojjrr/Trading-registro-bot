@@ -62,6 +62,14 @@ export interface TradeChartMarker {
   price: number;
 }
 
+/** Una ejecución suelta, para marcar los parciales uno a uno. */
+export interface TradeChartFill {
+  time: number; // unix seconds
+  price: number;
+  size: number;
+  role: "ENTRY" | "EXIT";
+}
+
 interface DrawingPoint {
   time: number; // unix seconds
   price: number;
@@ -205,6 +213,7 @@ export function TradeChart({
   initialDrawings,
   entry,
   exit,
+  fills,
   isOpen = false,
   stopLoss = null,
   takeProfit = null,
@@ -221,6 +230,15 @@ export function TradeChart({
   initialDrawings: TradeChartDrawing[];
   entry: TradeChartMarker;
   exit: TradeChartMarker | null;
+  /**
+   * Cada ejecución de la operación, para marcarlas todas.
+   *
+   * El gráfico enseñaba dos flechas -- la primera entrada y la última salida --
+   * y una operación escalada tiene quince. Ver dónde añadiste y dónde quitaste
+   * es media lectura de la operación: la media de entrada sola no dice si
+   * promediaste a la baja ni si cerraste a trozos.
+   */
+  fills?: TradeChartFill[];
   /** Only an open position has a meaningful "price right now" line to draw. */
   isOpen?: boolean;
   /** From journal_entries -- the trader's own planned level, not something Coinbase reports. Drawn as a dashed reference line when present. */
@@ -595,24 +613,57 @@ export function TradeChart({
     // rendered the LONG pair, so every short trade's chart pointed the wrong
     // way.
     const isLong = direction === "LONG";
-    const markers: SeriesMarker<Time>[] = [
-      {
+
+    // Cuando se conocen las ejecuciones una a una se marcan todas; si no, se
+    // cae a las dos de siempre. Una posición escalada tiene quince flechas y
+    // dos no cuentan la misma historia: dónde añadiste y dónde fuiste
+    // cerrando es media lectura de la operación.
+    //
+    // Se agrupan las del mismo segundo y precio porque Coinbase parte una
+    // orden en varios fills: seis flechas idénticas encima de la misma vela
+    // tapan la vela y no dicen nada que no diga una.
+    const markers: SeriesMarker<Time>[] = [];
+
+    if (fills && fills.length > 0) {
+      const agrupados = new Map<string, TradeChartFill>();
+      for (const fill of fills) {
+        const clave = `${fill.time}:${fill.price}:${fill.role}`;
+        const previo = agrupados.get(clave);
+        if (previo) previo.size += fill.size;
+        else agrupados.set(clave, { ...fill });
+      }
+
+      for (const fill of agrupados.values()) {
+        const esEntrada = fill.role === "ENTRY";
+        if (!esEntrada && replaying) continue;
+        markers.push({
+          time: fill.time as UTCTimestamp,
+          position: esEntrada === isLong ? "belowBar" : "aboveBar",
+          shape: esEntrada === isLong ? "arrowUp" : "arrowDown",
+          color: esEntrada ? THEME.entry : THEME.exit,
+          text: `${esEntrada ? "+" : "-"}${fill.size} · ${formatMoney(fill.price)}`,
+        });
+      }
+      markers.sort((a, b) => (a.time as number) - (b.time as number));
+    } else {
+      markers.push({
         time: entry.time as UTCTimestamp,
         position: isLong ? "belowBar" : "aboveBar",
         shape: isLong ? "arrowUp" : "arrowDown",
         color: THEME.entry,
         text: `Entrada ${formatMoney(entry.price)}`,
-      },
-    ];
-    if (exit && !replaying) {
-      markers.push({
-        time: exit.time as UTCTimestamp,
-        position: isLong ? "aboveBar" : "belowBar",
-        shape: isLong ? "arrowDown" : "arrowUp",
-        color: THEME.exit,
-        text: `Salida ${formatMoney(exit.price)}`,
       });
+      if (exit && !replaying) {
+        markers.push({
+          time: exit.time as UTCTimestamp,
+          position: isLong ? "aboveBar" : "belowBar",
+          shape: isLong ? "arrowDown" : "arrowUp",
+          color: THEME.exit,
+          text: `Salida ${formatMoney(exit.price)}`,
+        });
+      }
     }
+
     createSeriesMarkers(series, markers);
 
     // A solid line, not just the arrow marker -- extends across the whole
@@ -722,6 +773,11 @@ export function TradeChart({
     entry.price,
     exit?.time,
     exit?.price,
+    // Los fills llegan del servidor y no cambian mientras la página vive,
+    // salvo que una sincronización traiga uno nuevo -- que llega como props
+    // nuevas. Se depende de la longitud y no del array para no reconstruir el
+    // gráfico entero en cada render por una identidad de objeto distinta.
+    fills?.length,
     stopLoss,
     takeProfit,
     showVolume,

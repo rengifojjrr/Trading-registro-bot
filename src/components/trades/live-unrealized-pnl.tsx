@@ -5,7 +5,9 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { formatMoney, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
+import { summariseOpenTrade } from "@/lib/pnl/open-trade-total";
 import { calculateUnrealizedPnl } from "@/lib/pnl/unrealized";
+import { InfoHint } from "@/components/shared/info-hint";
 import { LiveStatus } from "@/components/shared/live-status";
 import { DriftCheck } from "@/components/trades/drift-check";
 import { cn } from "@/lib/utils";
@@ -24,6 +26,9 @@ export function LiveUnrealizedPnl({
   openQty,
   contractSize,
   entryCommissions,
+  realizedNetPnl,
+  totalEntryQty,
+  totalExitQty,
 }: {
   productId: string;
   direction: "LONG" | "SHORT";
@@ -31,6 +36,10 @@ export function LiveUnrealizedPnl({
   openQty: string;
   contractSize: string;
   entryCommissions: string;
+  /** `trades.net_pnl`: lo ya cobrado de los contratos que cerraste. */
+  realizedNetPnl: string | null;
+  totalEntryQty: string;
+  totalExitQty: string;
 }) {
   const { price, status, ageMs } = useCurrentPrice(productId);
 
@@ -46,6 +55,20 @@ export function LiveUnrealizedPnl({
       </Card>
     );
   }
+
+  const totales = summariseOpenTrade({
+    realizedNetPnl,
+    unrealizedGrossPnl: calculateUnrealizedPnl({
+      direction,
+      entryWap,
+      currentPrice: String(price),
+      openQty,
+      contractSize,
+      entryCommissions,
+    }).grossPnl,
+    totalEntryQty,
+    totalExitQty,
+  });
 
   const pnl = calculateUnrealizedPnl({
     direction,
@@ -84,13 +107,59 @@ export function LiveUnrealizedPnl({
           notional={String(Number(openQty) * Number(contractSize) * price)}
         />
 
+        {/* Lo cobrado y lo que depende del precio, por separado y con el
+            total al lado.
+
+            Antes sólo salía lo no realizado, así que una operación en la que
+            habías cerrado parte con ganancia enseñaba únicamente la pérdida
+            flotante de lo que quedaba: en la posición del 19 de agosto, -2.720
+            en grande y los +862 ya cobrados en ninguna parte. Sumarlas en una
+            sola cifra tampoco vale -- mezclaría dinero que ya tienes con
+            dinero que depende del precio de dentro de un minuto. */}
+        {totales.realized !== null ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                Ya cobrado
+                <InfoHint label="Ya cobrado">
+                  De los {totales.closedQty} contratos que cerraste. Está en tu cuenta y no cambia,
+                  pase lo que pase con el precio.
+                </InfoHint>
+              </p>
+              <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(totales.realized))}>
+                {formatSignedMoney(totales.realized)}
+              </p>
+            </div>
+            <div>
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                Flotante
+                <InfoHint label="Flotante">
+                  Lo que valdría cerrar ahora los {totales.openQty} contratos que siguen abiertos.
+                  Cambia cada segundo y no es dinero hasta que cierres.
+                </InfoHint>
+              </p>
+              <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(totales.unrealized))}>
+                {formatSignedMoney(totales.unrealized)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Cómo va en total</p>
+              <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(totales.total))}>
+                {formatSignedMoney(totales.total)}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Precio actual</p>
             <p className="text-lg font-semibold tabular-nums">{formatMoney(price)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">P&amp;L no realizado</p>
+            <p className="text-xs text-muted-foreground">
+              {totales.realized !== null ? "Flotante (sólo lo abierto)" : "P\u0026L no realizado"}
+            </p>
             <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(pnl.grossPnl))}>
               {formatSignedMoney(pnl.grossPnl)}
             </p>

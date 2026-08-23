@@ -68,6 +68,8 @@ export function JournalForm({
   accountSize,
   maxRiskPct,
   netPnl,
+  size,
+  contractSize,
 }: {
   tradeId: string;
   journalEntry: JournalEntryRow | null;
@@ -81,6 +83,12 @@ export function JournalForm({
   maxRiskPct: number | null;
   /** El resultado neto, si la operación ya cerró: da las erres. */
   netPnl: number | null;
+  /**
+   * Con el tamaño y el multiplicador, el stop guardado ya dice cuánto
+   * arriesgabas: no hace falta teclear el importe.
+   */
+  size: number | null;
+  contractSize: number | null;
 }) {
   const [state, formAction, pending] = useActionState(saveJournalEntry, initialState);
 
@@ -184,6 +192,17 @@ export function JournalForm({
                 accountSize={accountSize}
                 maxRiskPct={maxRiskPct}
                 netPnl={netPnl}
+                // Del stop ya guardado, no del que estás tecleando: el campo
+                // del stop vive en su propio componente con su propio estado,
+                // y levantarlo hasta aquí para que la cifra se mueva mientras
+                // escribes no vale lo que cuesta. En cuanto guardas, sale.
+                stopLossPrice={
+                  journalEntry?.stop_loss_price ? Number(journalEntry.stop_loss_price) : null
+                }
+                direction={direction}
+                entryWap={entryPrice ? Number(entryPrice) : null}
+                size={size}
+                contractSize={contractSize}
               />
             </Field>
 

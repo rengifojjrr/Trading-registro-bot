@@ -6,6 +6,7 @@ import {
   formatPercentOfCapital,
   formatRMultiple,
   readRisk,
+  riskFromStop,
 } from "@/lib/risk/risk-amount";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,11 @@ export function RiskReading({
   accountSize,
   maxRiskPct,
   netPnl,
+  stopLossPrice,
+  direction,
+  entryWap,
+  size,
+  contractSize,
 }: {
   /** El campo del formulario cuyo valor se lee. */
   name: string;
@@ -36,11 +42,28 @@ export function RiskReading({
   maxRiskPct: number | null;
   /** El resultado neto, si la operación ya cerró. */
   netPnl: number | null;
+  /**
+   * Lo que hace falta para deducir el riesgo del stop en vez de teclearlo.
+   * El stop llega desde el formulario porque cambia mientras escribes.
+   */
+  stopLossPrice: number | null;
+  direction: "LONG" | "SHORT";
+  entryWap: number | null;
+  size: number | null;
+  contractSize: number | null;
 }) {
   const [raw, setRaw] = useState(defaultValue ?? "");
 
+  // Si no lo tecleaste, se deduce de dónde pusiste el stop: la distancia a la
+  // entrada por los contratos por el tamaño de contrato. No hay nada que
+  // estimar, y era el motivo por el que este campo casi siempre estaba vacío
+  // y las erres no salían nunca.
+  const deducido = riskFromStop({ direction, entryWap, stopLossPrice, size, contractSize });
+  const tecleado = raw === "" ? null : Number(raw);
+  const usado = tecleado ?? deducido;
+
   const reading = readRisk({
-    riskAmount: raw === "" ? null : Number(raw),
+    riskAmount: usado,
     accountSize,
     maxRiskPct,
     netPnl,
@@ -66,10 +89,13 @@ export function RiskReading({
         <p className="text-xs text-muted-foreground">
           {accountSize === null
             ? "Pon tu capital en Configuración y aquí saldrá qué porcentaje representa."
-            : "Cuánto perderías si saltara el stop. De aquí salen el porcentaje y las erres."}
+            : "Cuánto perderías si saltara el stop. Si apuntas el stop más abajo, sale solo."}
         </p>
       ) : (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          {tecleado === null && deducido !== null ? (
+            <span className="text-muted-foreground">deducido del stop ·</span>
+          ) : null}
           {percent ? (
             <span className={cn(reading.overLimit ? "font-medium text-negative" : "text-muted-foreground")}>
               {percent}

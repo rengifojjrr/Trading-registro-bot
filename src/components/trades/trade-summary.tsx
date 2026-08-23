@@ -72,6 +72,10 @@ export function TradeSummary({
   timezone: string;
 }) {
   const isOpen = trade.status === "OPEN";
+  // Restando, no leyendo `max_size`: el tamaño máximo es el pico que llegó a
+  // tener la posición, que en una que se escaló y se cerró a trozos no es ni
+  // lo que entró ni lo que queda.
+  const openQty = Number(trade.total_entry_qty) - Number(trade.total_exit_qty);
 
   return (
     <Card>
@@ -93,7 +97,28 @@ export function TradeSummary({
             }
             sub={isOpen ? undefined : formatPercent(trade.return_pct)}
           />
-          <Headline label="Precio de entrada" value={formatMoney(trade.entry_wap)} sub={`${formatNumber(trade.max_size, 4)} contratos`} />
+          {/* «Precio de entrada · 151 contratos» era engañoso de dos formas a
+              la vez: el precio es la media de *todas* las entradas -- 211
+              contratos en la posición del 19 de agosto -- y la cifra de al
+              lado era el tamaño máximo alcanzado, no lo que entró ni lo que
+              queda. Dos números de poblaciones distintas pegados como si
+              fueran uno. */}
+          <Headline
+            label="Precio medio de entrada"
+            value={formatMoney(trade.entry_wap)}
+            hint={
+              <>
+                La media ponderada de las {trade.entries_count} entrada(s), {formatNumber(trade.total_entry_qty, 4)}{" "}
+                contratos en total. Al cerrar parte de una posición el precio medio del resto no cambia,
+                así que este número también es el de lo que sigue abierto.
+              </>
+            }
+            sub={
+              isOpen
+                ? `${formatNumber(openQty, 4)} abiertos de ${formatNumber(trade.total_entry_qty, 4)}`
+                : `${formatNumber(trade.total_entry_qty, 4)} contratos en ${trade.entries_count} entrada(s)`
+            }
+          />
           <Headline
             label={isOpen ? "Abierta desde" : "Duración"}
             value={isOpen ? formatDateTime(trade.opened_at, timezone) : formatDuration(trade.duration_seconds)}
@@ -166,7 +191,7 @@ function Headline({
   label: string;
   value: ReactNode;
   sub?: string;
-  hint?: string;
+  hint?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-0.5">

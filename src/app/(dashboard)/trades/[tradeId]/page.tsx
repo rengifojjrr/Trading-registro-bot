@@ -205,6 +205,17 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     rawFill: rawFillsById.get(tf.raw_fill_id) ?? null,
   }));
 
+  // Cada ejecución para el gráfico. Sólo las que tienen precio y momento: un
+  // enlace sin su fill crudo no se puede dibujar en ninguna parte.
+  const chartFills = fillRows
+    .filter((f) => f.rawFill !== null)
+    .map((f) => ({
+      time: Math.floor(new Date(f.rawFill!.trade_time).getTime() / 1000),
+      price: Number(f.rawFill!.price),
+      size: Number(f.allocated_size),
+      role: f.role,
+    }));
+
   return (
     <>
       <PageHeader
@@ -218,6 +229,9 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
           direction={trade.direction}
           entryWap={trade.entry_wap!}
           openQty={openQty}
+          realizedNetPnl={trade.net_pnl}
+          totalEntryQty={trade.total_entry_qty}
+          totalExitQty={trade.total_exit_qty}
           contractSize={trade.contract_multiplier}
           entryCommissions={trade.entry_commissions}
         />
@@ -253,6 +267,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
               }))}
               entry={entryMarker}
               exit={exitMarker}
+              fills={chartFills}
               stopLoss={journalEntry?.stop_loss_price ? Number(journalEntry.stop_loss_price) : null}
               takeProfit={journalEntry?.take_profit_price ? Number(journalEntry.take_profit_price) : null}
             />
@@ -292,6 +307,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         currentSetupGrade={currentSetupGrade}
         entryPrice={trade.entry_wap}
         direction={trade.direction}
+        size={trade.max_size === null ? null : Number(trade.max_size)}
+        contractSize={trade.contract_multiplier === null ? null : Number(trade.contract_multiplier)}
         accountSize={settings?.account_size === null || settings?.account_size === undefined ? null : Number(settings.account_size)}
         maxRiskPct={
           settings?.max_risk_per_trade_pct === null || settings?.max_risk_per_trade_pct === undefined

@@ -83,3 +83,39 @@ function round(value: number, digits: number): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
+
+/**
+ * Lo que arriesgabas de verdad, deducido del stop en vez de tecleado.
+ *
+ * El importe de riesgo era un campo que había que rellenar a mano, así que
+ * casi nunca estaba, y sin él no hay ni porcentaje ni erres. Pero el dato ya
+ * existe en otra forma: si apuntaste dónde ponías el stop, lo que arriesgabas
+ * es la distancia del precio de entrada al stop, por los contratos, por el
+ * tamaño de contrato. No hay nada que estimar.
+ *
+ * Se calcula sobre el tamaño máximo alcanzado, no sobre lo que quedó abierto:
+ * el riesgo lo corriste con toda la posición puesta.
+ *
+ * Devuelve `null` cuando el stop está al otro lado de la entrada -- un stop
+ * por encima del precio en una compra no es un stop, es un objetivo mal
+ * apuntado, y tratarlo como riesgo daría una cifra con el signo cambiado.
+ */
+export function riskFromStop(params: {
+  direction: "LONG" | "SHORT";
+  entryWap: number | null | undefined;
+  stopLossPrice: number | null | undefined;
+  size: number | null | undefined;
+  contractSize: number | null | undefined;
+}): number | null {
+  const entry = toPositive(params.entryWap);
+  const stop = toPositive(params.stopLossPrice);
+  const size = toPositive(params.size);
+  const contract = toPositive(params.contractSize);
+
+  if (entry === null || stop === null || size === null || contract === null) return null;
+
+  const distance = params.direction === "LONG" ? entry - stop : stop - entry;
+  if (!(distance > 0)) return null;
+
+  return distance * size * contract;
+}
