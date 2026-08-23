@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { AppearancePanel } from "@/components/layout/appearance-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { AutoSyncToggle } from "@/components/settings/auto-sync-toggle";
+import { BackupCheck } from "@/components/settings/backup-check";
 import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
@@ -89,7 +90,12 @@ export default async function SettingsPage() {
             />
           }
           notionMappingsSlot={<NotionFieldMappings mappings={fieldMappings} />}
-          backupSlot={<BackupExport />}
+          backupSlot={
+            <>
+              <BackupExport />
+              <BackupCheck />
+            </>
+          }
         />
       ) : null}
     </>

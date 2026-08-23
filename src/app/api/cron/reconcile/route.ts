@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { purgeExpiredTrash } from "@/core/purge-trash";
 import { persistSnapshots } from "@/lib/analytics/persist-snapshots";
 import { raiseNotification } from "@/lib/notifications/create";
 import { sendPendingAlerts } from "@/lib/notifications/email";
@@ -94,9 +95,15 @@ export async function GET(request: Request) {
   // message rather than arriving separately tomorrow. No-op unless email
   // is configured.
   const alerts = [];
+  let purged = 0;
   for (const userId of new Set(userIds)) {
     alerts.push({ userId, ...(await sendPendingAlerts(userId)) });
+
+    // Los treinta días que la papelera prometía y nadie cumplía. Va aquí y no
+    // en su propio cron porque Vercel Hobby permite dos al día y ya están los
+    // dos usados; purgar es barato y no depende de nada de lo anterior.
+    purged += await purgeExpiredTrash(userId);
   }
 
-  return NextResponse.json({ ranFor: results.length, results, alerts });
+  return NextResponse.json({ ranFor: results.length, results, alerts, purged });
 }

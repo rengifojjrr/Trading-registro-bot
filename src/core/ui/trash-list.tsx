@@ -18,6 +18,9 @@ export interface TrashItem {
   kindLabel: string;
   colorToken: string;
   when: string;
+  /** Cuánto le queda antes de borrarse del todo. */
+  retentionLabel: string;
+  expiring: boolean;
 }
 
 export function TrashList({ items }: { items: TrashItem[] }) {
@@ -37,6 +40,12 @@ export function TrashList({ items }: { items: TrashItem[] }) {
           <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
 
           <span className="text-xs text-muted-foreground">{item.when}</span>
+
+          <span
+            className={`text-xs ${item.expiring ? "font-medium text-warning" : "text-muted-foreground"}`}
+          >
+            {item.retentionLabel}
+          </span>
 
           <button
             type="button"

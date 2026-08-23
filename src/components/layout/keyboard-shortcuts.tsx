@@ -14,6 +14,7 @@ const SHORTCUTS: { keys: string; label: string; href?: string }[] = [
   { keys: "g r", label: "Ir a la revisión semanal", href: "/review" },
   { keys: "g v", label: "Ir a validación", href: "/validation" },
   { keys: "g s", label: "Ir a configuración", href: "/settings" },
+  { keys: "⌘ K", label: "Buscar en todo" },
   { keys: "/", label: "Buscar en la página" },
   { keys: "?", label: "Mostrar estos atajos" },
 ];

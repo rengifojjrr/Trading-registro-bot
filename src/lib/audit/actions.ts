@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS = [
   "JOURNAL_SAVED",
   "MANUAL_SYNC_TRIGGERED",
   "BACKUP_EXPORTED",
+  "BACKUP_VERIFIED",
   "VERIFIED_FIGURES_CHANGED",
   "RISK_LIMITS_UPDATED",
   "COINBASE_KEY_ROTATED",
@@ -62,6 +63,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   JOURNAL_SAVED: "Diario guardado",
   MANUAL_SYNC_TRIGGERED: "Sincronización manual",
   BACKUP_EXPORTED: "Respaldo exportado",
+  BACKUP_VERIFIED: "Respaldo comprobado",
   VERIFIED_FIGURES_CHANGED: "Cambiaron cifras ya verificadas",
   RISK_LIMITS_UPDATED: "Límites de riesgo actualizados",
 };

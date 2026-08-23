@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { AppearanceLauncher } from "@/components/layout/appearance-launcher";
+import { GlobalSearch } from "@/components/layout/global-search";
 import { Button } from "@/components/ui/button";
 import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
@@ -30,6 +31,7 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="flex items-center gap-1">
+        <GlobalSearch />
         <AppearanceLauncher appearance={readAppearance((name) => store.get(name)?.value)} />
         <Button
           variant="ghost"
