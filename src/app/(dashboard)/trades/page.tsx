@@ -16,13 +16,23 @@ export default async function TradesPage(props: PageProps<"/trades">) {
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, products, filterOptions] = await Promise.all([
+  // Las estrategias hacen falta para poder asignar una al apuntar varias
+  // operaciones de golpe, desde la propia tabla.
+  const [{ count: totalTradeCount }, { data: settings }, { data: strategyRows }, accounts, products, filterOptions] = await Promise.all([
     supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("orphaned_at", null),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("strategies")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("name"),
     fetchAccounts(),
     fetchDistinctProductIds(),
     fetchFilterOptions(),
   ]);
+
+  const strategies = strategyRows ?? [];
 
   if (!totalTradeCount) {
     return (
@@ -77,6 +87,7 @@ export default async function TradesPage(props: PageProps<"/trades">) {
           search={pageParams.search ?? ""}
           accountsById={accountsById}
           timezone={timezone}
+          strategies={strategies}
         />
       )}
     </>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, GitCompare, Rows2, Rows3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Rows2, Rows3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SelectionBar } from "@/components/trades/selection-bar";
 import type { TradeTableRow } from "@/lib/analytics/queries";
 import type { TradeSortKey } from "@/lib/analytics/trade-sort";
 import {
@@ -46,6 +47,7 @@ export function TradesTable({
   search,
   accountsById,
   timezone,
+  strategies,
 }: {
   rows: TradeTableRow[];
   total: number;
@@ -56,20 +58,25 @@ export function TradesTable({
   search: string;
   accountsById: Record<string, string>;
   timezone: string;
+  /** Para poder asignar estrategia al apuntar varias de una vez. */
+  strategies: { id: string; name: string }[];
   /** Exports every matching row, not just this page -- see the trades page. */
 }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Comparison is a two-trade operation, so the selection is capped at two:
-  // picking a third replaces the older of the pair rather than silently
-  // doing nothing, which is what a user reaching for a third one wants.
+  // La selección ya no tiene tope de dos.
+  //
+  // Lo tenía porque comparar es cosa de dos, y elegir una tercera reemplazaba
+  // la más vieja. Pero apuntar el diario es cosa de todas las que hagan falta:
+  // doce entradas en veinte minutos son un episodio, y escribirle «FOMO» a
+  // cada una es la razón por la que el episodio más caro se queda sin apuntar.
+  //
+  // Comparar sigue exigiendo exactamente dos; con más, se ofrece apuntarlas.
   const [selected, setSelected] = useState<string[]>([]);
   function toggleSelected(id: string) {
     setSelected((current) =>
-      current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id].slice(-2),
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
     );
   }
   const searchParams = useSearchParams();
@@ -187,24 +194,12 @@ export function TradesTable({
       </div>
 
       {selected.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">
-            {selected.length === 1
-              ? "1 operación seleccionada -- elige otra para comparar."
-              : "2 operaciones seleccionadas."}
-          </span>
-          {selected.length === 2 ? (
-            <Button asChild size="sm">
-              <Link href={`/trades/compare?a=${selected[0]}&b=${selected[1]}`}>
-                <GitCompare className="size-4" aria-hidden />
-                Comparar
-              </Link>
-            </Button>
-          ) : null}
-          <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
-            Quitar selección
-          </Button>
-        </div>
+        <SelectionBar
+          selected={selected}
+          strategies={strategies}
+          onSelectionChange={setSelected}
+          onClear={() => setSelected([])}
+        />
       ) : null}
 
       {/* Below md the ten-column table forced a 960px-wide horizontal drag
