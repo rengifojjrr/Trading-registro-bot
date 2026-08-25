@@ -5,15 +5,37 @@ import { useEffect, useState } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
 
+/**
+ * Los ocho módulos, no sólo trading.
+ *
+ * Los atajos cubrían ocho destinos y siete eran de trading: quien lleva sueño,
+ * hábitos, tareas, comidas, lecturas y contenido a diario navegaba a ratón por
+ * seis módulos mientras el séptimo tenía teclado. Un atajo que sólo sirve para
+ * una parte de la aplicación es una función de esa parte, no de la aplicación.
+ *
+ * Las letras siguen a la palabra en castellano cuando se puede (s de sueño,
+ * h de hábitos, t de tareas), y donde chocan gana lo que más se usa.
+ */
 const SHORTCUTS: { keys: string; label: string; href?: string }[] = [
-  { keys: "g d", label: "Ir al dashboard", href: "/" },
+  { keys: "g i", label: "Ir a Hoy", href: "/" },
+  { keys: "g d", label: "Ir al día de hoy", href: "/dia" },
+  // Trading
+  { keys: "g p", label: "Ir al panel de trading", href: "/trading" },
   { keys: "g o", label: "Ir a operaciones", href: "/trades" },
   { keys: "g j", label: "Ir al diario", href: "/journal" },
   { keys: "g a", label: "Ir a análisis", href: "/analytics" },
   { keys: "g c", label: "Ir a comportamiento", href: "/behaviour" },
   { keys: "g r", label: "Ir a la revisión semanal", href: "/review" },
-  { keys: "g v", label: "Ir a validación", href: "/validation" },
-  { keys: "g s", label: "Ir a configuración", href: "/settings" },
+  // Vida
+  { keys: "g s", label: "Ir a sueño", href: "/sueno" },
+  { keys: "g b", label: "Ir a hábitos", href: "/habitos" },
+  { keys: "g t", label: "Ir a tareas", href: "/tareas" },
+  { keys: "g m", label: "Ir a comidas", href: "/comidas" },
+  { keys: "g l", label: "Ir a lecturas", href: "/lecturas" },
+  { keys: "g n", label: "Ir a contenido", href: "/contenido" },
+  // Sistema
+  { keys: "g v", label: "Ir a actividad", href: "/activity" },
+  { keys: "g ,", label: "Ir a configuración", href: "/settings" },
   { keys: "⌘ K", label: "Buscar en todo" },
   { keys: "/", label: "Buscar en la página" },
   { keys: "?", label: "Mostrar estos atajos" },
@@ -102,7 +124,7 @@ export function KeyboardShortcuts() {
       aria-label="Atajos de teclado"
       onClick={() => setShowHelp(false)}
     >
-      <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+      <Card className="max-h-[80vh] w-full max-w-md overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <CardContent className="flex flex-col gap-2 pt-5">
           <p className="font-medium">Atajos de teclado</p>
           <ul className="flex flex-col divide-y divide-border text-sm">

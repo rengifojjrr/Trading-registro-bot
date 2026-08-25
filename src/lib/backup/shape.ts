@@ -30,7 +30,9 @@ export const ESSENTIAL_TABLES = ["raw_fills", "products"] as const;
  * Si se pierden, se perdieron.
  */
 export const IRREPLACEABLE_TABLES = [
+  // Trading
   "journal_entries",
+  "journal_templates",
   "trade_comments",
   "trade_verifications",
   "trade_grouping_overrides",
@@ -41,6 +43,25 @@ export const IRREPLACEABLE_TABLES = [
   "playbook_items",
   "tags",
   "trade_tags",
+  // Los siete de vida. Faltaban aquí igual que faltaban en el respaldo, así
+  // que la comprobación decía «la copia se puede restaurar» sin haber mirado
+  // una sola tabla de sueño, hábitos, tareas, comidas, lecturas o contenido.
+  // Una comprobación que no comprueba es peor que ninguna: da permiso para
+  // dejar de preocuparse.
+  "sleep_entries",
+  "habits_definitions",
+  "habits_entries",
+  "tasks_items",
+  "tasks_projects",
+  "meals_entries",
+  "meals_ingredients",
+  "reading_books",
+  "reading_sessions",
+  "content_pieces",
+  // Piezas comunes y configuración
+  "core_comments",
+  "core_attachments",
+  "core_relations",
   "app_settings",
 ] as const;
 

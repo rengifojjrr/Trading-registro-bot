@@ -10,7 +10,18 @@
  * que el orden se pueda probar sin montar media aplicación.
  */
 
-export type ResultKind = "trade" | "journal" | "strategy" | "tag" | "page" | "sleep" | "task";
+export type ResultKind =
+  | "trade"
+  | "journal"
+  | "strategy"
+  | "tag"
+  | "page"
+  | "sleep"
+  | "task"
+  | "meal"
+  | "reading"
+  | "content"
+  | "habit";
 
 export interface SearchResult {
   kind: ResultKind;
@@ -128,4 +139,8 @@ export const KIND_LABELS: Record<ResultKind, string> = {
   page: "Página",
   sleep: "Sueño",
   task: "Tarea",
+  meal: "Comida",
+  reading: "Lectura",
+  content: "Contenido",
+  habit: "Hábito",
 };

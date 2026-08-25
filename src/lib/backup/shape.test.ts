@@ -89,3 +89,44 @@ describe("comparar la copia con lo que hay hoy", () => {
     expect(drift.rows.find((r) => r.table === "raw_fills")?.missing).toBe(0);
   });
 });
+
+describe("qué tiene que cubrir la copia", () => {
+  it("los siete módulos de vida están declarados", () => {
+    // Estuvieron fuera desde el principio: 244 marcas de hábitos, 71 noches,
+    // 58 piezas y 54 tareas sin respaldar, mientras la pantalla decía que la
+    // copia se podía restaurar. Aquí no hay capa que recalcular -- una noche
+    // que dormiste en marzo no se reconstruye desde ningún sitio -- así que
+    // faltar en esta lista es perderlo.
+    const declaradas = new Set<string>(IRREPLACEABLE_TABLES);
+    for (const tabla of [
+      "sleep_entries",
+      "habits_definitions",
+      "habits_entries",
+      "tasks_items",
+      "tasks_projects",
+      "meals_entries",
+      "meals_ingredients",
+      "reading_books",
+      "reading_sessions",
+      "content_pieces",
+    ]) {
+      expect(declaradas.has(tabla), `${tabla} no está en la copia`).toBe(true);
+    }
+  });
+
+  it("una copia solo de trading ya no pasa por buena", () => {
+    // Es exactamente la copia que se estaba haciendo hasta ahora.
+    const soloTrading: Record<string, unknown> = { exportedAt: "2026-08-25T03:10:00.000Z" };
+    for (const t of ESSENTIAL_TABLES) soloTrading[t] = [{ x: 1 }];
+    for (const t of ["journal_entries", "strategies", "tags"]) soloTrading[t] = [];
+
+    const informe = inspectBackup(soloTrading);
+    expect(informe.warnings.join(" ")).toContain("sleep_entries");
+    expect(informe.warnings.join(" ")).toContain("habits_entries");
+  });
+
+  it("ninguna tabla se declara dos veces", () => {
+    const todas = [...ESSENTIAL_TABLES, ...IRREPLACEABLE_TABLES];
+    expect(new Set(todas).size).toBe(todas.length);
+  });
+});

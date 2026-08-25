@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { normalise, pageResults, rankResults, scoreResult, type SearchResult } from "./rank";
+import {
+  KIND_LABELS,
+  normalise,
+  pageResults,
+  rankResults,
+  scoreResult,
+  type ResultKind,
+  type SearchResult,
+} from "./rank";
 
 const resultado = (over: Partial<SearchResult> & { title: string }): SearchResult => ({
   kind: "journal",
@@ -99,6 +107,45 @@ describe("las páginas también se buscan", () => {
   it("ninguna página se queda sin ser encontrable por su nombre", () => {
     for (const page of pageResults()) {
       expect(rankResults(pageResults(), page.title).map((r) => r.href)).toContain(page.href);
+    }
+  });
+});
+
+describe("el buscador cubre los ocho módulos", () => {
+  it("cada tipo de resultado tiene su etiqueta", () => {
+    // Un tipo sin etiqueta sale con la columna vacía y no se sabe de qué
+    // módulo es, que es justo lo que un buscador global tiene que resolver.
+    const tipos: ResultKind[] = [
+      "trade",
+      "journal",
+      "strategy",
+      "tag",
+      "page",
+      "sleep",
+      "task",
+      "meal",
+      "reading",
+      "content",
+      "habit",
+    ];
+    for (const tipo of tipos) {
+      expect(KIND_LABELS[tipo], `${tipo} sin etiqueta`).toBeTruthy();
+    }
+  });
+
+  it("las páginas de los siete módulos de vida se pueden encontrar", () => {
+    // El buscador solo miraba trading y tareas. «Buscar en todo» que busca en
+    // un cuarto de la aplicación enseña que lo que no aparece no está.
+    const casos: [string, string][] = [
+      ["dormir", "/sueno"],
+      ["rutinas", "/habitos"],
+      ["alimentación", "/comidas"],
+      ["libros", "/lecturas"],
+      ["vídeos", "/contenido"],
+      ["pendientes", "/tareas"],
+    ];
+    for (const [texto, href] of casos) {
+      expect(rankResults(pageResults(), texto).map((r) => r.href), texto).toContain(href);
     }
   });
 });

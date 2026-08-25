@@ -25,7 +25,14 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
   const supabase = await createClient();
   const patron = `%${sanitiseForFilter(texto)}%`;
 
-  const [trades, journals, strategies, tags, tasks] = await Promise.all([
+  // Los ocho módulos, no dos.
+  //
+  // El buscador solo miraba trading y tareas: sueño, hábitos, comidas,
+  // lecturas y contenido no se encontraban de ninguna forma. «Buscar en todo»
+  // que solo busca en un cuarto de la aplicación es peor que no tenerlo,
+  // porque enseña que lo que no aparece no está.
+  const [trades, journals, strategies, tags, tasks, meals, readings, contents, habits] =
+    await Promise.all([
     supabase
       .from("trades")
       .select("id, product_id, direction, opened_at, status")
@@ -54,6 +61,33 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       .eq("user_id", user.id)
       .or(`title.ilike.${patron},notes.ilike.${patron}`)
       .order("updated_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("meals_entries")
+      .select("id, name, notes, meal_date, meal_type")
+      .eq("user_id", user.id)
+      .or(`name.ilike.${patron},notes.ilike.${patron}`)
+      .order("meal_date", { ascending: false })
+      .limit(10),
+    supabase
+      .from("reading_books")
+      .select("id, title, author")
+      .eq("user_id", user.id)
+      .or(`title.ilike.${patron},author.ilike.${patron}`)
+      .limit(10),
+    supabase
+      .from("content_pieces")
+      .select("id, title, updated_at")
+      .eq("user_id", user.id)
+      .ilike("title", patron)
+      .order("updated_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("habits_definitions")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .is("archived_at", null)
+      .ilike("name", patron)
       .limit(10),
   ]);
 
@@ -117,6 +151,52 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       href: `/tareas/${t.id}`,
       haystack: `${t.title} ${t.notes ?? ""}`,
       when: t.updated_at,
+    });
+  }
+
+  for (const m of meals.data ?? []) {
+    candidatos.push({
+      kind: "meal",
+      id: m.id,
+      title: m.name,
+      subtitle: `${m.meal_type.charAt(0)}${m.meal_type.slice(1).toLowerCase()} · ${m.meal_date}`,
+      href: `/comidas/${m.id}`,
+      haystack: `${m.name} ${m.notes ?? ""}`,
+      when: m.meal_date,
+    });
+  }
+
+  for (const b of readings.data ?? []) {
+    candidatos.push({
+      kind: "reading",
+      id: b.id,
+      title: b.title,
+      subtitle: b.author ?? "Libro",
+      href: `/lecturas/libros/${b.id}`,
+      haystack: `${b.title} ${b.author ?? ""}`,
+    });
+  }
+
+  for (const c of contents.data ?? []) {
+    candidatos.push({
+      kind: "content",
+      id: c.id,
+      title: c.title,
+      subtitle: "Pieza",
+      href: `/contenido/${c.id}`,
+      haystack: c.title,
+      when: c.updated_at,
+    });
+  }
+
+  for (const h of habits.data ?? []) {
+    candidatos.push({
+      kind: "habit",
+      id: h.id,
+      title: h.name,
+      subtitle: "Hábito",
+      href: `/habitos/${h.id}`,
+      haystack: h.name,
     });
   }
 
