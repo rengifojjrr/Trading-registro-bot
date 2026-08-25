@@ -1,6 +1,7 @@
 import { Decimal } from "decimal.js";
 import { notFound } from "next/navigation";
 
+import { BackToList } from "@/components/shared/back-to-list";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-history-table";
@@ -218,6 +219,11 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
 
   return (
     <>
+      {/* La vuelta a la lista tal y como se dejó: filtro, orden y página.
+          Sin esto, apuntar doce operaciones de agosto es montar el filtro
+          doce veces. */}
+      <BackToList fallbackHref="/trades" fallbackLabel="Volver a las operaciones" />
+
       <PageHeader
         title={`${trade.product_id} · ${trade.direction === "LONG" ? "Long" : "Short"}`}
         description={`${account?.name ?? "Cuenta"} · Abierta ${formatDate(trade.opened_at, timezone)}`}

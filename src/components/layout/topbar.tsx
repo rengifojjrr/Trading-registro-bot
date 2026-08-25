@@ -4,8 +4,10 @@ import Link from "next/link";
 
 import { AppearanceLauncher } from "@/components/layout/appearance-launcher";
 import { GlobalSearch } from "@/components/layout/global-search";
+import { OpenPositionBadge } from "@/components/layout/open-position-badge";
 import { Button } from "@/components/ui/button";
 import { readAppearance } from "@/lib/appearance/storage";
+import { fetchOpenLivePositions } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -17,6 +19,10 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
   const user = await requireUser();
   const supabase = await createClient();
   const store = await cookies();
+  // Nunca tumba la barra: si esto falla, el resto de la aplicación sigue
+  // navegable, que es más importante que el indicador.
+  const openPositions = await fetchOpenLivePositions().catch(() => []);
+
   const { count: unreadCount } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
@@ -31,6 +37,10 @@ export async function Topbar({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="flex items-center gap-1">
+        {/* Lo que tienes abierto, desde cualquier pantalla. Una posición
+            abierta no es una consulta, es un estado, y un estado que hay que
+            ir a buscar es uno del que uno se olvida. */}
+        <OpenPositionBadge positions={openPositions} />
         <GlobalSearch />
         <AppearanceLauncher appearance={readAppearance((name) => store.get(name)?.value)} />
         <Button

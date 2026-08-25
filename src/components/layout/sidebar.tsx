@@ -18,7 +18,14 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { MODULES, moduleForPath, type ModuleManifest } from "@/core/registry";
+import {
+  CADENCE_LABELS,
+  MODULES,
+  moduleForPath,
+  type ModuleManifest,
+  type ModuleSection,
+  type SectionCadence,
+} from "@/core/registry";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -115,21 +122,40 @@ function ModuleMenu({ module, pathname }: { module: ModuleManifest; pathname: st
         <span className="text-base font-semibold tracking-tight text-foreground">{module.label}</span>
       </div>
 
-      {module.sections.map((section) => (
-        <Link
-          key={section.href}
-          href={section.href}
-          aria-current={section.href === activeHref ? "page" : undefined}
-          className={cn(
-            "rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-            section.href === activeHref
-              ? "bg-accent text-foreground"
-              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-          )}
-          style={section.href === activeHref ? { boxShadow: `inset 2px 0 0 var(${module.colorToken})` } : undefined}
-        >
-          {section.label}
-        </Link>
+      {/* Agrupadas por cada cuánto se entra de verdad.
+          Trading llegó a doce secciones en una lista plana, y varias son de
+          usar una vez en la vida. Puestas al mismo nivel que Operaciones, las
+          tres que se miran a diario quedaban enterradas entre nueve que no.
+          Un módulo sin cadencias declaradas se pinta como antes: agrupar tres
+          enlaces sería más ceremonia que ayuda. */}
+      {groupSections(module.sections).map(({ cadence, sections }) => (
+        <div key={cadence ?? "todas"} className="flex flex-col">
+          {cadence ? (
+            <span className="mt-3 px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              {CADENCE_LABELS[cadence]}
+            </span>
+          ) : null}
+          {sections.map((section) => (
+            <Link
+              key={section.href}
+              href={section.href}
+              aria-current={section.href === activeHref ? "page" : undefined}
+              className={cn(
+                "rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                section.href === activeHref
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+              style={
+                section.href === activeHref
+                  ? { boxShadow: `inset 2px 0 0 var(${module.colorToken})` }
+                  : undefined
+              }
+            >
+              {section.label}
+            </Link>
+          ))}
+        </div>
       ))}
     </>
   );
@@ -165,4 +191,27 @@ function Item({
       {label}
     </Link>
   );
+}
+
+/**
+ * Las secciones repartidas en grupos por cadencia, en el orden en que se
+ * declararon.
+ *
+ * Cuando ninguna declara cadencia devuelve un solo grupo sin título, para que
+ * un módulo de tres secciones se siga pintando como una lista simple: poner
+ * encabezados a tres enlaces es más ceremonia que ayuda.
+ */
+function groupSections(
+  sections: ModuleSection[],
+): { cadence: SectionCadence | null; sections: ModuleSection[] }[] {
+  if (!sections.some((s) => s.cadence)) return [{ cadence: null, sections }];
+
+  const orden: SectionCadence[] = ["DIARIO", "REPASO", "MANTENIMIENTO"];
+
+  return orden
+    .map((cadence) => ({
+      cadence,
+      sections: sections.filter((s) => (s.cadence ?? "DIARIO") === cadence),
+    }))
+    .filter((g) => g.sections.length > 0);
 }

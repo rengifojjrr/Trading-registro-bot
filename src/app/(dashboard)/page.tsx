@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LifeCalendar } from "@/components/vida/life-calendar";
 import { ModuleCard } from "@/components/vida/module-card";
+import { PendingPanel } from "@/components/vida/pending-panel";
 import { QuickLog } from "@/components/vida/quick-log";
 import { monthGrid, monthOf } from "@/core/calendar";
 import { fetchMarkers } from "@/core/day";
@@ -10,6 +11,7 @@ import { MODULES } from "@/core/registry";
 import { longDateLabel, todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
+import { gatherPending } from "@/lib/pending/gather";
 
 /**
  * Hoy.
@@ -46,11 +48,15 @@ export default async function TodayPage({
   // días de relleno del mes anterior y el siguiente: si no, esos días
   // saldrían siempre vacíos aunque tuvieran cosas.
   const grid = monthGrid(month).flat();
-  const [metrics, markers] = await Promise.all([
+  const [metrics, markers, pending] = await Promise.all([
     readDayMetrics(today),
     grid.length > 0
       ? fetchMarkers(grid[0].date, grid[grid.length - 1].date)
       : Promise.resolve(new Map()),
+    // Lo pendiente estaba repartido entre Actividad, Diario, Conciliación y el
+    // Panel: cada sitio contestaba su parte y ninguno contestaba «¿qué me
+    // falta?», que es la pregunta que se hace al abrir la aplicación.
+    gatherPending(),
   ]);
 
   const firstName = (user.email ?? "").split("@")[0];
@@ -63,10 +69,20 @@ export default async function TodayPage({
         <p className="text-sm text-muted-foreground">{longDateLabel(today)}</p>
       </header>
 
+      {/* Va después de registrar y antes de las cifras: lo que hay que hacer
+          pesa más que lo que hay que mirar, pero registrar en cinco segundos
+          sigue siendo lo primero. */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Registrar</h2>
         <QuickLog />
       </section>
+
+      {pending.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">Te está esperando</h2>
+          <PendingPanel items={pending} />
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Tu día</h2>

@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseTradeFilters, pickSearchParam, previousPeriodFilters } from "@/lib/analytics/filter-params";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLivePositions, fetchTradesForStats } from "@/lib/analytics/queries";
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
+import type { TradeSortKey } from "@/lib/analytics/trade-sort";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
 import { readSyncStatus } from "@/lib/sync/read-status";
@@ -99,13 +100,18 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
    * most dashboards, because these are the numbers the whole app exists to
    * be trusted on.
    */
-  const tradesHref = (extra: Record<string, string> = {}) => {
+  // `extra` solo debe llevar claves que `/trades` entienda: un `sort`
+  // inventado se ignora en silencio y el enlace acaba en una lista ordenada
+  // por otra cosa, que es peor que no tener enlace -- parece que responde.
+  const tradesHref = (extra: { sort?: TradeSortKey; dir?: "asc" | "desc" } = {}) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(searchParams)) {
       if (key === "month" || key === "page" || typeof value !== "string" || value.length === 0) continue;
       params.set(key, value);
     }
-    for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    for (const [key, value] of Object.entries(extra)) {
+      if (typeof value === "string") params.set(key, value);
+    }
     const query = params.toString();
     return query ? `/trades?${query}` : "/trades";
   };
@@ -199,35 +205,47 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
                 value={formatSignedMoney(stats.grossPnl, { currency })}
                 tone={pnlTone(stats.grossPnl)}
                 description="Ganancia o pérdida de las operaciones cerradas antes de comisiones."
+                provenanceHref={tradesHref({ sort: "net_pnl", dir: "desc" })}
               />
               <StatTile
                 label="Comisiones"
                 value={formatMoney(stats.totalCommissions, { currency })}
                 description="Suma de comisiones de entrada y salida de todas las operaciones del período filtrado (abiertas y cerradas)."
+                provenanceHref={tradesHref({ sort: "max_size", dir: "desc" })}
               />
               <StatTile
                 label="Expectancy"
                 value={stats.expectancy === null ? "--" : formatSignedMoney(stats.expectancy, { currency })}
                 tone={pnlTone(stats.expectancy)}
                 description="P&L neto promedio por operación cerrada. Es lo que, en promedio, deja cada operación."
+                provenanceHref={tradesHref({ sort: "net_pnl", dir: "desc" })}
               />
               <StatTile
                 label="Operaciones"
                 value={stats.tradesCount}
                 sub={`${stats.openTradesCount} abiertas · ${stats.closedTradesCount} cerradas`}
                 description="Total de operaciones reconstruidas en el período filtrado."
+                provenanceHref={tradesHref({ sort: "opened_at", dir: "desc" })}
               />
               <StatTile
                 label="Mejor operación"
                 value={stats.bestTrade ? formatSignedMoney(stats.bestTrade.netPnl, { currency }) : "--"}
                 tone={stats.bestTrade ? pnlTone(stats.bestTrade.netPnl) : "neutral"}
                 description="Operación cerrada con el mayor P&L neto del período filtrado."
+                provenanceHref={
+                  stats.bestTrade ? `/trades/${stats.bestTrade.id}` : tradesHref({ sort: "net_pnl", dir: "desc" })
+                }
+                provenanceLabel={stats.bestTrade ? "Ver la operación" : undefined}
               />
               <StatTile
                 label="Peor operación"
                 value={stats.worstTrade ? formatSignedMoney(stats.worstTrade.netPnl, { currency }) : "--"}
                 tone={stats.worstTrade ? pnlTone(stats.worstTrade.netPnl) : "neutral"}
                 description="Operación cerrada con el menor P&L neto del período filtrado."
+                provenanceHref={
+                  stats.worstTrade ? `/trades/${stats.worstTrade.id}` : tradesHref({ sort: "net_pnl", dir: "asc" })
+                }
+                provenanceLabel={stats.worstTrade ? "Ver la operación" : undefined}
               />
               <StatTile
                 label="Racha actual"

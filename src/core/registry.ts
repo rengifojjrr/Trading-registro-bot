@@ -20,10 +20,30 @@ export type ModuleId =
   | "meals"
   | "content";
 
+/**
+ * Cada cuánto se entra de verdad en una sección.
+ *
+ * Trading llegó a doce secciones en la misma lista plana, y varias son de
+ * usar una vez en la vida (Importar, Validación) o solo cuando algo se rompe
+ * (Conciliación). Puestas al mismo nivel que Operaciones, las tres cosas que
+ * se miran a diario quedaban enterradas entre nueve que no.
+ *
+ * No se esconde nada: se agrupa. Esconder obliga a recordar dónde está.
+ */
+export type SectionCadence = "DIARIO" | "REPASO" | "MANTENIMIENTO";
+
+export const CADENCE_LABELS: Record<SectionCadence, string> = {
+  DIARIO: "A diario",
+  REPASO: "Para repasar",
+  MANTENIMIENTO: "Cuando haga falta",
+};
+
 /** Una sección dentro de un módulo: lo que aparece al entrar en él. */
 export interface ModuleSection {
   href: string;
   label: string;
+  /** Sin declarar, se trata como diaria: un módulo pequeño no necesita grupos. */
+  cadence?: SectionCadence;
 }
 
 export interface ModuleManifest {
@@ -57,18 +77,21 @@ export const MODULES: ModuleManifest[] = [
     colorToken: "--mod-trading",
     emptyLabel: "Sin operar hoy",
     sections: [
-      { href: "/trading", label: "Panel" },
-      { href: "/trades", label: "Operaciones" },
-      { href: "/journal", label: "Diario" },
-      { href: "/analytics", label: "Análisis" },
-      { href: "/behaviour", label: "Comportamiento" },
-      { href: "/review", label: "Revisión" },
-      { href: "/risk", label: "Riesgo" },
-      { href: "/strategies", label: "Estrategias" },
-      { href: "/reports", label: "Reportes" },
-      { href: "/validation", label: "Validación" },
-      { href: "/reconciliation", label: "Conciliación" },
-      { href: "/import", label: "Importar" },
+      // Lo de todos los días: mirar cómo va, y apuntar.
+      { href: "/trading", label: "Panel", cadence: "DIARIO" },
+      { href: "/trades", label: "Operaciones", cadence: "DIARIO" },
+      { href: "/journal", label: "Diario", cadence: "DIARIO" },
+      { href: "/risk", label: "Riesgo", cadence: "DIARIO" },
+      // Lo que se mira el domingo, no el martes por la tarde.
+      { href: "/analytics", label: "Análisis", cadence: "REPASO" },
+      { href: "/behaviour", label: "Comportamiento", cadence: "REPASO" },
+      { href: "/review", label: "Revisión", cadence: "REPASO" },
+      { href: "/strategies", label: "Estrategias", cadence: "REPASO" },
+      { href: "/reports", label: "Reportes", cadence: "REPASO" },
+      // Una vez en la vida, o el día que algo no cuadra.
+      { href: "/validation", label: "Validación", cadence: "MANTENIMIENTO" },
+      { href: "/reconciliation", label: "Conciliación", cadence: "MANTENIMIENTO" },
+      { href: "/import", label: "Importar", cadence: "MANTENIMIENTO" },
     ],
   },
   {

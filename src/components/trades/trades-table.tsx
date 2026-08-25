@@ -3,11 +3,12 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, Download, Rows2, Rows3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { rememberList } from "@/components/shared/back-to-list";
 import { SelectionBar } from "@/components/trades/selection-bar";
 import type { TradeTableRow } from "@/lib/analytics/queries";
 import type { TradeSortKey } from "@/lib/analytics/trade-sort";
@@ -80,6 +81,17 @@ export function TradesTable({
     );
   }
   const searchParams = useSearchParams();
+
+  // Se deja la miga de pan cada vez que cambia la vista, no al pulsar cada
+  // fila: así también sirve si se llega a una operación desde el buscador o
+  // desde la bandeja, que es por donde se llega la mitad de las veces.
+  useEffect(() => {
+    const query = searchParams.toString();
+    rememberList({
+      href: query ? `/trades?${query}` : "/trades",
+      label: query ? "Volver a la lista filtrada" : "Volver a las operaciones",
+    });
+  }, [searchParams]);
   const [searchDraft, setSearchDraft] = useState(search);
   const [isExporting, setIsExporting] = useState(false);
   const [density, setDensity] = usePersistedState<Density>("trades.density", "comfortable", isDensity);
