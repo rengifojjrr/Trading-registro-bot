@@ -11,7 +11,13 @@ import { MEAL_TYPES, parseIngredientLine } from "@/modules/meals/domain/meals";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importMealsFromNotion } from "@/modules/meals/notion-import";
 
-export type MealFormState = { error: string | null; success: boolean };
+/**
+ * `savedAt` no es informativo: es lo que deja vaciar el formulario sin
+ * escribir estado desde un efecto. Cambia en cada guardado correcto, así que
+ * sirve de `key` para que React vuelva a montar los campos limpios -- que es
+ * lo mismo que hacía `form.reset()` con los campos sin control.
+ */
+export type MealFormState = { error: string | null; success: boolean; savedAt?: number };
 
 const emptyToNull = <T extends z.ZodTypeAny>(inner: T) =>
   z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), inner.nullable());
@@ -94,7 +100,7 @@ export async function saveMeal(_prev: MealFormState, formData: FormData): Promis
 
   await republishDay(parsed.data.meal_date);
   revalidateMeals();
-  return { error: null, success: true };
+  return { error: null, success: true, savedAt: Date.now() };
 }
 
 /**
@@ -159,7 +165,7 @@ export async function updateMeal(
   await republishDay(parsed.data.meal_date);
   revalidateMeals();
   revalidatePath(`/comidas/${id}`);
-  return { error: null, success: true };
+  return { error: null, success: true, savedAt: Date.now() };
 }
 
 /** Rehace la cuenta del día después de que la papelera se lleve una comida. */

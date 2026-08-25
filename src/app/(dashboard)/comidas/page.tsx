@@ -5,6 +5,7 @@ import type { Route } from "next";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { fetchTemplates } from "@/core/templates";
 import { shiftDate, todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
@@ -35,7 +36,12 @@ export default async function MealsPage({
   const date = isIsoDate(fecha) ? fecha : today;
   const defaultType = isMealType(tipo) ? tipo : "ALMUERZO";
 
-  const meals = await fetchMeals(shiftDate(today, -30), shiftDate(today, 14));
+  // Se come lo mismo muchas veces: el desayuno de casi todos los días no
+  // debería costar lo mismo de registrar que uno nuevo.
+  const [meals, templates] = await Promise.all([
+    fetchMeals(shiftDate(today, -30), shiftDate(today, 14)),
+    fetchTemplates("meals"),
+  ]);
   const todayMeals = meals.filter((m) => m.meal_date === today);
   const history = meals.filter((m) => m.meal_date <= today).slice(0, 30);
 
@@ -55,7 +61,12 @@ export default async function MealsPage({
         <CardContent>
           {/* Remontar al cambiar de hueco: los campos por defecto sólo se leen
               al montar, y sin esto el enlace de la rejilla no cambiaría nada. */}
-          <MealForm key={`${date}-${defaultType}`} date={date} defaultType={defaultType} />
+          <MealForm
+            key={`${date}-${defaultType}`}
+            date={date}
+            defaultType={defaultType}
+            templates={templates}
+          />
         </CardContent>
       </Card>
 

@@ -1,14 +1,16 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { Template } from "@/core/templates";
 import { IconPicker } from "@/core/ui/icon-picker";
+import { TemplateBar } from "@/core/ui/template-bar";
 import { saveMeal, updateMeal, type MealFormState } from "@/modules/meals/actions";
 import { MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
 import type { MealRow } from "@/modules/meals/queries";
@@ -32,26 +34,86 @@ export function MealForm({
   date,
   defaultType = "ALMUERZO",
   meal,
+  templates,
 }: {
   date: string;
   defaultType?: MealType;
   meal?: MealRow;
+  /** Sin plantillas, la barra no se pinta: un módulo puede vivir sin ellas. */
+  templates?: Template[];
 }) {
   const editing = meal !== undefined;
   const [state, formAction, pending] = useActionState(editing ? updateMeal : saveMeal, initial);
-  const formRef = useRef<HTMLFormElement>(null);
+
 
   useEffect(() => {
-    if (state.success) {
-      if (!editing) formRef.current?.reset();
-      toast.success(editing ? "Comida guardada." : "Comida registrada.");
-    }
+    if (state.success) toast.success(editing ? "Comida guardada." : "Comida registrada.");
     if (state.error) toast.error(state.error);
   }, [state, editing]);
 
   return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-4">
-      {editing ? <input type="hidden" name="id" value={meal.id} /> : null}
+    <FormFields
+      // Al guardar una comida nueva, el formulario se vacía volviendo a
+      // montarse. Es lo que `form.reset()` hacía con los campos sin control, y
+      // evita escribir estado desde un efecto para conseguir lo mismo.
+      key={meal ? meal.id : (state.savedAt ?? 0)}
+      {...{ date, defaultType, meal, templates, formAction, pending, editing }}
+    />
+  );
+}
+
+function FormFields({
+  date,
+  defaultType,
+  meal,
+  templates,
+  formAction,
+  pending,
+  editing,
+}: {
+  date: string;
+  defaultType: MealType;
+  meal?: MealRow;
+  templates?: Template[];
+  formAction: (formData: FormData) => void;
+  pending: boolean;
+  editing: boolean;
+}) {
+  const [type, setType] = useState<MealType>(meal?.meal_type ?? defaultType);
+  const [name, setName] = useState(meal?.name ?? "");
+  const [ingredients, setIngredients] = useState(
+    (meal?.ingredients ?? [])
+      .map((i) => [i.quantity, i.unit, i.name].filter(Boolean).join(" "))
+      .join("\n"),
+  );
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      {/* Se come lo mismo muchas veces: el desayuno de casi todos los días no
+          debería costar lo mismo que uno nuevo. El mecanismo de plantillas
+          existía desde hace tiempo y sólo lo usaba Contenido -- otra pieza
+          construida para todos y enchufada en un sitio. */}
+      {templates ? (
+        <TemplateBar
+          moduleId="meals"
+          templates={templates}
+          colorToken="--mod-meals"
+          onApply={(template) => {
+            const p = template.payload;
+            if (typeof p.name === "string") setName(p.name);
+            if (typeof p.meal_type === "string") setType(p.meal_type as MealType);
+            // El cuerpo de la plantilla son los ingredientes: es lo que de
+            // verdad se repite y lo que más cuesta volver a teclear.
+            if (template.body) setIngredients(template.body);
+          }}
+          currentValues={() => ({
+            payload: { name, meal_type: type },
+            body: ingredients || null,
+          })}
+        />
+      ) : null}
+
+      {meal ? <input type="hidden" name="id" value={meal.id} /> : null}
       {/* La fecha es un campo y no un valor oculto: esto es un planificador,
           y planificar es escribir el martes que viene, no sólo hoy. */}
       <div className="grid gap-3 sm:grid-cols-3">
@@ -63,7 +125,7 @@ export function MealForm({
           className="tabular-nums"
           required
         />
-        <Select name="meal_type" defaultValue={meal?.meal_type ?? defaultType}>
+        <Select name="meal_type" value={type} onValueChange={(v) => setType(v as MealType)}>
           <SelectTrigger aria-label="Tipo de comida">
             <SelectValue />
           </SelectTrigger>
@@ -78,7 +140,8 @@ export function MealForm({
         <Input
           name="name"
           placeholder="¿Qué se come?"
-          defaultValue={meal?.name ?? ""}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           maxLength={200}
           required
         />
@@ -92,9 +155,8 @@ export function MealForm({
           id="ingredients"
           name="ingredients"
           rows={4}
-          defaultValue={(meal?.ingredients ?? [])
-            .map((i) => [i.quantity, i.unit, i.name].filter(Boolean).join(" "))
-            .join("\n")}
+          value={ingredients}
+          onChange={(e) => setIngredients(e.target.value)}
           placeholder={"Uno por línea:\n200 g tomate\n2 huevos\nsal"}
         />
         <p className="text-xs text-muted-foreground">
