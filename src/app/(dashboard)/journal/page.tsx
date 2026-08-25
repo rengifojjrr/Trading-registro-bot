@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { SavedViews } from "@/components/dashboard/saved-views";
 import { FilterBar } from "@/components/dashboard/filter-bar";
+import { InboxList } from "@/components/journal/inbox-list";
 import { TagManager, type ManagedTag } from "@/components/journal/tag-manager";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -11,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { parseTradeFilters } from "@/lib/analytics/filter-params";
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesForTable } from "@/lib/analytics/queries";
 import { fetchSavedViews } from "@/lib/analytics/saved-views";
+import { fetchJournalInbox } from "@/lib/journal/inbox";
 import { requireUser } from "@/lib/auth/require-user";
 import { formatDate, formatSignedMoney, pnlColorClass } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
@@ -52,7 +54,21 @@ export default async function JournalPage(props: PageProps<"/journal">) {
 
   const timezone = settings?.timezone || "UTC";
   const filters = parseTradeFilters(searchParams, timezone);
-  const trades = await fetchTradesForTable(filters);
+
+  // La bandeja va antes que la lista y no filtrada: la pregunta «¿qué me falta
+  // por apuntar?» no depende del filtro que tuvieras puesto, y esconderla
+  // detrás de uno es cómo el aviso de «seis sin apuntar» acababa sin llevar a
+  // ninguna parte.
+  const [trades, inbox, { data: strategyRows }] = await Promise.all([
+    fetchTradesForTable(filters),
+    fetchJournalInbox(),
+    supabase
+      .from("strategies")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("name"),
+  ]);
 
   const [{ data: journalRows }, { data: tagRows }, { data: tagUsage }] = await Promise.all([
     supabase
@@ -86,18 +102,22 @@ export default async function JournalPage(props: PageProps<"/journal">) {
     return Boolean(entry.lesson_learned || entry.notes || entry.emotional_state);
   };
 
-  const pendingCount = trades.filter((t) => !isWrittenUp(t.id)).length;
-
   return (
     <>
       <PageHeader
         title="Diario"
         description={
-          pendingCount > 0
-            ? `${pendingCount} de ${trades.length} operaciones sin anotar todavía.`
+          inbox.total > 0
+            ? `${inbox.total} operaci${inbox.total === 1 ? "ón" : "ones"} esperando a que las apuntes${inbox.days > 1 ? `, de ${inbox.days} días distintos` : ""}.`
             : `Las ${trades.length} operaciones del período tienen anotaciones.`
         }
       />
+
+      {/* Lo pendiente, arriba y sin filtrar. Lo demás es el archivo. */}
+      {inbox.total > 0 ? (
+        <InboxList groups={inbox.groups} strategies={strategyRows ?? []} timezone={timezone} />
+      ) : null}
+
       <FilterBar
         accounts={accounts}
         products={products}

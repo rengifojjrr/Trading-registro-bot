@@ -5,10 +5,16 @@ import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { applyJournalToTrades } from "@/app/(dashboard)/trades/bulk-journal-actions";
+import {
+  listJournalTemplates,
+  markTemplateUsed,
+  saveJournalTemplate,
+} from "@/app/(dashboard)/trades/template-actions";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { BulkMode, BulkPlan, BulkValues } from "@/lib/journal/bulk-apply";
+import { describeTemplate, type JournalTemplateRow } from "@/lib/journal/saved-templates";
 import { MISTAKE_CODES, MISTAKE_META, type MistakeCode } from "@/lib/journal/mistakes";
 
 const EMOTION_OPTIONS = ["Calma", "Ansiedad", "Confianza", "Miedo", "Euforia", "Frustración", "FOMO"];
@@ -45,7 +51,43 @@ export function BulkJournalDialog({
   const [lesson, setLesson] = useState("");
   const [mode, setMode] = useState<BulkMode>("FILL_EMPTY");
   const [plan, setPlan] = useState<BulkPlan | null>(null);
+  const [templates, setTemplates] = useState<JournalTemplateRow[]>([]);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    startTransition(async () => {
+      setTemplates(await listJournalTemplates());
+    });
+  }, []);
+
+  /** Rellena el formulario con lo guardado. No aplica nada todavía. */
+  function loadTemplate(template: JournalTemplateRow) {
+    const v = template.values;
+    setMistakes(v.mistakes ?? []);
+    setEmotions(v.emotional_state ?? []);
+    setStrategyId(v.strategy_id ?? "");
+    setPlanAdherence(v.plan_adherence ?? null);
+    setNotes(v.notes ?? "");
+    setLesson(v.lesson_learned ?? "");
+    startTransition(() => markTemplateUsed(template.id));
+  }
+
+  function saveAsTemplate() {
+    const nombre = window.prompt("¿Cómo se llama esta combinación?", "Ráfaga de FOMO");
+    if (nombre === null) return;
+
+    startTransition(async () => {
+      const result = await saveJournalTemplate(nombre, values as Record<string, unknown>);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Plantilla guardada.", {
+        description: "La próxima vez la tienes arriba, en un clic.",
+      });
+      setTemplates(await listJournalTemplates());
+    });
+  }
 
   const values: BulkValues = {
     ...(mistakes.length > 0 ? { mistakes } : {}),
@@ -121,6 +163,27 @@ export function BulkJournalDialog({
             números de cada operación, y poner el mismo en todas sería inventárselo.
           </p>
         </div>
+
+        {templates.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-muted-foreground">
+              Lo de siempre (los errores se repiten -- por eso son errores):
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  title={describeTemplate(template.values)}
+                  onClick={() => loadTemplate(template)}
+                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Errores</legend>
@@ -237,6 +300,9 @@ export function BulkJournalDialog({
           >
             {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             Apuntar {tradeIds.length}
+          </Button>
+          <Button variant="outline" onClick={saveAsTemplate} disabled={isPending || nadaMarcado}>
+            Guardar como plantilla
           </Button>
           <Button variant="ghost" onClick={onClose} disabled={isPending}>
             Cancelar

@@ -212,11 +212,26 @@ export function TradesTable({
           </li>
         ) : (
           rows.map((row) => (
-            <li key={row.id}>
-              <Link
-                href={`/trades/${row.id}`}
-                className="flex flex-col gap-1.5 rounded-lg border border-border p-3 transition-colors hover:bg-accent/40"
-              >
+            <li
+              key={row.id}
+              className={cn(
+                "flex items-center gap-2 rounded-lg border p-3 transition-colors",
+                selected.includes(row.id) ? "border-primary bg-primary/5" : "border-border",
+              )}
+            >
+              {/* La casilla también en móvil.
+                  Estaba solo en la tabla de escritorio, así que apuntar varias
+                  operaciones a la vez no existía justo en el aparato desde el
+                  que se mira la cuenta al acabar de operar -- que es cuando se
+                  apunta o no se apunta nunca. */}
+              <input
+                type="checkbox"
+                checked={selected.includes(row.id)}
+                onChange={() => toggleSelected(row.id)}
+                aria-label={`Seleccionar ${row.product_id} del ${formatDate(row.opened_at, timezone)}`}
+                className="size-5 shrink-0"
+              />
+              <Link href={`/trades/${row.id}`} className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm">
                     <Badge variant="outline">{row.direction === "LONG" ? "Long" : "Short"}</Badge>

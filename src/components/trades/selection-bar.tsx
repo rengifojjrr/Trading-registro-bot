@@ -59,7 +59,12 @@ export function SelectionBar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm">
+      {/* Pegada abajo en móvil.
+          Con veinte operaciones en pantalla, una barra que se queda arriba
+          desaparece al tercer scroll y hay que volver a subir para pulsar el
+          botón que se acaba de habilitar. En escritorio no hace falta: la
+          tabla cabe y la barra está a la vista. */}
+      <div className="sticky bottom-2 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-lg md:static md:bg-secondary/40 md:shadow-none">
         <span className="text-muted-foreground">
           {selected.length === 1
             ? "1 operación seleccionada."

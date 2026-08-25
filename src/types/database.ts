@@ -1346,6 +1346,36 @@ export interface Database {
         { id?: string; user_id: string; trade_id: string; body: string }
       >;
 
+      /**
+       * Combinaciones de diario guardadas.
+       *
+       * Los errores se repiten -- eso es lo que los hace errores -- y volver a
+       * marcar las mismas cinco etiquetas cada vez es la fricción que hace que
+       * a la tercera ya no se apunte nada.
+       */
+      journal_templates: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          /** Lo mismo que acepta `lib/journal/bulk-apply.ts`. */
+          values: Json;
+          use_count: number;
+          last_used_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          values?: Json;
+          use_count?: number;
+          last_used_at?: string | null;
+          updated_at?: string;
+        }
+      >;
+
       playbook_items: Table<
         {
           id: string;
