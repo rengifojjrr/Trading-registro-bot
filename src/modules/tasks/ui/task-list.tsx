@@ -3,13 +3,14 @@
 import { Check, Circle, CircleDot, Loader2, MessageSquare, Paperclip } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import type { Route } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { colorVars } from "@/core/notion-colors";
 import { DeleteButton } from "@/core/ui/delete-button";
 import { cn } from "@/lib/utils";
-import { afterTaskRemoved, setTaskStatus } from "@/modules/tasks/actions";
+import { afterTaskRemoved, setTaskStatus, setTasksStatus } from "@/modules/tasks/actions";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -57,11 +58,18 @@ export function TaskList({
   emptyLabel?: string;
 }) {
   const [doneOpen, setDoneOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkPending, startBulk] = useTransition();
 
   const open = tasks.filter((t) => t.status !== "HECHA");
   const done = tasks.filter((t) => t.status === "HECHA");
 
   const groups = buildGroups(open, today, grouping, only);
+
+  const toggleSelected = (id: string) =>
+    setSelected((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+    );
 
   if (groups.length === 0 && (!showDone || done.length === 0)) {
     return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
@@ -69,6 +77,47 @@ export function TaskList({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Doce tareas pasadas de fecha se despachan de una revisión, no de
+          doce: las que ya no aplican se cierran juntas y las que siguen vivas
+          se dejan. Ir una por una es lo que hace que la lista de vencidas
+          crezca hasta que se ignora entera. */}
+      {selected.length > 0 ? (
+        <div className="sticky bottom-2 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-lg md:static md:bg-secondary/40 md:shadow-none">
+          <span className="text-muted-foreground">
+            {selected.length === 1
+              ? "1 tarea seleccionada."
+              : `${selected.length} tareas seleccionadas.`}
+          </span>
+          <button
+            type="button"
+            disabled={bulkPending}
+            onClick={() =>
+              startBulk(async () => {
+                const result = await setTasksStatus(selected, "HECHA");
+                if (result.error) toast.error(result.error);
+                else toast.success(`${result.changed} marcada(s) como hecha(s).`);
+                setSelected([]);
+              })
+            }
+            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {bulkPending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Check className="size-3.5" aria-hidden />
+            )}
+            Marcar hechas
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected([])}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Quitar selección
+          </button>
+        </div>
+      ) : null}
+
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nada pendiente. Todo al día.</p>
       ) : null}
@@ -84,7 +133,13 @@ export function TaskList({
             {group.label} · {group.items.length}
           </h3>
           {group.items.map((task) => (
-            <TaskItem key={task.id} task={task} today={today} />
+            <TaskItem
+              key={task.id}
+              task={task}
+              today={today}
+              selected={selected.includes(task.id)}
+              onToggleSelected={() => toggleSelected(task.id)}
+            />
           ))}
         </div>
       ))}
@@ -101,7 +156,15 @@ export function TaskList({
             <span aria-hidden>{doneOpen ? "▾" : "▸"}</span>
           </button>
           {doneOpen
-            ? done.map((task) => <TaskItem key={task.id} task={task} today={today} />)
+            ? done.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  today={today}
+                  selected={selected.includes(task.id)}
+                  onToggleSelected={() => toggleSelected(task.id)}
+                />
+              ))
             : null}
         </div>
       ) : null}
@@ -170,7 +233,17 @@ function buildGroups(
     });
 }
 
-function TaskItem({ task, today }: { task: TaskRow; today: string }) {
+function TaskItem({
+  task,
+  today,
+  selected,
+  onToggleSelected,
+}: {
+  task: TaskRow;
+  today: string;
+  selected: boolean;
+  onToggleSelected: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const isDone = task.status === "HECHA";
   const remaining = isDone ? null : daysLeftLabel(task.due_date, today);
@@ -195,7 +268,23 @@ function TaskItem({ task, today }: { task: TaskRow; today: string }) {
   }
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-lg border px-3 py-2.5",
+        selected ? "border-primary bg-primary/5" : "border-border",
+      )}
+    >
+      {/* La casilla es para seleccionar varias; el círculo de al lado sigue
+          siendo el toque rápido de una sola. Dos gestos distintos porque son
+          dos intenciones distintas, y fundirlos haría que marcar una tarea
+          hecha exigiera confirmar. */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelected}
+        aria-label={`Seleccionar ${task.title}`}
+        className="mt-1 size-4 shrink-0"
+      />
       <button
         type="button"
         onClick={toggleDone}

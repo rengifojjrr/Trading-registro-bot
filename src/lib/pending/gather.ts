@@ -5,6 +5,11 @@ import { fetchJournalInbox } from "@/lib/journal/inbox";
 import { createClient } from "@/lib/supabase/server";
 import { readSyncStatus } from "@/lib/sync/read-status";
 
+import { gatherLifePending } from "./life";
+import type { PendingItem } from "./types";
+
+export type { PendingItem, PendingSeverity } from "./types";
+
 /**
  * Todo lo que está esperando a que hagas algo, en una sola lista.
  *
@@ -21,25 +26,17 @@ import { readSyncStatus } from "@/lib/sync/read-status";
  * 2. **Nunca revienta.** Cada fuente va por su lado y un fallo suyo se traga:
  *    la lista de lo pendiente no puede ser lo que tumbe la portada.
  */
-export type PendingSeverity = "CRITICO" | "AVISO" | "INFO";
-
-export interface PendingItem {
-  id: string;
-  title: string;
-  detail: string;
-  href: string;
-  actionLabel: string;
-  severity: PendingSeverity;
-  /** Para ordenar: cuanto más alto, más arriba. */
-  weight: number;
-}
 
 export async function gatherPending(): Promise<PendingItem[]> {
-  const [sync, journal, discrepancies, notifications] = await Promise.all([
+  const [sync, journal, discrepancies, notifications, life] = await Promise.all([
     safe(() => readSyncStatusSafe(), null),
     safe(() => fetchJournalInbox(), { groups: [], total: 0, days: 0 }),
     safe(() => countOpenDiscrepancies(), 0),
     safe(() => countUnreadCritical(), { critical: 0, warning: 0 }),
+    // Los módulos de vida no avisaban de nada: doce tareas pasadas de fecha y
+    // ni una línea que lo dijera. Aportan aquí en vez de tener su propio
+    // sistema, para que «qué me falta» siga teniendo una sola respuesta.
+    safe(() => gatherLifePending(), [] as PendingItem[]),
   ]);
 
   const items: PendingItem[] = [];
@@ -111,6 +108,8 @@ export async function gatherPending(): Promise<PendingItem[]> {
       weight: 40,
     });
   }
+
+  items.push(...life);
 
   return items.sort((a, b) => b.weight - a.weight);
 }

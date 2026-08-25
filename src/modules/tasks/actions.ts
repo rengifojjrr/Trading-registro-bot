@@ -158,6 +158,50 @@ export async function setTaskStatus(taskId: string, status: string): Promise<voi
 }
 
 /**
+ * Cambiar el estado de varias tareas a la vez.
+ *
+ * Doce tareas pasadas de fecha se despachan de una revisión, no de doce: las
+ * que ya no aplican se cierran juntas y las que siguen vivas se dejan. Ir una
+ * por una es lo que hace que la lista de vencidas crezca hasta que se ignora
+ * entera -- que es el mismo problema que tenía apuntar operaciones.
+ *
+ * Se actualiza en una sola consulta con `in`, no en un bucle: doce viajes a la
+ * base de datos para doce filas de la misma tabla es trabajo que no hace falta,
+ * y a mitad de un bucle un fallo deja la mitad cambiada.
+ */
+export async function setTasksStatus(
+  taskIds: string[],
+  status: string,
+): Promise<{ error: string | null; changed: number }> {
+  const user = await requireUser();
+
+  if (!(STATUSES as readonly string[]).includes(status)) {
+    return { error: "Estado no reconocido.", changed: 0 };
+  }
+  // Un tope para que un clic no dispare una escritura enorme por accidente.
+  const ids = taskIds.filter((id) => z.uuid().safeParse(id).success).slice(0, 200);
+  if (ids.length === 0) return { error: "No hay tareas seleccionadas.", changed: 0 };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tasks_items")
+    .update({
+      status: status as (typeof STATUSES)[number],
+      completed_at: status === "HECHA" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", user.id)
+    .in("id", ids)
+    .select("id");
+
+  if (error) return { error: "No se pudieron cambiar las tareas.", changed: 0 };
+
+  await republish();
+  revalidateTasks();
+  return { error: null, changed: (data ?? []).length };
+}
+
+/**
  * Recuenta después de borrar.
  *
  * Borrar ya no vive aquí: lo hace `DeleteButton` contra la papelera común, que

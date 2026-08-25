@@ -2,7 +2,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { PendingItem } from "@/lib/pending/gather";
+import type { PendingItem } from "@/lib/pending/types";
 import { cn } from "@/lib/utils";
 
 /**
