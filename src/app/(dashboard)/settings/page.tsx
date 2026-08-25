@@ -4,6 +4,7 @@ import { AppearancePanel } from "@/components/layout/appearance-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { AutoSyncToggle } from "@/components/settings/auto-sync-toggle";
 import { BackupCheck } from "@/components/settings/backup-check";
+import { ModuleExports } from "@/components/settings/module-exports";
 import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
@@ -94,6 +95,7 @@ export default async function SettingsPage() {
             <>
               <BackupExport />
               <BackupCheck />
+              <ModuleExports />
             </>
           }
         />

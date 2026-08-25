@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { compareByHabits, compareBySleep, MIN_DAYS_PER_SIDE, type DayRow } from "./life-correlation";
+import {
+  compareByHabits,
+  compareByReading,
+  compareBySleep,
+  compareByTasks,
+  MIN_DAYS_PER_SIDE,
+  type DayRow,
+} from "./life-correlation";
 
 const dia = (over: Partial<DayRow> & { date: string }): DayRow => ({
   sleepMinutes: 480,
   sleepScore: 8,
   habitsDone: 4,
   habitsTracked: 5,
+  tasksDone: 2,
+  didRead: false,
   netPnl: "100",
   tradeCount: 1,
   ...over,
@@ -124,5 +133,41 @@ describe("cruce con los hábitos", () => {
     ]);
     expect(resultado.better?.winningDays).toBe(9);
     expect(resultado.worse?.winningDays).toBe(0);
+  });
+});
+
+describe("cruce con las tareas", () => {
+  it("parte entre días con alguna cerrada y días sin ninguna", () => {
+    // El corte es «alguna» y no una cifra alta a propósito: lo que se compara
+    // es haber estado operativo, no haber sido productivo.
+    const resultado = compareByTasks([
+      ...dias(10, { tasksDone: 0, netPnl: "-40" }).map((d, i) => ({
+        ...d,
+        date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+      })),
+      ...dias(10, { tasksDone: 3, netPnl: "90" }),
+    ]);
+    expect(resultado.worse?.days).toBe(10);
+    expect(resultado.difference).toBe("130.00");
+  });
+
+  it("ignora los días sin operar", () => {
+    expect(compareByTasks(dias(20, { tradeCount: 0 })).better).toBeNull();
+  });
+});
+
+describe("cruce con las lecturas", () => {
+  it("compara los días que leíste con los que no", () => {
+    const resultado = compareByReading([
+      ...dias(10, { didRead: false, netPnl: "10" }).map((d, i) => ({
+        ...d,
+        date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+      })),
+      ...dias(10, { didRead: true, netPnl: "10" }),
+    ]);
+    // Sin diferencia también es una respuesta, y saberlo evita seguir
+    // buscándole sentido a un cruce que no dice nada.
+    expect(resultado.difference).toBe("0.00");
+    expect(resultado.verdict).toContain("No se ve diferencia");
   });
 });

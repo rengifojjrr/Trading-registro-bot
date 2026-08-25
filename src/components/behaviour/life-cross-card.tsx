@@ -14,7 +14,17 @@ import { formatSignedMoney, pnlTone } from "@/lib/format";
  * y dos grupos con su número de días cada uno dejan ver de cuánta muestra sale
  * la comparación.
  */
-export function LifeCrossCard({ sleep, habits }: { sleep: Comparison; habits: Comparison }) {
+export function LifeCrossCard({
+  sleep,
+  habits,
+  tasks,
+  reading,
+}: {
+  sleep: Comparison;
+  habits: Comparison;
+  tasks: Comparison;
+  reading: Comparison;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -28,6 +38,8 @@ export function LifeCrossCard({ sleep, habits }: { sleep: Comparison; habits: Co
       <CardContent className="grid gap-6 lg:grid-cols-2">
         <ComparisonBlock comparison={sleep} />
         <ComparisonBlock comparison={habits} />
+        <ComparisonBlock comparison={tasks} />
+        <ComparisonBlock comparison={reading} />
       </CardContent>
     </Card>
   );

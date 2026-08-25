@@ -31,7 +31,8 @@ export async function fetchLifeTradingDays(params: {
   const desdeIso = desde.toUTC().toISO() ?? new Date(0).toISOString();
   const desdeFecha = desde.toISODate() ?? "1970-01-01";
 
-  const [{ data: trades }, { data: sleep }, { data: habits }] = await Promise.all([
+  const [{ data: trades }, { data: sleep }, { data: habits }, { data: tasks }, { data: readings }] =
+    await Promise.all([
     supabase
       .from("trades")
       .select("closed_at, net_pnl")
@@ -49,6 +50,20 @@ export async function fetchLifeTradingDays(params: {
       .select("entry_date, done")
       .eq("user_id", userId)
       .gte("entry_date", desdeFecha),
+    // Tareas cerradas y lecturas: los otros dos módulos con datos suficientes
+    // para cruzar. Estaban guardando desde hace meses sin que nadie los mirara
+    // contra la cuenta.
+    supabase
+      .from("tasks_items")
+      .select("completed_at")
+      .eq("user_id", userId)
+      .not("completed_at", "is", null)
+      .gte("completed_at", desdeIso),
+    supabase
+      .from("reading_sessions")
+      .select("session_date")
+      .eq("user_id", userId)
+      .gte("session_date", desdeFecha),
   ]);
 
   const porDia = new Map<string, DayRow>();
@@ -61,6 +76,8 @@ export async function fetchLifeTradingDays(params: {
       sleepScore: null,
       habitsDone: 0,
       habitsTracked: 0,
+      tasksDone: 0,
+      didRead: false,
       netPnl: "0",
       tradeCount: 0,
     };
@@ -87,6 +104,21 @@ export async function fetchLifeTradingDays(params: {
     const fila = asegurar(marca.entry_date);
     fila.habitsTracked += 1;
     if (marca.done) fila.habitsDone += 1;
+  }
+
+  // La tarea se cuenta el día en que se cerró, en hora local, por el mismo
+  // motivo que la operación: en UTC, cerrar a las 23:30 en Bogotá es mañana.
+  for (const tarea of tasks ?? []) {
+    if (!tarea.completed_at) continue;
+    const fecha = DateTime.fromISO(tarea.completed_at, { zone: "utc" })
+      .setZone(timezone)
+      .toISODate();
+    if (!fecha) continue;
+    asegurar(fecha).tasksDone += 1;
+  }
+
+  for (const lectura of readings ?? []) {
+    asegurar(lectura.session_date).didRead = true;
   }
 
   return [...porDia.values()].sort((a, b) => a.date.localeCompare(b.date));

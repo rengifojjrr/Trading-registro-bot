@@ -21,7 +21,12 @@ import {
   deriveBuyAndHoldInputs,
 } from "@/lib/analytics/behaviour";
 import { fetchTradesWithBehaviour } from "@/lib/analytics/behaviour-queries";
-import { compareByHabits, compareBySleep } from "@/lib/analytics/life-correlation";
+import {
+  compareByHabits,
+  compareByReading,
+  compareBySleep,
+  compareByTasks,
+} from "@/lib/analytics/life-correlation";
 import { fetchLifeTradingDays } from "@/lib/analytics/life-queries";
 import { computePlaybookAdherence } from "@/lib/journal/rules";
 import { fetchPlaybookAdherenceInputs } from "@/lib/journal/rules-queries";
@@ -109,6 +114,8 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
   const lifeDays = await fetchLifeTradingDays({ userId: user.id, timezone });
   const sleepCross = compareBySleep(lifeDays);
   const habitsCross = compareByHabits(lifeDays);
+  const tasksCross = compareByTasks(lifeDays);
+  const readingCross = compareByReading(lifeDays);
 
   // El guion tampoco se filtra: se marca en pocas operaciones y con el filtro
   // puesto nunca llegaría al mínimo de muestra que hace falta para comparar.
@@ -173,7 +180,12 @@ export default async function BehaviourPage(props: PageProps<"/behaviour">) {
         </CardHeader>
       </Card>
 
-      <LifeCrossCard sleep={sleepCross} habits={habitsCross} />
+      <LifeCrossCard
+        sleep={sleepCross}
+        habits={habitsCross}
+        tasks={tasksCross}
+        reading={readingCross}
+      />
       {playbookInputs.items.length > 0 ? <PlaybookAdherenceCard adherence={playbook} /> : null}
       <MistakeCostTable rows={mistakes} />
       <StreakSizingCard effect={streaks} />

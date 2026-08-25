@@ -34,6 +34,10 @@ export interface DayRow {
   /** Cuántos hábitos marcaste ese día. */
   habitsDone: number;
   habitsTracked: number;
+  /** Tareas que cerraste ese día. Cero es un dato, no un hueco. */
+  tasksDone: number;
+  /** Si leíste ese día. */
+  didRead: boolean;
   /** Resultado neto del día, sumando lo cerrado. */
   netPnl: string;
   tradeCount: number;
@@ -82,6 +86,42 @@ export function compareByHabits(days: DayRow[]): Comparison {
     question: "¿Operas distinto los días que cumples tus hábitos?",
     worse: split("Menos de la mitad", flojos),
     better: split("La mitad o más", buenos),
+  });
+}
+
+/**
+ * ¿Operas distinto los días que sacas cosas adelante?
+ *
+ * Las tareas cerradas son el indicador más directo de haber tenido un día con
+ * el que se puede, y era el módulo con más datos que no cruzaba con nada. El
+ * corte es «alguna» y no una cifra alta a propósito: lo que se compara es
+ * haber estado operativo o no, no haber sido productivo.
+ */
+export function compareByTasks(days: DayRow[]): Comparison {
+  const conDatos = days.filter((d) => d.tradeCount > 0);
+  const ninguna = conDatos.filter((d) => d.tasksDone === 0);
+  const algunas = conDatos.filter((d) => d.tasksDone > 0);
+
+  return build({
+    question: "¿Operas distinto los días que sacas tareas adelante?",
+    worse: split("Sin cerrar ninguna", ninguna),
+    better: split("Con alguna cerrada", algunas),
+  });
+}
+
+/**
+ * ¿Y los días que lees?
+ *
+ * Es el cruce más flojo de los cuatro y se enseña igual: si no sale nada, esa
+ * también es la respuesta, y saberlo evita seguir buscándole sentido.
+ */
+export function compareByReading(days: DayRow[]): Comparison {
+  const conDatos = days.filter((d) => d.tradeCount > 0);
+
+  return build({
+    question: "¿Operas distinto los días que lees?",
+    worse: split("Sin leer", conDatos.filter((d) => !d.didRead)),
+    better: split("Leyendo", conDatos.filter((d) => d.didRead)),
   });
 }
 
