@@ -131,7 +131,10 @@ function ModuleMenu({ module, pathname }: { module: ModuleManifest; pathname: st
       {groupSections(module.sections).map(({ cadence, sections }) => (
         <div key={cadence ?? "todas"} className="flex flex-col">
           {cadence ? (
-            <span className="mt-3 px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            // Sin rebajar la opacidad y a 11px: con `/70` a 10px el contraste
+            // no llegaba al mínimo AA, y la propia prueba de accesibilidad lo
+            // cazó. Un encabezado que no se lee no ordena nada.
+            <span className="mt-3 px-2.5 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {CADENCE_LABELS[cadence]}
             </span>
           ) : null}
