@@ -19,13 +19,19 @@ const RECONSTRUCTION_ALGORITHM_VERSION = 1;
  * overwritten by it. That's also why "undo" deactivates the override
  * rather than editing the trade back.
  *
- * Only EXCLUDE_FILL is offered. The schema also allows SPLIT/MERGE/
- * REASSIGN, but splitting one continuous position into two trades cannot
- * produce honest P&L: the second piece would inherit contracts it has no
- * entry fill for, so its exit quantity would exceed its entry quantity.
- * Supporting that properly means per-lot (FIFO/LIFO) accounting, which is
- * a different accounting model for the whole app -- not a per-trade
- * override. Offering it here would produce confident, wrong numbers.
+ * Se ofrecen dos: EXCLUDE_FILL y MERGE.
+ *
+ * `SPLIT` y `REASSIGN` no se ofrecen, y no por estar sin hacer: partir una
+ * posición continua en dos no puede dar un P&L honesto -- el segundo trozo
+ * heredaría contratos sin fill de entrada, así que su cantidad de salida
+ * superaría a la de entrada. Hacerlo bien exige contabilidad por lotes
+ * (FIFO/LIFO), que es otro modelo para toda la aplicación y no un ajuste por
+ * operación. Ofrecerlo aquí daría números seguros y equivocados.
+ *
+ * `MERGE` sí es honesto porque no inventa nada: coge dos viajes de cero a cero
+ * consecutivos y del mismo sentido, y los cuenta como uno. Todos los fills
+ * siguen siendo los mismos y la suma no cambia -- lo que cambia es dónde se
+ * pone la frontera.
  */
 async function loadTradeContext(tradeId: string) {
   const user = await requireUser();
@@ -69,6 +75,92 @@ export async function excludeFill(
     entityType: "raw_fill",
     entityId: rawFillId,
     metadata: { tradeId, productId: trade.product_id, note: note.trim().slice(0, 500) || null },
+  });
+
+  return rebuild(tradeId, trade);
+}
+
+/**
+ * Funde esta operación con la anterior.
+ *
+ * El caso: cerraste a cero por un parcial que se llevó todo y volviste a
+ * entrar a los diez segundos con la misma idea. Son dos viajes de cero a cero
+ * y el motor tiene razón en separarlas; para quien operaba fue una decisión, y
+ * las rachas, la duración y el tamaño medio salen mal contados.
+ *
+ * Se comprueba aquí, antes de escribir, que la fusión es posible: crear un
+ * ajuste que el motor va a rechazar deja al usuario con una corrección puesta
+ * que no hace nada y un aviso que explica por qué -- dos pasos para enterarse
+ * de algo que se sabía antes de empezar.
+ */
+export async function mergeWithPrevious(
+  tradeId: string,
+  note: string,
+): Promise<{ error: string | null }> {
+  if (!z.uuid().safeParse(tradeId).success) return { error: "Operación inválida." };
+
+  const { user, supabase, trade } = await loadTradeContext(tradeId);
+  if (!trade) return { error: "Operación no encontrada." };
+
+  const { data: esta } = await supabase
+    .from("trades")
+    .select("opening_fill_id, direction, opened_at")
+    .eq("id", tradeId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!esta?.opening_fill_id) {
+    return { error: "Esta operación no tiene un fill de apertura al que anclar la fusión." };
+  }
+
+  // La anterior del mismo producto y cuenta, por fecha de apertura.
+  const { data: anterior } = await supabase
+    .from("trades")
+    .select("id, direction, status, closed_at")
+    .eq("user_id", user.id)
+    .eq("account_id", trade.account_id)
+    .eq("product_id", trade.product_id)
+    .is("orphaned_at", null)
+    .lt("opened_at", esta.opened_at)
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!anterior) {
+    return { error: "No hay ninguna operación anterior de este producto con la que fundir." };
+  }
+  if (anterior.status !== "CLOSED") {
+    return { error: "La operación anterior no está cerrada, así que no hay dos que fundir." };
+  }
+  if (anterior.direction !== esta.direction) {
+    return {
+      error:
+        "La anterior va en el sentido contrario. Fundirlas daría un precio de entrada que promedia compras de los dos extremos, y eso no significa nada.",
+    };
+  }
+
+  const { error } = await supabase.from("trade_grouping_overrides").insert({
+    user_id: user.id,
+    account_id: trade.account_id,
+    product_id: trade.product_id,
+    override_type: "MERGE",
+    anchor_fill_id: esta.opening_fill_id,
+    note: note.trim().slice(0, 500) || null,
+  });
+
+  if (error) return { error: "No se pudo crear la fusión." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "TRADES_MERGED",
+    entityType: "trade",
+    entityId: tradeId,
+    metadata: {
+      productId: trade.product_id,
+      anchorFillId: esta.opening_fill_id,
+      previousTradeId: anterior.id,
+      note: note.trim().slice(0, 500) || null,
+    },
   });
 
   return rebuild(tradeId, trade);

@@ -14,7 +14,7 @@ import {
 } from "@/lib/validation/figures";
 
 import { reconstructTrades } from "./engine";
-import type { GroupingOverrideInput, ReconstructionFillInput } from "./types";
+import type { GroupingOverrideInput, ReconstructionFillInput, RejectedOverride } from "./types";
 
 export interface PersistReconstructionParams {
   userId: string;
@@ -30,6 +30,8 @@ export interface PersistReconstructionResult {
   tradesClosed: number;
   unclassifiedFillIds: string[];
   unsupportedOverrideIds: string[];
+  /** Los mismos, con el motivo: es lo que hace que el aviso diga qué hacer. */
+  rejectedOverrides: RejectedOverride[];
   /** opening_fill_id of trades that existed before but no longer appear in the recomputed set -- flagged, never silently deleted. See docs/RECONCILIATION_RULES.md #4. */
   orphanedOpeningFillIds: string[];
   /** trades.id of every trade created or updated this run -- callers use this to enqueue the Notion outbound mirror without re-deriving it. */
@@ -99,7 +101,7 @@ export async function persistReconstruction(
     isActive: o.is_active,
   }));
 
-  const { trades, unclassifiedFillIds, unsupportedOverrideIds } = reconstructTrades(
+  const { trades, unclassifiedFillIds, unsupportedOverrideIds, rejectedOverrides } = reconstructTrades(
     engineFills,
     engineOverrides,
   );
@@ -210,6 +212,7 @@ export async function persistReconstruction(
     tradesClosed,
     unclassifiedFillIds,
     unsupportedOverrideIds,
+    rejectedOverrides,
     orphanedOpeningFillIds,
     touchedTradeIds,
   };

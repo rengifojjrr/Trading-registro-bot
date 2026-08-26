@@ -261,14 +261,23 @@ describe("reconstructTrades -- grouping overrides", () => {
     expect(reverted.trades[0].totalEntryQty).toBe("2");
   });
 
-  it("reports MERGE/SPLIT/REASSIGN as unsupported instead of silently applying or ignoring them", () => {
+  it("rechaza SPLIT y REASSIGN diciendo por qué, no en silencio", () => {
+    // No están sin hacer: no se pueden hacer con rigor. Partir una operación
+    // exige cerrarla con la posición abierta -- un precio de salida que nadie
+    // pagó -- y reasignar rompe que la posición salga de sumar los fills en
+    // orden. El esquema los acepta, así que alguien podría crear uno.
     const fills = [fill({ id: "e1", side: "BUY", price: 100, size: 1 })];
     const overrides: GroupingOverrideInput[] = [
-      { id: "ov1", overrideType: "MERGE", anchorFillId: "e1", payload: {}, isActive: true },
+      { id: "ov1", overrideType: "SPLIT", anchorFillId: "e1", payload: {}, isActive: true },
+      { id: "ov2", overrideType: "REASSIGN", anchorFillId: "e1", payload: {}, isActive: true },
     ];
 
-    const { unsupportedOverrideIds } = reconstructTrades(fills, overrides);
-    expect(unsupportedOverrideIds).toEqual(["ov1"]);
+    const { unsupportedOverrideIds, rejectedOverrides } = reconstructTrades(fills, overrides);
+    expect(unsupportedOverrideIds).toEqual(["ov1", "ov2"]);
+    expect(rejectedOverrides.map((r) => r.type)).toEqual(["SPLIT", "REASSIGN"]);
+    // El motivo tiene que decir qué hacer en su lugar.
+    expect(rejectedOverrides[0].reason).toContain("excluye");
+    expect(rejectedOverrides[1].reason).toContain("exclúyelo");
   });
 
   it("ignores inactive overrides", () => {
@@ -552,5 +561,222 @@ describe("un fill no se asigna dos veces al mismo papel", () => {
         fill({ id: "c3", side: "SELL", price: 67950, size: 150 }),
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("reconstructTrades -- fundir dos operaciones en una (MERGE)", () => {
+  it("funde una reapertura del mismo sentido con la operación recién cerrada", () => {
+    // El caso real: cierras a cero por un parcial que se llevó todo y vuelves
+    // a entrar a los diez segundos con la misma idea.
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 1 }),
+      fill({ id: "e3", side: "BUY", price: 104, size: 1 }),
+      fill({ id: "e4", side: "SELL", price: 112, size: 1 }),
+    ];
+
+    const sinFundir = reconstructTrades(fills);
+    expect(sinFundir.trades).toHaveLength(2);
+
+    const { trades, rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+    ]);
+
+    expect(rejectedOverrides).toEqual([]);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].status).toBe("CLOSED");
+    expect(trades[0].totalEntryQty).toBe("2");
+    expect(trades[0].totalExitQty).toBe("2");
+    // WAP de entrada sobre las dos compras, de salida sobre las dos ventas.
+    expect(trades[0].entryWap).toBe("102");
+    expect(trades[0].exitWap).toBe("108.5");
+    // La operación es la primera: abre donde abrió, cierra donde cerró.
+    expect(trades[0].openingFillId).toBe("e1");
+    expect(trades[0].closedAt).toBe(fills[3].tradeTime);
+  });
+
+  it("no cambia ni un céntimo del total al fundir", () => {
+    // Fundir reagrupa; no puede crear ni destruir dinero. Si la suma cambiara,
+    // el ajuste sería una forma de maquillar el resultado.
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 2, commission: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 2, commission: 1 }),
+      fill({ id: "e3", side: "BUY", price: 104, size: 2, commission: 1 }),
+      fill({ id: "e4", side: "SELL", price: 112, size: 2, commission: 1 }),
+    ];
+
+    const bruto = (r: ReturnType<typeof reconstructTrades>) =>
+      r.trades.reduce(
+        (sum, t) =>
+          sum +
+          (Number(t.exitWap ?? 0) - Number(t.entryWap)) * Number(t.totalExitQty) -
+          Number(t.entryCommissions) -
+          Number(t.exitCommissions),
+        0,
+      );
+
+    const separadas = reconstructTrades(fills);
+    const fundidas = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+    ]);
+
+    expect(bruto(fundidas)).toBeCloseTo(bruto(separadas), 8);
+  });
+
+  it("no funde en sentido contrario, y dice por qué", () => {
+    // Fundir un largo con un corto daría un precio de entrada que promedia
+    // compras de los dos extremos, y eso no significa nada.
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 1 }),
+      fill({ id: "e3", side: "SELL", price: 104, size: 1 }),
+      fill({ id: "e4", side: "BUY", price: 100, size: 1 }),
+    ];
+
+    const { trades, rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+    ]);
+
+    expect(trades).toHaveLength(2);
+    expect(rejectedOverrides).toHaveLength(1);
+    expect(rejectedOverrides[0].reason).toContain("sentido contrario");
+  });
+
+  it("no funde un fill que no reabre después de un cierre", () => {
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "BUY", price: 101, size: 1 }),
+    ];
+
+    const { trades, rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e2", payload: {}, isActive: true },
+    ]);
+
+    expect(trades).toHaveLength(1);
+    expect(rejectedOverrides[0].reason).toContain("no reabre");
+  });
+
+  it("avisa cuando el ajuste apunta a un fill que no está en el cálculo", () => {
+    // Sin esto, un ajuste sobre un fill borrado o excluido no se aplicaría y
+    // nadie lo sabría nunca.
+    const fills = [fill({ id: "e1", side: "BUY", price: 100, size: 1 })];
+
+    const { rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "fantasma", payload: {}, isActive: true },
+    ]);
+
+    expect(rejectedOverrides).toHaveLength(1);
+    expect(rejectedOverrides[0].reason).toContain("no está en el cálculo");
+  });
+
+  it("desactivar el ajuste devuelve exactamente el resultado automático", () => {
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 1 }),
+      fill({ id: "e3", side: "BUY", price: 104, size: 1 }),
+      fill({ id: "e4", side: "SELL", price: 112, size: 1 }),
+    ];
+    const override: GroupingOverrideInput = {
+      id: "ov1",
+      overrideType: "MERGE",
+      anchorFillId: "e3",
+      payload: {},
+      isActive: false,
+    };
+
+    expect(reconstructTrades(fills, [override])).toEqual(reconstructTrades(fills));
+  });
+
+  it("funde tres tramos encadenados", () => {
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 101, size: 1 }),
+      fill({ id: "e3", side: "BUY", price: 102, size: 1 }),
+      fill({ id: "e4", side: "SELL", price: 103, size: 1 }),
+      fill({ id: "e5", side: "BUY", price: 104, size: 1 }),
+      fill({ id: "e6", side: "SELL", price: 105, size: 1 }),
+    ];
+
+    const { trades } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+      { id: "ov2", overrideType: "MERGE", anchorFillId: "e5", payload: {}, isActive: true },
+    ]);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].totalEntryQty).toBe("3");
+    expect(trades[0].entriesCount).toBe(3);
+    expect(trades[0].exitsCount).toBe(3);
+  });
+
+  it("una fusión que deja la operación abierta queda abierta", () => {
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 1 }),
+      fill({ id: "e3", side: "BUY", price: 104, size: 1 }),
+    ];
+
+    const { trades } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+    ]);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].status).toBe("OPEN");
+    expect(trades[0].closedAt).toBeNull();
+  });
+
+  it("sigue siendo determinista con ajustes puestos", () => {
+    const fills = [
+      fill({ id: "e1", side: "BUY", price: 100, size: 1 }),
+      fill({ id: "e2", side: "SELL", price: 105, size: 1 }),
+      fill({ id: "e3", side: "BUY", price: 104, size: 1 }),
+      fill({ id: "e4", side: "SELL", price: 112, size: 1 }),
+    ];
+    const overrides: GroupingOverrideInput[] = [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "e3", payload: {}, isActive: true },
+    ];
+
+    expect(reconstructTrades(fills, overrides)).toEqual(reconstructTrades(fills, overrides));
+  });
+});
+
+describe("reconstructTrades -- MERGE con varios productos", () => {
+  it("un ajuste de un producto no lo rechaza el otro", () => {
+    // La posición se lleva por producto, así que los ajustes también. Con el
+    // mapa entero, el barrido del segundo producto rechazaría el ajuste del
+    // primero por «no está en el cálculo».
+    const fills = [
+      fill({ id: "a1", side: "BUY", price: 100, size: 1, productId: "BIT-A" }),
+      fill({ id: "a2", side: "SELL", price: 105, size: 1, productId: "BIT-A" }),
+      fill({ id: "a3", side: "BUY", price: 104, size: 1, productId: "BIT-A" }),
+      fill({ id: "a4", side: "SELL", price: 110, size: 1, productId: "BIT-A" }),
+      fill({ id: "b1", side: "BUY", price: 50, size: 1, productId: "BIT-B" }),
+      fill({ id: "b2", side: "SELL", price: 55, size: 1, productId: "BIT-B" }),
+    ];
+
+    const { trades, rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "a3", payload: {}, isActive: true },
+    ]);
+
+    expect(rejectedOverrides).toEqual([]);
+    expect(trades.filter((t) => t.productId === "BIT-A")).toHaveLength(1);
+    expect(trades.filter((t) => t.productId === "BIT-B")).toHaveLength(1);
+  });
+
+  it("un ajuste sobre un fill excluido se rechaza una sola vez", () => {
+    // Con dos productos, el barrido lo habría dicho dos veces.
+    const fills = [
+      fill({ id: "a1", side: "BUY", price: 100, size: 1, productId: "BIT-A" }),
+      fill({ id: "b1", side: "BUY", price: 50, size: 1, productId: "BIT-B" }),
+      fill({ id: "x1", side: "BUY", price: 999, size: 1, productId: "BIT-A" }),
+    ];
+
+    const { rejectedOverrides } = reconstructTrades(fills, [
+      { id: "ex", overrideType: "EXCLUDE_FILL", anchorFillId: "x1", payload: {}, isActive: true },
+      { id: "ov1", overrideType: "MERGE", anchorFillId: "x1", payload: {}, isActive: true },
+    ]);
+
+    expect(rejectedOverrides).toHaveLength(1);
+    expect(rejectedOverrides[0].id).toBe("ov1");
+    expect(rejectedOverrides[0].reason).toContain("no está en el cálculo");
   });
 });

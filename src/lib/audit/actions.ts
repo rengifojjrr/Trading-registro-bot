@@ -15,6 +15,7 @@
 export const AUDIT_ACTIONS = [
   "FILL_EXCLUDED",
   "OVERRIDE_UNDONE",
+  "TRADES_MERGED",
   "PRODUCT_RECALCULATED",
   "CONTRACT_SIZE_DECLARED",
   "CSV_IMPORTED",
@@ -44,6 +45,7 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   FILL_EXCLUDED: "Fill excluido del cálculo",
   OVERRIDE_UNDONE: "Corrección deshecha",
+  TRADES_MERGED: "Operaciones fundidas en una",
   PRODUCT_RECALCULATED: "Producto recalculado",
   CONTRACT_SIZE_DECLARED: "Tamaño de contrato declarado a mano",
   CSV_IMPORTED: "Importación CSV",

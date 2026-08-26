@@ -27,6 +27,26 @@ export interface ReconstructionFillInput {
 
 export type OverrideType = "MERGE" | "SPLIT" | "REASSIGN" | "EXCLUDE_FILL";
 
+/**
+ * Un ajuste manual que el motor no aplicó, y por qué.
+ *
+ * `SPLIT` y `REASSIGN` no se rechazan por estar sin hacer: **no se pueden
+ * hacer con rigor**. Partir una operación por la mitad exige cerrarla con la
+ * posición abierta, y eso obliga a inventarse un precio de salida que nadie
+ * pagó; reasignar un fill a otra operación rompe la única cosa que ata el
+ * cálculo a la realidad, que es que la posición sale de sumar los fills en
+ * orden. Un número inventado que parece calculado es peor que no tener el
+ * número.
+ *
+ * Se rechazan diciéndolo, no en silencio: el esquema los acepta desde el
+ * principio y alguien podría crear uno esperando que hiciera algo.
+ */
+export interface RejectedOverride {
+  id: string;
+  type: OverrideType;
+  reason: string;
+}
+
 export interface GroupingOverrideInput {
   id: string;
   overrideType: OverrideType;
@@ -75,4 +95,12 @@ export interface ReconstructionResult {
   unclassifiedFillIds: string[];
   /** Active overrides whose type the engine does not implement yet. */
   unsupportedOverrideIds: string[];
+  /**
+   * Ajustes que no se pudieron aplicar, con el motivo.
+   *
+   * Antes sólo se devolvía la lista de identificadores, así que la aplicación
+   * podía decir «hay un ajuste sin aplicar» y no por qué. Un aviso que no dice
+   * qué hacer es uno que se ignora.
+   */
+  rejectedOverrides: RejectedOverride[];
 }

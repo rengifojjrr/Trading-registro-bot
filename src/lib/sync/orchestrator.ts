@@ -319,6 +319,34 @@ async function syncOneProduct(params: {
     });
   }
 
+  // Un ajuste manual que no se aplicó tiene que decirse, y decir por qué.
+  //
+  // Se devolvía la lista desde el principio y no la leía nadie: alguien podía
+  // crear una fusión o un SPLIT, ver que las cifras no cambiaban, y no tener
+  // forma de saber si es que el ajuste no hacía falta o es que no se aplicó.
+  if (result.rejectedOverrides.length > 0) {
+    const primero = result.rejectedOverrides[0];
+    await raiseNotification({
+      userId: userId,
+      type: "DISCREPANCY",
+      severity: "WARNING",
+      title:
+        result.rejectedOverrides.length === 1
+          ? "Un ajuste manual no se pudo aplicar"
+          : `${result.rejectedOverrides.length} ajustes manuales no se pudieron aplicar`,
+      message: `${primero.type}: ${primero.reason}${result.rejectedOverrides.length > 1 ? ` (y ${result.rejectedOverrides.length - 1} más)` : ""}`,
+      relatedEntityType: "product",
+      relatedEntityId: productId,
+      // La clave lleva los identificadores: mientras sean los mismos se
+      // actualiza el mismo aviso, y en cuanto cambian sale uno nuevo -- que es
+      // cuando de verdad hay algo nuevo que contar.
+      dedupKey: `OVERRIDE_REJECTED:${accountId}:${productId}:${result.rejectedOverrides
+        .map((r) => r.id)
+        .sort()
+        .join(",")}`,
+    });
+  }
+
   if (result.orphanedOpeningFillIds.length > 0) {
     await raiseNotification({
       userId: userId,

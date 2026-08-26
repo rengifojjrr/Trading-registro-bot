@@ -2,6 +2,7 @@ import { Decimal } from "decimal.js";
 
 import type {
   FillRole,
+  RejectedOverride,
   GroupingOverrideInput,
   ReconstructedFillAllocation,
   ReconstructedTrade,
@@ -26,18 +27,42 @@ export function reconstructTrades(
   overrides: GroupingOverrideInput[] = [],
 ): ReconstructionResult {
   const unsupportedOverrideIds: string[] = [];
+  const rejectedOverrides: RejectedOverride[] = [];
   const excludedFillIds = new Set<string>();
+  /** entryId del fill que abre una operación que hay que fundir con la anterior. */
+  const mergeAnchors = new Map<string, string>();
 
   for (const override of overrides) {
     if (!override.isActive) continue;
+
     if (override.overrideType === "EXCLUDE_FILL") {
       excludedFillIds.add(override.anchorFillId);
-    } else {
-      // MERGE/SPLIT/REASSIGN are recognized by the schema and type system
-      // but not implemented by the engine yet -- surfaced explicitly so a
-      // caller can raise a notification, never silently ignored.
-      unsupportedOverrideIds.push(override.id);
+      continue;
     }
+
+    if (override.overrideType === "MERGE") {
+      mergeAnchors.set(override.anchorFillId, override.id);
+      continue;
+    }
+
+    // SPLIT y REASSIGN no están sin hacer: no se pueden hacer con rigor.
+    //
+    // Partir una operación por la mitad exige cerrarla con la posición
+    // abierta, y eso obliga a inventarse un precio de salida que nadie pagó.
+    // Reasignar un fill a otra operación rompe lo único que ata el cálculo a
+    // la realidad -- que la posición sale de sumar los fills en orden.
+    //
+    // Se rechazan diciendo por qué, no en silencio: el esquema los acepta y
+    // alguien podría crear uno esperando que hiciera algo.
+    unsupportedOverrideIds.push(override.id);
+    rejectedOverrides.push({
+      id: override.id,
+      type: override.overrideType,
+      reason:
+        override.overrideType === "SPLIT"
+          ? "Partir una operación en dos exigiría cerrarla con la posición todavía abierta, y eso obliga a inventarse un precio de salida que nadie pagó. Para separar dos operaciones, excluye el fill que las une."
+          : "Mover un fill a otra operación rompe lo único que ata el cálculo a la realidad: que la posición sale de sumar los fills en orden. Para quitar un fill del cálculo, exclúyelo.",
+    });
   }
 
   const unclassifiedFillIds: string[] = [];
@@ -65,12 +90,45 @@ export function reconstructTrades(
 
   const trades: ReconstructedTrade[] = [];
 
+  // Cada producto recibe solo los ajustes de sus propios fills.
+  //
+  // Con el mapa entero, un ajuste del producto A lo rechazaría el barrido
+  // final del producto B por «no está en el cálculo». La posición se lleva por
+  // producto, así que los ajustes también.
   for (const [productId, fills] of byProduct) {
     fills.sort(compareFills);
-    trades.push(...reconstructProductTrades(productId, fills));
+
+    const delProducto = new Map<string, string>();
+    const suyos = new Set(fills.map((f) => f.entryId));
+    for (const [anchorFillId, overrideId] of mergeAnchors) {
+      if (suyos.has(anchorFillId)) delProducto.set(anchorFillId, overrideId);
+    }
+
+    const result = reconstructProductTrades(productId, fills, delProducto);
+    trades.push(...result.trades);
+    rejectedOverrides.push(...result.rejected);
+    unsupportedOverrideIds.push(...result.rejected.map((r) => r.id));
   }
 
-  return { trades, unclassifiedFillIds, unsupportedOverrideIds };
+  // Los que no son de ningún producto: el fill no existe, o quedó excluido por
+  // otro ajuste, o es de los que no se clasifican. Se dice una sola vez, aquí,
+  // en lugar de una vez por producto.
+  const enAlgunProducto = new Set<string>();
+  for (const fills of byProduct.values()) {
+    for (const f of fills) enAlgunProducto.add(f.entryId);
+  }
+  for (const [anchorFillId, overrideId] of mergeAnchors) {
+    if (enAlgunProducto.has(anchorFillId)) continue;
+    unsupportedOverrideIds.push(overrideId);
+    rejectedOverrides.push({
+      id: overrideId,
+      type: "MERGE",
+      reason:
+        "El fill al que apunta no está en el cálculo: o no existe, o se excluyó con otro ajuste, o es de los que el motor no clasifica.",
+    });
+  }
+
+  return { trades, unclassifiedFillIds, unsupportedOverrideIds, rejectedOverrides };
 }
 
 function compareFills(a: ReconstructionFillInput, b: ReconstructionFillInput): number {
@@ -106,13 +164,60 @@ interface OpenTradeAccumulator {
   sequenceCounter: number;
 }
 
+/**
+ * Fundir dos operaciones que el motor separó, cuando de verdad fueron una.
+ *
+ * Pasa de verdad: cierras a cero por error o por un parcial que se llevó todo,
+ * y vuelves a entrar a los diez segundos con la misma idea. Financieramente
+ * son dos viajes de cero a cero y el motor tiene razón en separarlas; para
+ * quien operaba fue una sola decisión, y las estadísticas de racha, de
+ * duración y de tamaño medio salen mal contadas.
+ *
+ * **Sólo se funde hacia atrás y en la misma dirección.** Si el ajuste apunta a
+ * un fill que no reabre justo después de un cierre, o que reabre al revés, no
+ * se aplica y se dice por qué: fundir un largo con un corto daría un precio de
+ * entrada que promedia compras de los dos extremos, que no significa nada.
+ *
+ * Que sea el mismo producto está garantizado por construcción -- esta función
+ * ya recibe los fills de uno solo.
+ */
 function reconstructProductTrades(
   productId: string,
   fills: ReconstructionFillInput[],
-): ReconstructedTrade[] {
+  mergeAnchors: Map<string, string>,
+): { trades: ReconstructedTrade[]; rejected: RejectedOverride[] } {
   const closedTrades: ReconstructedTrade[] = [];
+  const rejected: RejectedOverride[] = [];
   let position = new Decimal(0);
   let current: OpenTradeAccumulator | null = null;
+
+  /**
+   * El cierre se aplaza un fill.
+   *
+   * Cuando la posición llega a cero no se cierra la operación de inmediato:
+   * se marca la fecha y se espera al fill siguiente, porque puede traer un
+   * ajuste que diga que en realidad no había que cerrarla. Cerrar y luego
+   * deshacerlo obligaría a desmontar una operación ya construida.
+   */
+  let pendingCloseAt: string | null = null;
+
+  /**
+   * Ajustes que llegaron a mirarse.
+   *
+   * Sin esto, un ajuste que apunta a un fill que existe pero nunca abre una
+   * operación -- porque suma a una posición ya abierta, por ejemplo -- no se
+   * consultaba nunca y se ignoraba en silencio, que es exactamente lo que este
+   * rechazo explícito existía para evitar. Lo encontró una prueba.
+   */
+  const consultados = new Set<string>();
+
+  const flushPendingClose = () => {
+    if (pendingCloseAt !== null && current) {
+      closedTrades.push(finalizeTrade(current, pendingCloseAt, "CLOSED"));
+      current = null;
+      pendingCloseAt = null;
+    }
+  };
 
   for (const fill of fills) {
     const size = new Decimal(fill.size);
@@ -121,12 +226,47 @@ function reconstructProductTrades(
     const signedDelta = fill.side === "BUY" ? size : size.negated();
 
     if (position.isZero()) {
+      const direction: TradeDirectionInternal = signedDelta.gt(0) ? "LONG" : "SHORT";
+      const overrideId = mergeAnchors.get(fill.entryId);
+
+      if (overrideId !== undefined) {
+        consultados.add(overrideId);
+
+        // Sólo se funde si hay una operación recién cerrada y va en el mismo
+        // sentido. Fundir un largo con un corto daría un precio de entrada que
+        // promedia compras de los dos extremos, y eso no significa nada.
+        if (pendingCloseAt !== null && current && current.direction === direction) {
+          pendingCloseAt = null;
+          allocate(current, fill.entryId, "ENTRY", size, price, commission, current.sequenceCounter++);
+          position = position.plus(signedDelta);
+          continue;
+        }
+
+        rejected.push({
+          id: overrideId,
+          type: "MERGE",
+          reason:
+            pendingCloseAt === null
+              ? "Este fill no reabre justo después de un cierre, así que no hay ninguna operación anterior con la que fundirlo."
+              : "La operación anterior iba en el sentido contrario. Fundirlas daría un precio de entrada que promedia compras de los dos extremos, y eso no significa nada.",
+        });
+      }
+
+      flushPendingClose();
+
       // Case A: flat -> this fill opens a brand-new trade.
-      current = openTrade(productId, fill, signedDelta.gt(0) ? "LONG" : "SHORT");
+      current = openTrade(productId, fill, direction);
       allocate(current, fill.entryId, "ENTRY", size, price, commission, current.sequenceCounter++);
       position = position.plus(signedDelta);
       continue;
     }
+
+    // Cualquier fill que no abra desde cero confirma el cierre que estaba
+    // esperando: ya no puede haber una fusión, porque la posición no está
+    // plana. En la práctica no ocurre -- si la posición no es cero, no había
+    // cierre pendiente -- pero dejarlo explícito evita que un cambio futuro
+    // arrastre un cierre aplazado sin darse cuenta.
+    flushPendingClose();
 
     // From here on `current` must exist (position !== 0 implies an open trade).
     const acc = current!;
@@ -152,9 +292,8 @@ function reconstructProductTrades(
     position = position.plus(signedDelta);
 
     if (position.isZero()) {
-      // Exact close, no reversal.
-      closedTrades.push(finalizeTrade(acc, fill.tradeTime, "CLOSED"));
-      current = null;
+      // Cierre exacto: se aplaza un fill por si el siguiente lo funde.
+      pendingCloseAt = fill.tradeTime;
       continue;
     }
 
@@ -182,11 +321,31 @@ function reconstructProductTrades(
     // else: pure partial reduction; trade stays open, `current` unchanged.
   }
 
-  const result = closedTrades;
+  // Si quedó un cierre aplazado al acabarse los fills, ya no va a fundirse con
+  // nada: se cierra.
+  flushPendingClose();
+
+  const trades = closedTrades;
   if (current) {
-    result.push(finalizeTrade(current, null, "OPEN"));
+    trades.push(finalizeTrade(current, null, "OPEN"));
   }
-  return result;
+
+  // Un ajuste que apunta a un fill que no existe, o que quedó excluido, no se
+  // aplicó y nadie lo habría sabido.
+  // Aquí solo llegan ajustes cuyo fill sí está en este producto: el caso de
+  // «no está en el cálculo» lo resuelve quien llama, una sola vez.
+  for (const overrideId of mergeAnchors.values()) {
+    if (consultados.has(overrideId)) continue;
+
+    rejected.push({
+      id: overrideId,
+      type: "MERGE",
+      reason:
+        "Este fill no reabre justo después de un cierre -- suma a una posición que ya estaba abierta -- así que no hay nada que fundir.",
+    });
+  }
+
+  return { trades, rejected };
 }
 
 function openTrade(

@@ -1,11 +1,12 @@
 "use client";
 
-import { RotateCcw, Undo2 } from "lucide-react";
+import { Merge, RotateCcw, Undo2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
   excludeFill,
+  mergeWithPrevious,
   recalculateProduct,
   undoOverride,
 } from "@/app/(dashboard)/trades/[tradeId]/override-actions";
@@ -56,20 +57,51 @@ export function FillCorrections({
         <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           Corregir agrupación
           <InfoHint label="Corregir agrupación">
-            Si un fill no debería contar (un ajuste de Coinbase, un movimiento que no es tuyo), puedes excluirlo
-            y las operaciones se recalculan sin él. La corrección se guarda aparte y se vuelve a aplicar en cada
-            sincronización, así que no se pierde. Tus datos crudos nunca se modifican.
+            Dos correcciones. <strong>Excluir un fill</strong> si no debería contar -- un ajuste de Coinbase, un
+            movimiento que no es tuyo. <strong>Fundir con la anterior</strong> si cerraste a cero sin querer y
+            volviste a entrar con la misma idea: fueron dos viajes de cero a cero para el motor y una sola
+            decisión para ti. Ninguna de las dos inventa nada ni toca tus datos crudos: se guardan aparte y se
+            vuelven a aplicar en cada sincronización, así que no se pierden.
           </InfoHint>
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={isPending}
-          onClick={() => run(() => recalculateProduct(tradeId), "Operaciones recalculadas.")}
-        >
-          <RotateCcw className="size-4" aria-hidden />
-          Recalcular
-        </Button>
+        <div className="flex items-center gap-1">
+          {/* Fundir con la anterior.
+              El caso: cerraste a cero por un parcial que se llevó todo y
+              volviste a entrar a los diez segundos con la misma idea. Son dos
+              viajes de cero a cero y el motor tiene razón en separarlas; para
+              quien operaba fue una decisión, y las rachas, la duración y el
+              tamaño medio salen mal contados.
+              No inventa nada: los fills siguen siendo los mismos y la suma no
+              cambia. Lo que cambia es dónde se pone la frontera. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isPending}
+            onClick={() => {
+              const motivo = window.prompt(
+                "¿Por qué fue la misma operación? (queda anotado)",
+                "Cerré a cero sin querer y volví a entrar con la misma idea",
+              );
+              if (motivo === null) return;
+              run(
+                () => mergeWithPrevious(tradeId, motivo),
+                "Fundida con la anterior. Las operaciones se han recalculado.",
+              );
+            }}
+          >
+            <Merge className="size-4" aria-hidden />
+            Fundir con la anterior
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isPending}
+            onClick={() => run(() => recalculateProduct(tradeId), "Operaciones recalculadas.")}
+          >
+            <RotateCcw className="size-4" aria-hidden />
+            Recalcular
+          </Button>
+        </div>
       </div>
 
       {overrides.length > 0 ? (
