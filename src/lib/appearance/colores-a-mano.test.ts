@@ -36,6 +36,25 @@ const PERMITIDOS = new Map<string, string>([
       "así que sus colores tienen que viajar con él.",
   ],
   [
+    "app/manifest.ts",
+    "Android lee el manifiesto desde fuera del navegador, sin CSS: el color " +
+      "de la barra de estado tiene que ser un literal. Y es el mismo de la " +
+      "marca, no el de la paleta elegida -- el icono de una aplicación " +
+      "instalada no cambia porque cambies de paleta dentro.",
+  ],
+  [
+    "app/offline/page.tsx",
+    "Es la única página que se ve sin red, así que no puede contar con que " +
+      "haya llegado ninguna hoja de estilo. Sus colores viajan con ella, por " +
+      "el mismo motivo que los de global-error.tsx.",
+  ],
+  [
+    "app/layout.tsx",
+    "`themeColor` va al <meta> que lee el sistema operativo para pintar la " +
+      "barra de estado, fuera del alcance del CSS. Es el único literal del " +
+      "archivo y es el mismo de la marca.",
+  ],
+  [
     "core/notion-colors.ts",
     "Traduce los nombres de color de Notion a algo pintable. El color de una " +
       "etiqueta lo eligió una persona en Notion: es un dato, no una decisión " +

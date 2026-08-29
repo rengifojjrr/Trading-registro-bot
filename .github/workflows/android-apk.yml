@@ -1,0 +1,126 @@
+# Construye el APK de Android a partir del sitio ya desplegado.
+#
+# El APK no lleva la aplicación dentro: abre la URL de producción a pantalla
+# completa. Eso significa que **se construye una vez y no se vuelve a tocar** --
+# cada despliegue en Vercel se ve en el teléfono sin reinstalar nada, que es
+# justo lo que se pedía.
+#
+# Se ejecuta a mano y no en cada empujón, por lo mismo: reconstruir el APK cada
+# vez que cambia una línea de código sería construir mil veces el mismo archivo.
+#
+# La clave de firma vive en los secretos de GitHub, nunca en el repositorio. Si
+# se filtrara, cualquiera podría publicar una actualización haciéndose pasar por
+# esta aplicación -- y una clave en un repositorio se filtra tarde o temprano.
+name: APK de Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL de producción (la fija, sin el hash del despliegue)"
+        required: true
+        type: string
+      package_id:
+        description: "Identificador del paquete Android"
+        required: false
+        default: "app.registro.trading"
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bubblewrap pide JDK 17 en concreto. Con otra versión falla al compilar
+      # con un error de Gradle que no menciona la causa.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Comprobar que la URL sirve el manifiesto
+        # Antes de descargar medio Android SDK: si el manifiesto no se puede
+        # leer sin sesión, el resto del trabajo no puede salir bien, y es mejor
+        # fallar aquí con un mensaje que dentro de Gradle sin uno.
+        run: |
+          set -euo pipefail
+          URL="${{ inputs.url }}"
+          echo "Comprobando ${URL}/manifest.webmanifest"
+          code=$(curl -s -o /tmp/manifest.json -w '%{http_code}' "${URL}/manifest.webmanifest")
+          if [ "$code" != "200" ]; then
+            echo "::error::El manifiesto responde $code. Tiene que ser accesible sin sesión."
+            exit 1
+          fi
+          python3 -c "import json;m=json.load(open('/tmp/manifest.json'));assert m.get('name');print('Manifiesto correcto:',m['name'])"
+
+      - name: Reconstruir el almacén de claves desde los secretos
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Falta el secreto ANDROID_KEYSTORE_BASE64. Genera la clave con scripts/android-keystore.sh y sigue docs/ANDROID.md."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > /tmp/firma.keystore
+          echo "Almacén de claves reconstruido ($(stat -c%s /tmp/firma.keystore) bytes)"
+
+      - name: Generar y compilar el APK
+        env:
+          # Bubblewrap pregunta por consola si no encuentra estas variables, y
+          # en un flujo automático una pregunta es un cuelgue de treinta minutos.
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          npm install -g @bubblewrap/cli
+
+          mkdir -p /tmp/twa && cd /tmp/twa
+
+          # Todo sale del manifiesto que sirve el propio sitio: nombre, colores
+          # e iconos. Así no hay dos sitios donde cambiar el nombre y sólo uno
+          # que se acuerde.
+          bubblewrap init \
+            --manifest="${{ inputs.url }}/manifest.webmanifest" \
+            --packageId="${{ inputs.package_id }}" \
+            --signingKeyPath=/tmp/firma.keystore \
+            --signingKeyAlias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            --directory=. \
+            --skipPwaValidation
+
+          bubblewrap build --skipPwaValidation
+
+      - name: Publicar el APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: registro-android
+          path: |
+            /tmp/twa/app-release-signed.apk
+            /tmp/twa/app-release-bundle.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: La huella que hay que poner en Vercel
+        # Sin este valor en ANDROID_CERT_FINGERPRINTS, el APK funciona pero se
+        # abre con la barra de direcciones del navegador arriba.
+        run: |
+          set -euo pipefail
+          echo "## Huella del certificado" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pon esto en Vercel como \`ANDROID_CERT_FINGERPRINTS\` y vuelve a desplegar:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          keytool -list -v \
+            -keystore /tmp/firma.keystore \
+            -alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            | grep 'SHA256:' | head -1 | sed 's/.*SHA256: *//' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { appearanceAttributes } from "@/lib/appearance/catalog";
 import { appearanceStylesheet } from "@/lib/appearance/css";
 import { readAppearance } from "@/lib/appearance/storage";
+import { ServiceWorkerRegistration } from "@/components/layout/service-worker";
 import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
@@ -22,6 +23,37 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Trading Registro Bot",
   description: "Diario privado de trading de futuros de Bitcoin.",
+  // Sin esto, iOS abre la aplicación instalada dentro de Safari con su barra
+  // de direcciones. En Android lo decide el manifiesto; en iOS, estas dos
+  // líneas. La aplicación se usa desde el móvil, así que importan las dos.
+  appleWebApp: {
+    capable: true,
+    title: "Registro",
+    statusBarStyle: "black-translucent",
+  },
+  // Que el APK y la web compartan una sola dirección canónica: es lo que
+  // evita acabar con dos direcciones que enseñan lo mismo y una que se queda
+  // vieja. Se toma de la variable de entorno para no tenerla escrita a mano.
+  metadataBase: process.env.NEXT_PUBLIC_APP_URL
+    ? new URL(process.env.NEXT_PUBLIC_APP_URL)
+    : undefined,
+};
+
+/**
+ * El color de la barra de estado de Android cuando la aplicación está
+ * instalada.
+ *
+ * Va en `viewport` y no en `metadata` porque Next lo pide así desde la 14; en
+ * `metadata` se ignora en silencio, que es cómo se acaba con una franja blanca
+ * encima de una aplicación oscura sin saber por qué.
+ */
+export const viewport: Viewport = {
+  themeColor: "#0b1220",
+  // La aplicación tiene tablas y gráficos: sin esto, un doble toque hace zoom
+  // y descoloca la vista justo cuando se está intentando leer una cifra.
+  // No se bloquea el zoom por accesibilidad -- se permite hasta 5x.
+  maximumScale: 5,
+  viewportFit: "cover",
 };
 
 /**
@@ -70,6 +102,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="font-sans antialiased">
         {children}
         <Toaster />
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

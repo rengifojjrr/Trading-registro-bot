@@ -4,12 +4,35 @@ import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv } from "@/lib/env";
 import { authCookieOptions } from "@/lib/supabase/cookie-options";
 
+/**
+ * Lo que se sirve sin sesión.
+ *
+ * Las cinco primeras son las pantallas de entrar. Las de abajo son lo que la
+ * aplicación instalada necesita, y las pide **sin sesión**:
+ *
+ * - Android descarga `/.well-known/assetlinks.json` desde sus propios
+ *   servidores, sin cookies. Si le llega una redirección a `/login`, decide
+ *   que el dominio no avala al APK y lo abre con la barra de direcciones --
+ *   sin decir por qué, y sin nada en ningún registro.
+ * - El manifiesto y el service worker se piden antes de que haya sesión: son
+ *   justo lo que decide si el navegador ofrece instalar.
+ * - `/offline` se ve cuando no hay red, que es cuando tampoco se puede
+ *   comprobar una sesión.
+ *
+ * Ninguna de las cinco enseña ni un dato: son el nombre de la aplicación, sus
+ * colores, sus iconos y una huella de certificado pública por definición.
+ */
 const PUBLIC_PATH_PREFIXES = [
   "/login",
   "/forgot-password",
   "/reset-password",
   "/auth/confirm",
   "/auth/auth-code-error",
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/.well-known",
+  "/offline",
+  "/icons",
 ];
 
 function isPublicPath(pathname: string) {

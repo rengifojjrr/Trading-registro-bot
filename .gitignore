@@ -47,3 +47,9 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 /e2e/.auth/
+
+# La clave de firma del APK. Nunca al repositorio: si se filtra, cualquiera
+# puede publicar una actualización haciéndose pasar por esta aplicación.
+*.keystore
+*.jks
+android-firma.*
