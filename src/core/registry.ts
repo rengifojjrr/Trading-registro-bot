@@ -84,6 +84,7 @@ export const MODULES: ModuleManifest[] = [
       { href: "/risk", label: "Riesgo", cadence: "DIARIO" },
       // Lo que se mira el domingo, no el martes por la tarde.
       { href: "/analytics", label: "Análisis", cadence: "REPASO" },
+      { href: "/backtest", label: "Backtest", cadence: "REPASO" },
       { href: "/behaviour", label: "Comportamiento", cadence: "REPASO" },
       { href: "/review", label: "Revisión", cadence: "REPASO" },
       { href: "/strategies", label: "Estrategias", cadence: "REPASO" },

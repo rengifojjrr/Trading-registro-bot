@@ -83,6 +83,14 @@ import {
   type ChartViewState,
   type ScaleMode,
 } from "@/lib/charts/scale";
+import {
+  checkPracticeExit,
+  practicePnl,
+  summarisePractice,
+  type PracticePosition,
+  type PracticeTrade,
+} from "@/lib/backtest/practice";
+import { PracticePanel } from "@/components/trades/practice-panel";
 import { snapToCandle } from "@/lib/charts/snap";
 import {
   hasTemplate,
@@ -500,6 +508,27 @@ export function TradeChart({
    * operación, no un adorno. Apagable porque al dibujar encima estorba.
    */
   const [showPlan, setShowPlan] = useState(vistaGuardada.showPlan);
+
+  /**
+   * Operar sobre la reproducción, a ciegas.
+   *
+   * Vive en el gráfico y no se guarda en ninguna parte: es entrenamiento, no
+   * historial. Guardarlo mezclaría operaciones que no ocurrieron con las que
+   * sí, que es lo último que este diario puede permitirse.
+   */
+  const [practicePos, setPracticePos] = useState<PracticePosition | null>(null);
+  const [practiceTrades, setPracticeTrades] = useState<PracticeTrade[]>([]);
+  const [practiceStart, setPracticeStart] = useState<number>(0);
+  /**
+   * El avance y el índice, por referencia.
+   *
+   * El intervalo de la reproducción se monta una vez y tiene que llamar a la
+   * versión de ahora de `avanzarReplay` -- que cambia en cada render porque
+   * lee la posición de práctica--. Sin la referencia habría que reiniciar el
+   * intervalo en cada render, y eso hace que la reproducción vaya a saltos.
+   */
+  const avanzarReplayRef = useRef<() => void>(() => {});
+  const replayIndexRef = useRef<number | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
 
   // Every timeframe is selectable. This only tracks whether the chosen one
@@ -612,14 +641,13 @@ export function TradeChart({
   useEffect(() => {
     if (!playing || replayIndex === null) return;
     const id = setInterval(() => {
-      setReplayIndex((current) => {
-        if (current === null) return current;
-        if (current >= candles.length - 1) {
-          setPlaying(false);
-          return current;
-        }
-        return current + 1;
-      });
+      // Por el mismo camino que el botón, para que la comprobación del stop
+      // de la práctica pase igual reproduciendo que avanzando a mano.
+      if (replayIndexRef.current !== null && replayIndexRef.current >= candles.length - 1) {
+        setPlaying(false);
+        return;
+      }
+      avanzarReplayRef.current();
     }, REPLAY_STEP_MS);
     return () => clearInterval(id);
   }, [playing, replayIndex, candles.length]);
@@ -763,6 +791,71 @@ export function TradeChart({
     magnet,
     indicators,
   ]);
+
+  /** El precio de la última vela revelada: el «ahora» de la reproducción. */
+  const precioDePractica = replayIndex !== null ? (candles[replayIndex]?.close ?? 0) : 0;
+
+  function abrirPractica(direction: "LONG" | "SHORT") {
+    if (replayIndex === null) return;
+    setPracticePos({
+      direction,
+      entryIndex: replayIndex,
+      entryPrice: candles[replayIndex].close,
+      stop: null,
+      target: null,
+      size: 1,
+    });
+  }
+
+  function cerrarPractica(
+    price: number,
+    reason: PracticeTrade["reason"],
+    enIndice = replayIndex,
+  ) {
+    setPracticePos((pos) => {
+      if (!pos || enIndice === null) return pos;
+      setPracticeTrades((prev) => [
+        ...prev,
+        {
+          direction: pos.direction,
+          entryIndex: pos.entryIndex,
+          exitIndex: enIndice,
+          entryPrice: pos.entryPrice,
+          exitPrice: price,
+          size: pos.size,
+          netPnl: practicePnl(pos, price, 1),
+          reason,
+        },
+      ]);
+      return null;
+    });
+  }
+
+  /**
+   * Avanza una vela y comprueba si eso cierra la posición de práctica.
+   *
+   * Un único punto de avance para el botón y para la reproducción automática.
+   * La alternativa -- un efecto que vigile el índice -- sería un `setState`
+   * dentro de un efecto, que además de estar prohibido pinta dos veces: la
+   * vela con la posición todavía abierta y luego ya cerrada.
+   */
+  avanzarReplayRef.current = () => avanzarReplay();
+  replayIndexRef.current = replayIndex;
+
+  function avanzarReplay() {
+    setReplayIndex((actual) => {
+      if (actual === null) return actual;
+      const siguiente = Math.min(actual + 1, candles.length - 1);
+      const vela = candles[siguiente];
+
+      if (practicePos && vela && siguiente > practicePos.entryIndex) {
+        const salida = checkPracticeExit(practicePos, vela);
+        if (salida) cerrarPractica(salida.price, salida.reason, siguiente);
+      }
+
+      return siguiente;
+    });
+  }
 
   function toggleIndicator(id: IndicatorId) {
     setIndicators((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
@@ -1946,7 +2039,12 @@ export function TradeChart({
                 } else {
                   // Starts a third of the way in, so there is some context to
                   // read before the first new candle appears.
-                  setReplayIndex(Math.max(Math.floor(candles.length / 3), 0));
+                  const desde = Math.max(Math.floor(candles.length / 3), 0);
+                  setReplayIndex(desde);
+                  // Desde aquí se mide «qué habría dado no hacer nada».
+                  setPracticeStart(desde);
+                  setPracticeTrades([]);
+                  setPracticePos(null);
                 }
               }}
               disabled={candles.length < 2}
@@ -1982,7 +2080,7 @@ export function TradeChart({
             type="button"
             onClick={() => {
               setPlaying(false);
-              setReplayIndex((i) => (i === null ? null : Math.min(i + 1, candles.length - 1)));
+              avanzarReplay();
             }}
             disabled={replayIndex >= candles.length - 1}
             className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
@@ -2006,6 +2104,28 @@ export function TradeChart({
             La salida está oculta mientras dura la reproducción: se trata de leer el gráfico sin saber ya
             cómo terminó.
           </p>
+
+          {/* Y ahora también se puede operar sobre ella. Es entrenamiento
+              real sin dinero: la única forma de practicar leer un gráfico sin
+              saber ya cómo acabó. */}
+          <div className="w-full">
+            <PracticePanel
+              position={practicePos}
+              trades={practiceTrades}
+              summary={summarisePractice(practiceTrades, candles, practiceStart, 1, 1)}
+              lastPrice={precioDePractica}
+              onOpen={abrirPractica}
+              onClose={() => cerrarPractica(precioDePractica, "MANUAL")}
+              onSetLevel={(cual, valor) =>
+                setPracticePos((pos) => (pos ? { ...pos, [cual]: valor } : pos))
+              }
+              onReset={() => {
+                setPracticeTrades([]);
+                setPracticePos(null);
+                setPracticeStart(replayIndex ?? 0);
+              }}
+            />
+          </div>
         </div>
       ) : null}
 

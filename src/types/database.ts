@@ -1229,6 +1229,44 @@ export interface Database {
         }
       >;
 
+      /**
+       * Las reglas ejecutables de backtest.
+       *
+       * Distinta de `strategies`, que es una etiqueta para operaciones ya
+       * hechas. `rules` y `costs` van como `Json` porque su forma la define
+       * `lib/backtest/types.ts` y cambia cada vez que se añade un bloque: una
+       * migración por bloque sería el precio de haberlas puesto en columnas.
+       */
+      backtest_strategies: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          product_id: string | null;
+          rules: Json;
+          costs: Json;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          product_id?: string | null;
+          rules?: Json;
+          costs?: Json;
+          is_active?: boolean;
+        },
+        {
+          name?: string;
+          product_id?: string | null;
+          rules?: Json;
+          costs?: Json;
+          is_active?: boolean;
+          updated_at?: string;
+        }
+      >;
       strategies: Table<
         {
           id: string;
