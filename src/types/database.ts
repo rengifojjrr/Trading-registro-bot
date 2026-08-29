@@ -76,7 +76,10 @@ export type EntityKind =
   | "COMIDA"
   | "LECTURA"
   | "LIBRO"
-  | "CONTENIDO";
+  | "CONTENIDO"
+  // Las dos que borraban de verdad mientras todo lo demás tenía red debajo.
+  | "ESTRATEGIA"
+  | "ETIQUETA";
 
 /** Los diez nombres de color de Notion, copiados en lugar de traducidos. */
 export type ProjectColor =

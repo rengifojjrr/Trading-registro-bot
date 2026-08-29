@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { recordAudit } from "@/lib/audit/log";
+import { moveToTrash } from "@/core/trash";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -133,9 +134,13 @@ export async function setStrategyActive(strategyId: string, isActive: boolean): 
  * otherwise the caller is told to archive instead, so a delete can never
  * quietly detach historical trades from the strategy they were taken under.
  */
-export async function deleteStrategy(strategyId: string): Promise<{ error: string | null }> {
+export async function deleteStrategy(
+  strategyId: string,
+): Promise<{ error: string | null; trashId: string | null }> {
   const user = await requireUser();
-  if (!z.uuid().safeParse(strategyId).success) return { error: "Estrategia inválida." };
+  if (!z.uuid().safeParse(strategyId).success) {
+    return { error: "Estrategia inválida.", trashId: null };
+  }
 
   const supabase = await createClient();
 
@@ -147,11 +152,15 @@ export async function deleteStrategy(strategyId: string): Promise<{ error: strin
   if (count && count > 0) {
     return {
       error: `No se puede borrar: ${count} operación(es) la usan. Archívala para dejar de verla sin perder ese historial.`,
+      trashId: null,
     };
   }
 
-  const { error } = await supabase.from("strategies").delete().eq("id", strategyId).eq("user_id", user.id);
-  if (error) return { error: "No se pudo borrar la estrategia." };
+  // A la papelera y no de verdad. Aquí ya se sabe que no la usa ninguna
+  // operación --el bloqueo de arriba lo garantiza-- así que restaurarla la
+  // devuelve entera, sin relaciones rotas.
+  const trashId = await moveToTrash("ESTRATEGIA", strategyId);
+  if (!trashId) return { error: "No se pudo borrar la estrategia.", trashId: null };
 
   await recordAudit({
     userId: user.id,
@@ -161,5 +170,5 @@ export async function deleteStrategy(strategyId: string): Promise<{ error: strin
   });
 
   revalidatePath("/strategies");
-  return { error: null };
+  return { error: null, trashId };
 }

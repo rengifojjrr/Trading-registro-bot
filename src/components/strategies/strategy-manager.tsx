@@ -10,6 +10,7 @@ import {
   updateStrategy,
   type StrategyFormState,
 } from "@/app/(dashboard)/strategies/actions";
+import { restoreAction } from "@/core/actions";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { PlaybookEditor } from "@/components/strategies/playbook-editor";
 import { Badge } from "@/components/ui/badge";
@@ -62,8 +63,30 @@ export function StrategyManager({
   function handleDelete(strategy: ManagedStrategy) {
     startTransition(async () => {
       const result = await deleteStrategy(strategy.id);
-      if (result.error) toast.error(result.error);
-      else toast.success("Estrategia borrada.");
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      // Con «Deshacer» en el propio aviso, como al borrar una operación.
+      // Aquí la restauración es completa: sólo se llega a borrar una
+      // estrategia que ninguna operación usa, así que no hay relaciones que
+      // se puedan romper.
+      toast.success("Estrategia en la papelera.", {
+        description: "Se guarda 30 días y vuelve entera al recuperarla.",
+        action: result.trashId
+          ? {
+              label: "Deshacer",
+              onClick: () =>
+                startTransition(async () => {
+                  const ok = await restoreAction(result.trashId as string, "/strategies");
+                  toast[ok ? "success" : "error"](
+                    ok ? "Estrategia recuperada." : "No se pudo recuperar. Sigue en la Papelera.",
+                  );
+                }),
+            }
+          : undefined,
+      });
     });
   }
 

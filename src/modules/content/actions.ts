@@ -6,6 +6,7 @@ import { z } from "zod";
 import { publishDailyMetrics } from "@/core/metrics";
 import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
+import { moveToTrash } from "@/core/trash";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -235,10 +236,17 @@ export async function updateEditorFields(
   revalidateContent();
 }
 
+/**
+ * Borra una pieza. A la papelera, no de verdad.
+ *
+ * `CONTENIDO` estaba en el registro de la papelera desde el principio y esta
+ * función no lo usaba: borraba la fila. Un guion de vídeo escrito a lo largo de
+ * una semana desaparecía sin red, mientras una noche de sueño --que se vuelve
+ * a apuntar en diez segundos-- sí la tenía.
+ */
 export async function deletePiece(pieceId: string): Promise<void> {
-  const user = await requireUser();
-  const supabase = await createClient();
-  await supabase.from("content_pieces").delete().eq("id", pieceId).eq("user_id", user.id);
+  await requireUser();
+  await moveToTrash("CONTENIDO", pieceId);
   await republish();
   revalidateContent();
 }

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { UnsavedGuard } from "@/components/shared/unsaved-guard";
 import { TemplatePicker } from "@/components/journal/template-picker";
 import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,28 @@ export function JournalForm({
   // re-renderizar y aquí no hace falta nada más.
   const [notes, setNotes] = useState(journalEntry?.notes ?? "");
 
+  /**
+   * Si hay algo escrito sin guardar.
+   *
+   * Se marca al primer cambio en cualquier campo, en vez de comparar todos los
+   * valores con los iniciales: el formulario es casi todo no controlado --los
+   * `defaultValue` no se pierden al re-renderizar-- así que no hay una copia
+   * del estado con la que comparar, y añadirla sería duplicar el formulario
+   * entero sólo para saber si cambió.
+   */
+  const [sucio, setSucio] = useState(false);
+
+  /**
+   * Cuándo avisar, derivado y no puesto desde un efecto.
+   *
+   * Se marca sucio al primer cambio y se limpia al enviar. Un guardado que
+   * **falló** vuelve a contar como sin guardar por definición, así que se
+   * deriva de `state.error` en vez de volver a marcarlo a mano: puesto desde
+   * un efecto sería un `setState` durante el render, que además de estar
+   * prohibido pinta dos veces.
+   */
+  const avisar = (sucio || state.error !== null) && !pending;
+
   useEffect(() => {
     if (state.success) toast.success("Diario guardado.");
     if (state.error) toast.error(state.error);
@@ -120,7 +143,22 @@ export function JournalForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={formAction} className="flex flex-col gap-6">
+        {/* Quince minutos de diario se perdían enteros al pulsar atrás sin
+            querer, y no había forma de recuperarlos. */}
+        <UnsavedGuard
+          when={avisar}
+          message="Tienes el diario a medias y sin guardar. ¿Seguro que quieres salir?"
+        />
+        <form
+          action={(formData) => {
+            // Al enviar deja de estar sucio. Si el guardado falla, `avisar` lo
+            // vuelve a poner por su cuenta.
+            setSucio(false);
+            formAction(formData);
+          }}
+          onInput={() => setSucio(true)}
+          className="flex flex-col gap-6"
+        >
           <input type="hidden" name="tradeId" value={tradeId} />
 
           {/* Grouped by *when* you fill each part in -- the plan before

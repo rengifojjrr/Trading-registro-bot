@@ -125,6 +125,34 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     detailBase: "/lecturas/libros",
     colorToken: "--mod-reading",
   },
+  /**
+   * La estrategia, en la papelera desde ahora.
+   *
+   * Borrarla se llevaba por delante la única forma de saber qué tenían en
+   * común las cuarenta operaciones que la usaban. `trade_tags` y la columna
+   * `strategy_id` de `trades` no se archivan: la relación se rompe al borrar y
+   * restaurar la estrategia no la devuelve. Es una limitación real y se dice
+   * en el aviso de borrado, en vez de prometer una restauración completa que
+   * no lo sería.
+   */
+  ESTRATEGIA: {
+    kind: "ESTRATEGIA",
+    label: "Estrategia",
+    table: "strategies",
+    titleColumn: "name",
+    iconColumn: null,
+    detailBase: "/strategies",
+    colorToken: "--mod-trading",
+  },
+  ETIQUETA: {
+    kind: "ETIQUETA",
+    label: "Etiqueta",
+    table: "tags",
+    titleColumn: "name",
+    iconColumn: null,
+    detailBase: "/journal",
+    colorToken: "--mod-trading",
+  },
   CONTENIDO: {
     kind: "CONTENIDO",
     label: "Pieza",

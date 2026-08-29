@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { createTag, deleteTag, renameTag, type TagFormState } from "@/app/(dashboard)/journal/tag-actions";
+import { restoreAction } from "@/core/actions";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,9 +41,33 @@ export function TagManager({ tags }: { tags: ManagedTag[] }) {
   function handleDelete(tag: ManagedTag) {
     startTransition(async () => {
       const result = await deleteTag(tag.id);
-      if (result.error) toast.error(result.error);
-      else toast.success("Etiqueta borrada.");
       setConfirmingId(null);
+
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      // Deshacer en el propio aviso, como al borrar una operación: el caso
+      // normal es un dedo torcido, y mandar a alguien a la Papelera a arreglar
+      // su resbalón de hace dos segundos es lo que hace que borrar dé miedo
+      // aunque tenga red debajo.
+      toast.success("Etiqueta en la papelera.", {
+        description:
+          "Se guarda 30 días. Las operaciones que la llevaban la pierden y no vuelve al recuperarla.",
+        action: result.trashId
+          ? {
+              label: "Deshacer",
+              onClick: () =>
+                startTransition(async () => {
+                  const ok = await restoreAction(result.trashId as string, "/journal");
+                  toast[ok ? "success" : "error"](
+                    ok ? "Etiqueta recuperada." : "No se pudo recuperar. Sigue en la Papelera.",
+                  );
+                }),
+            }
+          : undefined,
+      });
     });
   }
 

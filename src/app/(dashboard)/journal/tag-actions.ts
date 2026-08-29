@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { recordAudit } from "@/lib/audit/log";
+import { moveToTrash } from "@/core/trash";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
@@ -71,20 +72,24 @@ export async function renameTag(_prevState: TagFormState, formData: FormData): P
 }
 
 /**
- * Deletes a tag. trade_tags cascades on delete, so this also removes the
- * tag from every trade that carried it -- the caller shows the usage count
- * first so that's a decision, not a surprise.
+ * Borra una etiqueta. A la papelera, con treinta días para deshacerlo.
+ *
+ * Lo que **no** vuelve al restaurarla son sus asignaciones: `trade_tags` cae en
+ * cascada al borrar la fila y la papelera no archiva la tabla intermedia, así
+ * que la etiqueta reaparece sin las operaciones que la llevaban. Se dice en el
+ * aviso, en vez de prometer una restauración completa que no lo sería.
  */
-export async function deleteTag(tagId: string): Promise<{ error: string | null }> {
+export async function deleteTag(
+  tagId: string,
+): Promise<{ error: string | null; trashId: string | null }> {
   const user = await requireUser();
-  if (!z.uuid().safeParse(tagId).success) return { error: "Etiqueta inválida." };
+  if (!z.uuid().safeParse(tagId).success) return { error: "Etiqueta inválida.", trashId: null };
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("tags").delete().eq("id", tagId).eq("user_id", user.id);
-  if (error) return { error: "No se pudo borrar la etiqueta." };
+  const trashId = await moveToTrash("ETIQUETA", tagId);
+  if (!trashId) return { error: "No se pudo borrar la etiqueta.", trashId: null };
 
   await recordAudit({ userId: user.id, action: "TAG_DELETED", entityType: "tag" });
 
   revalidatePath("/journal");
-  return { error: null };
+  return { error: null, trashId };
 }

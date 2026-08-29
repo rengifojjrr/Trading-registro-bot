@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { LifeCalendar } from "@/components/vida/life-calendar";
 import { ModuleCard } from "@/components/vida/module-card";
 import { PendingPanel } from "@/components/vida/pending-panel";
-import { QuickLog } from "@/components/vida/quick-log";
+import { QuickLogSheet } from "@/components/vida/quick-log-sheet";
 import { monthGrid, monthOf } from "@/core/calendar";
 import { fetchMarkers } from "@/core/day";
 import { formatModuleValue } from "@/core/format-metrics";
@@ -12,6 +12,8 @@ import { longDateLabel, todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { gatherPending } from "@/lib/pending/gather";
+
+import { quickLogReading, quickLogSleep } from "./quick-log-actions";
 
 /**
  * Hoy.
@@ -74,7 +76,9 @@ export default async function TodayPage({
           sigue siendo lo primero. */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Registrar</h2>
-        <QuickLog />
+        {/* Los dos que caben en un número se apuntan aquí mismo; los demás
+            siguen llevando a su pantalla, que es donde tienen sentido. */}
+        <QuickLogSheet acciones={{ sueno: quickLogSleep, lectura: quickLogReading }} />
       </section>
 
       {pending.length > 0 ? (
