@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { ScrollableTable } from "@/components/shared/scrollable-table";
 import { checkLatestBackup, type BackupCheckResult } from "@/app/(dashboard)/settings/backup-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,7 +115,7 @@ function CheckResult({ result }: { result: BackupCheckResult }) {
       ) : null}
 
       {conFilas.length > 0 ? (
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full min-w-[22rem] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -142,7 +143,7 @@ function CheckResult({ result }: { result: BackupCheckResult }) {
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       ) : null}
     </div>
   );

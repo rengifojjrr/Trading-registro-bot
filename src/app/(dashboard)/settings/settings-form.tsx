@@ -58,6 +58,7 @@ export function SettingsForm({
   notionMappingsSlot,
   backupSlot,
   autoSyncSlot,
+  pushSlot,
 }: {
   settings: AppSettingsRow;
   /** Coinbase connection status + manual sync trigger; rendered inside the General tab. */
@@ -68,6 +69,7 @@ export function SettingsForm({
   backupSlot?: ReactNode;
   /** Auto-sync switch; saves on its own, so it sits outside this form's submit. */
   autoSyncSlot?: ReactNode;
+  pushSlot?: ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(updateSettings, initialState);
   const [activeTab, setActiveTab] = useState<TabId>("general");
@@ -107,6 +109,20 @@ export function SettingsForm({
         {connectionSlot}
 
         {autoSyncSlot}
+
+        {pushSlot ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Avisos en el teléfono</CardTitle>
+              <CardDescription>
+                Una sincronización fallida o una discrepancia son justo lo que hace falta saber sin
+                abrir la aplicación. Sólo se avisa de lo que ya sale en Actividad, y sólo la primera
+                vez de cada cosa.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>{pushSlot}</CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader>

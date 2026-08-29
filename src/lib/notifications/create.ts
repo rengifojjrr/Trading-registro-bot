@@ -3,6 +3,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
+import { sendPushToUser } from "@/lib/push/send";
+
 import { sendCriticalAlertEmail } from "./email";
 
 type NotificationType = Database["public"]["Tables"]["notifications"]["Row"]["type"];
@@ -70,4 +72,13 @@ export async function raiseNotification(params: {
   if (params.alsoEmail) {
     await sendCriticalAlertEmail(params.alsoEmail);
   }
+
+  // Y al teléfono. Sólo cuando el aviso es **nuevo**, como el correo y por lo
+  // mismo: los repetidos suben el contador en silencio, así que una
+  // sincronización que falla cada cinco minutos manda un aviso, no uno cada
+  // cinco minutos.
+  //
+  // Sin claves VAPID configuradas esto no hace nada, y la notificación se
+  // guarda igual: el aviso al teléfono es una mejora, no un requisito.
+  await sendPushToUser(params.userId);
 }

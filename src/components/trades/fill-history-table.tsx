@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/components/shared/scrollable-table";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { FillCorrections, type ActiveOverride } from "@/components/trades/fill-corrections";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +62,7 @@ export function FillHistoryTable({
           {fills.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin fills asociados.</p>
           ) : (
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -108,7 +109,7 @@ export function FillHistoryTable({
                 })}
               </tbody>
             </table>
-            </div>
+            </ScrollableTable>
           )}
 
           {hidden > 0 ? (

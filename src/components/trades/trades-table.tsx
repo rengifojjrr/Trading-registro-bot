@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { ScrollableTable } from "@/components/shared/scrollable-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -267,7 +268,7 @@ export function TradesTable({
         )}
       </ul>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+      <ScrollableTable className="hidden rounded-lg border border-border md:block">
         <table className="w-full min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -366,7 +367,7 @@ export function TradesTable({
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>{tradeWord(total)}</span>

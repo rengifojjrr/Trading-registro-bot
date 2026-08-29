@@ -1,5 +1,8 @@
+import { BottomNav } from "@/components/layout/bottom-nav";
 import { DemoDataBanner } from "@/components/layout/demo-data-banner";
 import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
+import { MobileGestures } from "@/components/layout/mobile-gestures";
+import { OfflineQueue } from "@/components/layout/offline-queue";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SyncOnVisit } from "@/components/layout/sync-on-visit";
 import { Topbar } from "@/components/layout/topbar";
@@ -39,6 +42,11 @@ export default async function DashboardLayout({
         <SyncOnVisit />
         <Topbar userEmail={user.email ?? ""} />
         <DemoDataBanner />
+        {/* Lo que se apuntó sin cobertura, y el aviso de que no la hay. Va
+            aquí arriba porque es un estado de toda la aplicación, no de una
+            pantalla. */}
+        <OfflineQueue />
+        <MobileGestures />
         <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
           {/* `gap-aire` y no `gap-6`: éste es el hueco entre bloques que
               mueve la densidad. Es el único sitio donde hay que cambiarlo
@@ -47,6 +55,11 @@ export default async function DashboardLayout({
               justo lo que hace que compactar no apelmace el texto. */}
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-aire">{children}</div>
         </main>
+
+        {/* En el móvil, los cinco destinos de diario a un toque. En el
+            escritorio no aparece: ahí está la barra lateral entera y con
+            teclado. */}
+        <BottomNav />
       </div>
     </div>
   );

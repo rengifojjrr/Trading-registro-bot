@@ -8,6 +8,7 @@ import { ModuleExports } from "@/components/settings/module-exports";
 import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
+import { PushToggle } from "@/components/settings/push-toggle";
 import { RebuildHistory } from "@/components/settings/rebuild-history";
 import { SyncNow } from "@/components/settings/sync-now";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +91,7 @@ export default async function SettingsPage() {
               blockedReason={gate.blockedReason}
             />
           }
+          pushSlot={<PushToggle publicKey={process.env.VAPID_PUBLIC_KEY ?? null} />}
           notionMappingsSlot={<NotionFieldMappings mappings={fieldMappings} />}
           backupSlot={
             <>

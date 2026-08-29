@@ -3,6 +3,7 @@
 import { History } from "lucide-react";
 import { useActionState } from "react";
 
+import { ScrollableTable } from "@/components/shared/scrollable-table";
 import { rebuildAsOf, type AsOfState } from "@/app/(dashboard)/validation/as-of-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,7 +83,7 @@ function AsOfReport({ result }: { result: NonNullable<AsOfState["result"]> }) {
       </p>
 
       {result.trades.length > 0 ? (
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full min-w-[38rem] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -122,7 +123,7 @@ function AsOfReport({ result }: { result: NonNullable<AsOfState["result"]> }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       ) : null}
     </div>
   );

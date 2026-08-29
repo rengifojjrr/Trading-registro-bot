@@ -107,3 +107,66 @@ self.addEventListener("fetch", (event) => {
 
   // Todo lo demás -- API, datos, HTML parcial -- sin tocar: red y sólo red.
 });
+
+/**
+ * Los avisos que llegan al teléfono.
+ *
+ * El aviso llega **vacío** y aquí se pregunta qué enseñar. Parece un rodeo y
+ * no lo es: un aviso con el contenido dentro puede llegar veinte minutos tarde
+ * y decir algo que ya no es cierto -- «la sincronización falló» cuando la
+ * siguiente ya fue bien --. Preguntando al despertar, se enseña lo que hay.
+ *
+ * Si la petición falla -- sin red justo en ese momento, o la sesión caducó --
+ * se enseña un aviso genérico en vez de ninguno: el sistema operativo exige
+ * mostrar algo tras despertar por un push, y no hacerlo hace que deje de
+ * entregarlos.
+ */
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let titulo = "Vida";
+      let cuerpo = "Tienes algo pendiente.";
+
+      try {
+        const res = await fetch("/api/push/pending", { credentials: "include" });
+        if (res.ok) {
+          const datos = await res.json();
+          // Ya se leyó desde otro sitio: no se enseña nada nuevo.
+          if (!datos.hay) return;
+          titulo = datos.title || titulo;
+          cuerpo = datos.body || cuerpo;
+        }
+      } catch {
+        // Se queda el genérico.
+      }
+
+      await self.registration.showNotification(titulo, {
+        body: cuerpo,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        // Uno solo a la vez: cinco avisos apilados de la misma sincronización
+        // que falla cada cinco minutos son cinco veces la misma noticia.
+        tag: "vida-aviso",
+        renotify: true,
+      });
+    })(),
+  );
+});
+
+/** Al pulsar el aviso, a Actividad -- reutilizando la pestaña si ya está abierta. */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    (async () => {
+      const abiertas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const cliente of abiertas) {
+        if ("focus" in cliente) {
+          await cliente.focus();
+          if ("navigate" in cliente) await cliente.navigate("/activity");
+          return;
+        }
+      }
+      await self.clients.openWindow("/activity");
+    })(),
+  );
+});

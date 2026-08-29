@@ -1237,6 +1237,38 @@ export interface Database {
        * `lib/backtest/types.ts` y cambia cada vez que se añade un bloque: una
        * migración por bloque sería el precio de haberlas puesto en columnas.
        */
+      /**
+       * Un navegador suscrito a avisos.
+       *
+       * `p256dh` y `auth` son las claves para cifrar el cuerpo de un aviso.
+       * Aquí los avisos van sin cuerpo, pero se guardan igual: el navegador
+       * las da juntas y tirarlas obligaría a volver a pedir permiso el día que
+       * se quiera mandar contenido.
+       */
+      push_subscriptions: Table<
+        {
+          endpoint: string;
+          user_id: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          created_at: string;
+          last_used_at: string | null;
+        },
+        {
+          endpoint: string;
+          user_id: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+        },
+        {
+          p256dh?: string;
+          auth?: string;
+          user_agent?: string | null;
+          last_used_at?: string | null;
+        }
+      >;
       backtest_strategies: Table<
         {
           id: string;

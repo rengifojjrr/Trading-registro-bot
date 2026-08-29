@@ -4,6 +4,8 @@ import { Loader2, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
+import { SEARCH_EVENT } from "@/components/layout/search-event";
+
 import { KIND_LABELS, type RankedResult } from "@/lib/search/rank";
 import { searchEverything } from "@/lib/search/query";
 
@@ -45,8 +47,14 @@ export function GlobalSearch() {
         else setOpen(true);
       }
     }
+    // Y desde la barra de abajo del móvil, donde no hay teclado que pulsar.
+    const abrirDesdeFuera = () => setOpen(true);
+    window.addEventListener(SEARCH_EVENT, abrirDesdeFuera);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener(SEARCH_EVENT, abrirDesdeFuera);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, close]);
 
   useEffect(() => {
