@@ -1,41 +1,64 @@
 import { z } from "zod";
 
-// Shared between the API routes (app/api/trades/[tradeId]/drawings/*) and
-// nothing else client-side needs zod itself for -- trade-chart.tsx imports
-// only the plain TypeScript types below.
-export const DRAWING_TOOLS = ["HLINE", "VLINE", "TRENDLINE", "RECTANGLE", "FIB"] as const;
-export type DrawingTool = (typeof DRAWING_TOOLS)[number];
-
-export function isDrawingTool(value: string): value is DrawingTool {
-  return (DRAWING_TOOLS as readonly string[]).includes(value);
-}
-
-const drawingPointSchema = z.object({ time: z.number().int().nonnegative(), price: z.number().finite() });
-const hlinePointsSchema = z.object({ price: z.number().finite() });
-const vlinePointsSchema = z.object({ time: z.number().int().nonnegative() });
-const twoPointPointsSchema = z.object({ p1: drawingPointSchema, p2: drawingPointSchema });
-
-export type DrawingPoints =
-  | z.infer<typeof hlinePointsSchema>
-  | z.infer<typeof vlinePointsSchema>
-  | z.infer<typeof twoPointPointsSchema>;
+import { parseStyle, serialiseStyle, type DrawingStyle } from "@/lib/charts/style";
+import { TOOL_BY_ID, TOOL_IDS, isToolId, type ToolId } from "@/lib/charts/tools";
 
 /**
- * A drawing's payload shape is decided by its tool, so the schema is picked
- * per tool rather than unioned -- a union would happily accept a VLINE
- * carrying HLINE's payload and only fail later, at render time.
+ * Lo que viaja entre el navegador, la API y la base de datos.
+ *
+ * Los puntos se guardan como **lista** y no como `{p1, p2}`: hay herramientas
+ * de uno a cinco puntos, y una lista las cubre todas sin inventar nombres como
+ * `p3`, `p4`, `p5`. Lo antiguo lo migró la migración, así que aquí sólo se
+ * entiende un formato -- un lector que entiende dos es uno que hay que
+ * mantener entendiendo dos para siempre.
  */
-export function parseDrawingPoints(tool: string, points: unknown): DrawingPoints | null {
-  const schema =
-    tool === "HLINE" ? hlinePointsSchema : tool === "VLINE" ? vlinePointsSchema : twoPointPointsSchema;
-  const parsed = schema.safeParse(points);
-  return parsed.success ? parsed.data : null;
+
+export const DRAWING_TOOLS = TOOL_IDS;
+export type DrawingTool = ToolId;
+
+export { isToolId as isDrawingTool };
+
+export interface DrawingPoint {
+  time: number;
+  price: number;
+}
+
+const pointSchema = z.object({
+  time: z.number().int().nonnegative(),
+  price: z.number().finite(),
+});
+
+/**
+ * Los puntos de un dibujo, comprobando que son los que su herramienta pide.
+ *
+ * Se valida contra el catálogo y no contra un mínimo genérico: una horquilla
+ * con dos puntos no se puede dibujar, y aceptarla aquí sería guardar algo que
+ * el gráfico no sabe pintar y que nadie descubre hasta abrir la operación.
+ */
+export function parseDrawingPoints(tool: string, points: unknown): DrawingPoint[] | null {
+  if (!isToolId(tool)) return null;
+
+  const parsed = z.array(pointSchema).min(1).max(5).safeParse(points);
+  if (!parsed.success) return null;
+
+  return parsed.data.length === TOOL_BY_ID[tool].points ? parsed.data : null;
+}
+
+/** El estilo guardado, saneado y con los valores de fábrica de su herramienta. */
+export function parseDrawingStyle(tool: string, style: unknown): DrawingStyle | null {
+  if (!isToolId(tool)) return null;
+  return parseStyle(tool, style);
+}
+
+/** Sólo lo que se aparta de los valores de fábrica, listo para guardar. */
+export function serialiseDrawingStyle(tool: ToolId, style: DrawingStyle): Record<string, unknown> {
+  return serialiseStyle(tool, style);
 }
 
 /**
- * Fibonacci retracement levels, drawn from the p1 (0%) anchor to p2 (100%).
- * Stored nowhere -- see the migration note: keeping this in code means an
- * existing drawing picks up any change here instead of being frozen with
- * whichever levels were fashionable when it was saved.
+ * Los niveles de Fibonacci de siempre.
+ *
+ * Se mantiene exportado porque lo usa código antiguo; el valor de verdad vive
+ * ahora en `lib/charts/style.ts`, donde cada herramienta trae los suyos.
  */
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+export { DEFAULT_FIB_LEVELS as FIB_LEVELS } from "@/lib/charts/style";

@@ -8,6 +8,7 @@ import { FillHistoryTable, type FillHistoryRow } from "@/components/trades/fill-
 import { LiveUnrealizedPnl } from "@/components/trades/live-unrealized-pnl";
 import { MfeMaeStats } from "@/components/trades/mfe-mae-stats";
 import { TradeChart, type TradeChartDrawing } from "@/components/trades/trade-chart";
+import { parseDrawingPoints, parseDrawingStyle } from "@/lib/chart-drawings";
 import { MistakeTagger } from "@/components/trades/mistake-tagger";
 import { TradeComments } from "@/components/trades/trade-comments";
 import { TradeScreenshots, type TradeScreenshotRow } from "@/components/trades/trade-screenshots";
@@ -104,7 +105,7 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     wantsChart
       ? supabase
           .from("chart_drawings")
-          .select("id, tool, points, color")
+          .select("id, tool, points, color, style")
           .eq("trade_id", trade.id)
           .order("created_at", { ascending: true })
       : Promise.resolve({ data: null }),
@@ -265,12 +266,17 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
               closedAtUnix={Math.floor(chartClosedAt.getTime() / 1000)}
               initialCandles={chartData.candles}
               initialGranularity={chartWindow.granularity}
-              initialDrawings={(chartDrawingRows ?? []).map((d) => ({
-                id: d.id,
-                tool: d.tool,
-                points: d.points as TradeChartDrawing["points"],
-                color: d.color,
-              }))}
+              // Se filtran los de herramientas que ya no existen en vez de
+              // pasarlos: un dibujo de una herramienta retirada no se sabe
+              // pintar, y colarlo dejaría el gráfico a medias sin decir nada.
+              initialDrawings={(chartDrawingRows ?? []).flatMap((d) => {
+                const points = parseDrawingPoints(d.tool, d.points);
+                const style = parseDrawingStyle(d.tool, d.style);
+                if (!points || !style) return [];
+                return [
+                  { id: d.id, tool: d.tool as TradeChartDrawing["tool"], points, style, color: d.color },
+                ];
+              })}
               entry={entryMarker}
               exit={exitMarker}
               fills={chartFills}

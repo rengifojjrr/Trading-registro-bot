@@ -6,18 +6,12 @@ import {
   Eye,
   EyeOff,
   Maximize2,
-  Minus,
   MousePointer2,
-  MoveVertical,
   Pause,
   Play,
   Ruler,
   Scaling,
-  Square,
-  Trash2,
-  TrendingUp,
   Undo2,
-  Waves,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -40,7 +34,15 @@ import {
 } from "lightweight-charts";
 
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   coversWholeTrade,
   GRANULARITY_LABELS,
@@ -54,7 +56,12 @@ import {
   toleranceFor,
   type FillGroup,
 } from "@/lib/charts/fills-at-time";
-import { FIB_LEVELS, type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
+import { type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
+import { DrawingSettings } from "@/components/trades/drawing-settings";
+import { buildShape, type Point as ShapePoint } from "@/lib/charts/geometry";
+import { distanceToShape, renderShape } from "@/lib/charts/render";
+import { defaultStyle, serialiseStyle, type DrawingStyle } from "@/lib/charts/style";
+import { TOOL_BY_ID, toolsByGroup, type ToolId } from "@/lib/charts/tools";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { uploadTradeScreenshot } from "@/app/(dashboard)/trades/[tradeId]/actions";
 import { formatMoney } from "@/lib/format";
@@ -91,7 +98,9 @@ interface DrawingPoint {
 export interface TradeChartDrawing {
   id: string;
   tool: PersistedDrawingTool;
-  points: { price: number } | { time: number } | { p1: DrawingPoint; p2: DrawingPoint };
+  /** De uno a cinco puntos, según lo que pida la herramienta. */
+  points: DrawingPoint[];
+  style: DrawingStyle;
   color: string;
 }
 
@@ -100,7 +109,6 @@ const CHART_HEIGHT = 360;
 const CANDLE_REFRESH_MS = 60_000;
 /** One candle per second: fast enough not to be boring, slow enough to read. */
 const REPLAY_STEP_MS = 1000;
-const DRAWING_COLOR = "#a78bfa"; // matches chart_drawings.color's DB default
 const MEASURE_COLOR = "#38bdf8";
 
 /**
@@ -173,18 +181,18 @@ let THEME: ChartTheme = THEME_FALLBACK;
 /** MEASURE never persists -- see the migration note; it answers a question you're asking right now. */
 type ActiveTool = "CURSOR" | "MEASURE" | PersistedDrawingTool;
 
-const TOOL_BUTTONS: { tool: ActiveTool; label: string; Icon: typeof MousePointer2 }[] = [
-  { tool: "CURSOR", label: "Cursor", Icon: MousePointer2 },
-  { tool: "HLINE", label: "Línea horizontal (precio)", Icon: Minus },
-  { tool: "VLINE", label: "Línea vertical (momento)", Icon: MoveVertical },
-  { tool: "TRENDLINE", label: "Línea de tendencia", Icon: TrendingUp },
-  { tool: "RECTANGLE", label: "Rectángulo", Icon: Square },
-  { tool: "FIB", label: "Retroceso de Fibonacci", Icon: Waves },
-  { tool: "MEASURE", label: "Medir movimiento (no se guarda)", Icon: Ruler },
-];
-
-/** Tools that need two clicks; the rest resolve on the first one. */
-const TWO_POINT_TOOLS: ActiveTool[] = ["TRENDLINE", "RECTANGLE", "FIB", "MEASURE"];
+/**
+ * Cuántos clics pide la herramienta activa.
+ *
+ * Sale del catálogo y no de una lista aparte: una lista aparte es una que se
+ * olvida de actualizar al añadir la herramienta número veinticuatro, y el
+ * síntoma sería una herramienta que se guarda a medio dibujar.
+ */
+function pointsNeeded(tool: ActiveTool): number {
+  if (tool === "CURSOR") return 0;
+  if (tool === "MEASURE") return 2;
+  return TOOL_BY_ID[tool].points;
+}
 
 interface Measurement {
   p1: DrawingPoint;
@@ -305,7 +313,15 @@ export function TradeChart({
   const [isLoading, setIsLoading] = useState(false);
   const [drawings, setDrawings] = useState(initialDrawings);
   const [activeTool, setActiveTool] = useState<ActiveTool>("CURSOR");
-  const [pendingPoint, setPendingPoint] = useState<DrawingPoint | null>(null);
+  /**
+   * Los clics que llevas dados de la herramienta activa.
+   *
+   * Era un solo punto porque ninguna herramienta pedía más de dos. Ahora hay
+   * de hasta cinco, así que es una lista: la vista previa se pinta con lo
+   * acumulado más el cursor, y al llegar a los que la herramienta pide se
+   * guarda.
+   */
+  const [pendingPoints, setPendingPoints] = useState<DrawingPoint[]>([]);
   const [measurement, setMeasurement] = useState<Measurement | null>(null);
   const [showVolume, setShowVolume] = useState(false);
   const [logScale, setLogScale] = useState(false);
@@ -461,6 +477,39 @@ export function TradeChart({
   }, []);
 
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const selectedDrawing = drawings.find((d) => d.id === selectedDrawingId) ?? null;
+
+  /**
+   * Guarda un cambio de ajustes.
+   *
+   * Se pinta al momento y se guarda después: mover un deslizador de opacidad
+   * dispara veinte cambios, y esperar al servidor en cada uno haría que el
+   * control fuera a tirones. Si el guardado falla se dice, y lo que se ve
+   * sigue siendo lo último que se pidió -- recargar la página lo devuelve a lo
+   * guardado, que es la única fuente de verdad.
+   */
+  async function updateDrawingStyle(id: string, style: DrawingStyle) {
+    const actual = drawings.find((d) => d.id === id);
+    if (!actual) return;
+
+    setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, style, color: style.color } : d)));
+
+    try {
+      const response = await fetch(`/api/trades/${tradeId}/drawings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool: actual.tool,
+          points: actual.points,
+          style: serialiseStyle(actual.tool, style),
+        }),
+      });
+      const result = (await response.json()) as { error: string | null };
+      if (result.error) toast.error(result.error);
+    } catch {
+      toast.error("No se pudieron guardar los ajustes.");
+    }
+  }
   const dragRef = useRef<{ id: string; startPoint: DrawingPoint; original: TradeChartDrawing } | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   // Read by the crosshair legend and by the chart-creation effect, neither
@@ -511,27 +560,33 @@ export function TradeChart({
 
   function selectTool(tool: ActiveTool) {
     setActiveTool(tool);
-    setPendingPoint(null);
+    setPendingPoints([]);
     if (tool !== "MEASURE") setMeasurement(null);
   }
 
-  async function saveDrawing(tool: PersistedDrawingTool, points: TradeChartDrawing["points"]) {
+  async function saveDrawing(tool: ToolId, points: DrawingPoint[]) {
+    const style = defaultStyle(tool);
     try {
-      const res = await fetch(`/api/trades/${tradeId}/drawings`, {
+      const response = await fetch(`/api/trades/${tradeId}/drawings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool, points }),
+        body: JSON.stringify({ tool, points, style: serialiseStyle(tool, style) }),
       });
-      const result = (await res.json()) as { error: string | null; id: string | null };
-      if (!result.id) {
+      const result = (await response.json()) as { error: string | null; id: string | null };
+      if (result.error || !result.id) {
         toast.error(result.error ?? "No se pudo guardar el dibujo.");
         return;
       }
-      setDrawings((prev) => [...prev, { id: result.id!, tool, points, color: DRAWING_COLOR }]);
+      setDrawings((prev) => [...prev, { id: result.id!, tool, points, style, color: style.color }]);
+      // Se abre en cuanto se dibuja: recién puesto es cuando se quiere
+      // ajustar, y obligar a un clic más para llegar a los ajustes es lo que
+      // hace que nadie los toque nunca.
+      setSelectedDrawingId(result.id);
     } catch {
       toast.error("No se pudo guardar el dibujo.");
     }
   }
+
 
   /** Persists a drag. The optimistic local move already happened during the drag itself. */
   async function persistMovedDrawing(drawing: TradeChartDrawing) {
@@ -1026,7 +1081,7 @@ export function TradeChart({
       .filter((d) => d.tool === "HLINE")
       .map((d) =>
         series.createPriceLine({
-          price: (d.points as { price: number }).price,
+          price: d.points[0].price,
           color: d.color,
           lineWidth: 1,
           lineStyle: LineStyle.Solid,
@@ -1055,60 +1110,63 @@ export function TradeChart({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
+      /**
+       * Un dibujo, con la geometría que le toque.
+       *
+       * Todo pasa por `buildShape`, incluso lo que antes tenía su propia
+       * función: así una herramienta nueva es una entrada en el catálogo y un
+       * caso en la geometría, no un `if` más aquí dentro.
+       */
+      const pintar = (
+        tool: ToolId,
+        puntos: DrawingPoint[],
+        estilo: DrawingStyle,
+        opciones: { ghost?: boolean; selected?: boolean },
+      ) => {
+        const pixeles = puntos.map(toPixel);
+        if (pixeles.some((p) => p === null)) return;
+        const pts = pixeles as ShapePoint[];
+
+        const shape = buildShape({
+          tool,
+          points: pts,
+          style: estilo,
+          width,
+          height,
+          prices: puntos.map((p) => p.price),
+          formatPrice: (n) => formatMoney(n),
+        });
+
+        renderShape(ctx, shape, estilo, {
+          ghost: opciones.ghost,
+          handles: opciones.selected ? pts : undefined,
+          labelColor: THEME.text,
+          // El contorno del texto y el anillo de los tiradores salen del fondo
+          // del gráfico, así que siguen al tema en vez de ser negro fijo.
+          haloColor: withAlpha(THEME.background, 0.75),
+        });
+      };
+
       for (const drawing of visibleDrawings) {
-        if (drawing.tool === "HLINE") continue; // rendered via createPriceLine above
-
-        if (drawing.tool === "VLINE") {
-          const x = chart!.timeScale().timeToCoordinate(
-            (drawing.points as { time: number }).time as UTCTimestamp,
-          );
-          if (x !== null) {
-            drawVerticalLine(ctx, x, height, drawing.color);
-            if (drawing.id === selectedDrawingId) {
-              ctx.fillStyle = drawing.color;
-              ctx.beginPath();
-              ctx.arc(x, height / 2, 4, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-          continue;
-        }
-
-        const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
-        const a = toPixel(p1);
-        const b = toPixel(p2);
-        if (!a || !b) continue;
-
-        if (drawing.tool === "FIB") {
-          drawFib(ctx, a, b, p1.price, p2.price, drawing.color, false);
-        } else {
-          drawShape(ctx, drawing.tool, a, b, drawing.color, false);
-        }
-
-        if (drawing.id === selectedDrawingId) {
-          // Endpoint handles, so it's obvious which shape is grabbed.
-          ctx.fillStyle = drawing.color;
-          for (const point of [a, b]) {
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
+        pintar(drawing.tool, drawing.points, drawing.style, {
+          selected: drawing.id === selectedDrawingId,
+        });
       }
 
-      // Preview of the shape being placed, between the first click and the second.
+      // La vista previa entre el primer clic y el último.
+      //
+      // Se pinta con los puntos ya puestos más el del cursor: así una
+      // horquilla de tres puntos se ve tomar forma en vez de aparecer de golpe
+      // al tercer clic.
       const hover = hoverPointRef.current;
-      if (pendingPoint && hover && TWO_POINT_TOOLS.includes(activeTool)) {
-        const a = toPixel(pendingPoint);
-        const b = toPixel(hover);
-        if (a && b) {
-          if (activeTool === "FIB") {
-            drawFib(ctx, a, b, pendingPoint.price, hover.price, DRAWING_COLOR, true);
-          } else if (activeTool === "MEASURE") {
-            drawMeasure(ctx, a, b, pendingPoint, hover);
-          } else {
-            drawShape(ctx, activeTool as PersistedDrawingTool, a, b, DRAWING_COLOR, true);
-          }
+      if (pendingPoints.length > 0 && hover && activeTool !== "CURSOR") {
+        const previa = [...pendingPoints, hover];
+        if (activeTool === "MEASURE") {
+          const a = toPixel(previa[0]);
+          const b = toPixel(previa[1]);
+          if (a && b) drawMeasure(ctx, a, b, previa[0], previa[1]);
+        } else {
+          pintar(activeTool, previa, defaultStyle(activeTool), { ghost: true });
         }
       }
 
@@ -1126,32 +1184,34 @@ export function TradeChart({
       if (price === null || time === null) return;
       const point: DrawingPoint = { time: Number(time), price };
 
-      if (activeTool === "HLINE") {
-        void saveDrawing("HLINE", { price });
-        selectTool("CURSOR");
-        return;
-      }
-      if (activeTool === "VLINE") {
-        void saveDrawing("VLINE", { time: Math.floor(point.time) });
-        selectTool("CURSOR");
-        return;
-      }
+      /**
+       * Se juntan clics hasta llegar a los que la herramienta pide.
+       *
+       * Antes había un `if` por herramienta -- uno para las de un punto, otro
+       * para las de dos -- y añadir las de tres, cuatro y cinco habría sido
+       * añadir tres más. Ahora es una cuenta: cuando hay suficientes, se
+       * guarda.
+       */
+      const necesarios = pointsNeeded(activeTool);
+      const acumulados = [...pendingPoints, point];
 
-      if (!pendingPoint) {
-        setPendingPoint(point);
+      if (acumulados.length < necesarios) {
+        setPendingPoints(acumulados);
         return;
       }
 
       if (activeTool === "MEASURE") {
-        // Stays on screen until dismissed, and never reaches the database.
-        setMeasurement({ p1: pendingPoint, p2: point });
-        setPendingPoint(null);
+        // Se queda en pantalla hasta que se descarta, y nunca llega a la base.
+        setMeasurement({ p1: acumulados[0], p2: acumulados[1] });
+        setPendingPoints([]);
         return;
       }
 
-      void saveDrawing(activeTool as PersistedDrawingTool, { p1: pendingPoint, p2: point });
+      void saveDrawing(activeTool, acumulados);
+      setPendingPoints([]);
       selectTool("CURSOR");
     }
+
 
     function handleCrosshairMove(param: MouseEventParams<Time>) {
       if (!param.point) {
@@ -1161,7 +1221,7 @@ export function TradeChart({
         const time = chart!.timeScale().coordinateToTime(param.point.x);
         hoverPointRef.current = price !== null && time !== null ? { time: Number(time), price } : null;
       }
-      if (pendingPoint) redraw();
+      if (pendingPoints.length > 0) redraw();
     }
 
     /**
@@ -1178,23 +1238,27 @@ export function TradeChart({
       const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
       // Topmost (most recently drawn) shape wins, matching what's painted.
+      // Gana el de arriba, que es el último dibujado -- igual que al pintar.
+      //
+      // El acierto se mide contra la misma figura que se pintó, no contra una
+      // aproximación aparte: dos formas de decidir dónde está un dibujo acaban
+      // discrepando, y el síntoma es un dibujo que se ve pero no se coge.
       for (let i = visibleDrawings.length - 1; i >= 0; i--) {
         const drawing = visibleDrawings[i];
-        let hit = false;
-        if (drawing.tool === "HLINE") {
-          const y = series!.priceToCoordinate((drawing.points as { price: number }).price);
-          hit = y !== null && Math.abs(pointer.y - y) <= HIT_TOLERANCE_PX;
-        } else if (drawing.tool === "VLINE") {
-          const x = chart!.timeScale().timeToCoordinate(
-            (drawing.points as { time: number }).time as UTCTimestamp,
-          );
-          hit = x !== null && Math.abs(pointer.x - x) <= HIT_TOLERANCE_PX;
-        } else {
-          const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
-          const a = toPixel(p1);
-          const b = toPixel(p2);
-          hit = Boolean(a && b && hitsShape(drawing.tool, pointer, a, b));
-        }
+        const pixeles = drawing.points.map(toPixel);
+        if (pixeles.some((p) => p === null)) continue;
+
+        const shape = buildShape({
+          tool: drawing.tool,
+          points: pixeles as ShapePoint[],
+          style: drawing.style,
+          width: container!.clientWidth,
+          height: CHART_HEIGHT,
+          prices: drawing.points.map((p) => p.price),
+          formatPrice: (n) => formatMoney(n),
+        });
+
+        const hit = distanceToShape(shape, pointer.x, pointer.y) <= HIT_TOLERANCE_PX;
         if (!hit) continue;
 
         const price = series!.coordinateToPrice(pointer.y);
@@ -1262,7 +1326,7 @@ export function TradeChart({
   }, [
     drawings,
     activeTool,
-    pendingPoint,
+    pendingPoints,
     selectedDrawingId,
     measurement,
     showDrawings,
@@ -1298,7 +1362,7 @@ export function TradeChart({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Select value={granularity} onValueChange={handleGranularityChange}>
-            <SelectTrigger className="h-8 w-24 text-xs">
+            <SelectTrigger className="h-8 w-24 text-xs" aria-label="Temporalidad">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1309,25 +1373,64 @@ export function TradeChart({
               ))}
             </SelectContent>
           </Select>
+          {/* Veintitrés herramientas no caben en una fila de botones, y en el
+              móvil menos. Van en un desplegable agrupado por familia, que es
+              como las tiene TradingView: se abre, se elige, se cierra. */}
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
-            {TOOL_BUTTONS.map(({ tool, label, Icon }) => (
-              <button
-                key={tool}
-                type="button"
-                title={label}
-                aria-label={label}
-                aria-pressed={activeTool === tool}
-                onClick={() => selectTool(tool)}
-                className={cn(
-                  "flex size-7 items-center justify-center rounded transition-colors",
-                  activeTool === tool
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" aria-hidden />
-              </button>
-            ))}
+            <button
+              type="button"
+              title="Cursor"
+              aria-label="Cursor"
+              aria-pressed={activeTool === "CURSOR"}
+              onClick={() => selectTool("CURSOR")}
+              className={cn(
+                "rounded p-1.5 transition-colors",
+                activeTool === "CURSOR"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <MousePointer2 className="size-4" aria-hidden />
+            </button>
+
+            <Select
+              value={activeTool === "CURSOR" || activeTool === "MEASURE" ? "" : activeTool}
+              onValueChange={(v) => selectTool(v as ActiveTool)}
+            >
+              <SelectTrigger className="h-7 w-44 text-xs" aria-label="Herramienta de dibujo">
+                <SelectValue placeholder="Herramienta…" />
+              </SelectTrigger>
+              <SelectContent>
+                {toolsByGroup().map((grupo) => (
+                  <SelectGroup key={grupo.group}>
+                    <SelectLabel className="text-[10px] uppercase tracking-wide">
+                      {grupo.label}
+                    </SelectLabel>
+                    {grupo.tools.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <button
+              type="button"
+              title="Medir movimiento (no se guarda)"
+              aria-label="Medir movimiento"
+              aria-pressed={activeTool === "MEASURE"}
+              onClick={() => selectTool("MEASURE")}
+              className={cn(
+                "rounded p-1.5 transition-colors",
+                activeTool === "MEASURE"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Ruler className="size-4" aria-hidden />
+            </button>
           </div>
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
             <ToggleButton
@@ -1431,15 +1534,19 @@ export function TradeChart({
 
       {activeTool !== "CURSOR" ? (
         <p className="text-xs text-primary">
-          {activeTool === "HLINE"
-            ? "Haz clic en el gráfico para colocar la línea horizontal."
-            : activeTool === "VLINE"
-              ? "Haz clic para marcar un momento en el tiempo."
-              : pendingPoint
-                ? "Haz clic de nuevo para completar (Esc para cancelar)."
-                : activeTool === "MEASURE"
-                  ? "Haz clic en el inicio del movimiento que quieres medir (Esc para salir)."
-                  : "Haz clic para el primer punto (Esc para cancelar)."}
+          {(() => {
+            // Cuántos clics faltan, dicho en cada momento. Antes el texto era
+            // fijo por herramienta; con las de cinco puntos eso ya no vale.
+            const faltan = pointsNeeded(activeTool) - pendingPoints.length;
+            if (activeTool === "MEASURE") {
+              return pendingPoints.length === 0
+                ? "Haz clic en el inicio del movimiento que quieres medir (Esc para salir)."
+                : "Haz clic en el final del movimiento (Esc para salir).";
+            }
+            const nombre = TOOL_BY_ID[activeTool].label.toLowerCase();
+            if (faltan <= 1) return `Un clic más para completar ${nombre} (Esc para cancelar).`;
+            return `${nombre}: faltan ${faltan} clics (Esc para cancelar).`;
+          })()}
         </p>
       ) : null}
       <div className="relative">
@@ -1505,19 +1612,46 @@ export function TradeChart({
             </button>
           </div>
           {drawings.map((d) => (
-            <div key={d.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground">{describeDrawing(d)}</span>
-              <button
-                type="button"
-                aria-label="Eliminar dibujo"
-                onClick={() => handleDeleteDrawing(d.id)}
-                className="text-muted-foreground transition-colors hover:text-negative"
-              >
-                <Trash2 className="size-3.5" aria-hidden />
-              </button>
-            </div>
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setSelectedDrawingId(d.id === selectedDrawingId ? null : d.id)}
+              className={cn(
+                "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors",
+                d.id === selectedDrawingId ? "bg-accent" : "hover:bg-accent/50",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: d.style.color }}
+                  aria-hidden
+                />
+                <span className="truncate text-muted-foreground">{describeDrawing(d)}</span>
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {d.id === selectedDrawingId ? "Ajustes abiertos" : "Ajustar"}
+              </span>
+            </button>
           ))}
         </div>
+      ) : null}
+
+      {/* Los ajustes de lo seleccionado.
+          Se abre pinchando el dibujo en el gráfico o su fila en la lista, y se
+          aplica al momento: es un panel de apariencia, se mira el gráfico
+          mientras se toca, y tener que confirmar rompe ese ida y vuelta. */}
+      {selectedDrawing ? (
+        <DrawingSettings
+          tool={selectedDrawing.tool}
+          style={selectedDrawing.style}
+          onChange={(next) => void updateDrawingStyle(selectedDrawing.id, next)}
+          onDelete={() => {
+            void handleDeleteDrawing(selectedDrawing.id);
+            setSelectedDrawingId(null);
+          }}
+          onClose={() => setSelectedDrawingId(null)}
+        />
       ) : null}
     </div>
   );
@@ -1556,56 +1690,41 @@ function ToggleButton({
   );
 }
 
-function drawVerticalLine(ctx: CanvasRenderingContext2D, x: number, height: number, color: string): void {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(x, 0);
-  ctx.lineTo(x, height);
-  ctx.stroke();
-}
+/**
+ * Cuántos píxeles de margen tiene un clic para contar como «encima».
+ *
+ * Seis: menos obliga a acertar la línea al píxel, y más hace que dos dibujos
+ * cercanos se peleen por el mismo clic.
+ */
+const HIT_TOLERANCE_PX = 6;
 
 /**
- * Fibonacci retracement: p1 is the 0% anchor and p2 the 100% one, so
- * dragging bottom-to-top and top-to-bottom give the orientation you'd
- * expect for a rally and a sell-off respectively.
+ * Mueve un dibujo entero, en unidades de datos y no de píxeles.
+ *
+ * En píxeles, arrastrar y luego cambiar de temporalidad deformaría la figura:
+ * lo que se mueve es el momento y el precio, que no dependen del zoom.
  */
-function drawFib(
-  ctx: CanvasRenderingContext2D,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  priceA: number,
-  priceB: number,
-  color: string,
-  dashed: boolean,
-): void {
-  const left = Math.min(a.x, b.x);
-  const right = Math.max(a.x, b.x);
+function translateDrawing(
+  drawing: TradeChartDrawing,
+  deltaTime: number,
+  deltaPrice: number,
+): TradeChartDrawing {
+  // Una línea vertical marca un momento y sólo se mueve en el tiempo; una
+  // horizontal marca un precio y sólo se mueve en el precio. El resto se mueve
+  // entero, y con la lista eso es una sola línea para las veintiuna.
+  const soloTiempo = drawing.tool === "VLINE";
+  const soloPrecio = drawing.tool === "HLINE" || drawing.tool === "HRAY";
 
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  ctx.setLineDash(dashed ? [4, 4] : []);
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.fillStyle = color;
-  ctx.textBaseline = "bottom";
-
-  for (const level of FIB_LEVELS) {
-    // Interpolating in pixels rather than price keeps the levels correct
-    // under a logarithmic scale too, where equal price steps aren't equal
-    // pixel steps.
-    const y = a.y + (b.y - a.y) * level;
-    ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(right, y);
-    ctx.stroke();
-
-    const price = priceA + (priceB - priceA) * level;
-    ctx.fillText(`${(level * 100).toFixed(1)}%  ${formatMoney(price)}`, left + 4, y - 2);
-  }
-
-  ctx.setLineDash([]);
+  return {
+    ...drawing,
+    points: drawing.points.map((p) => ({
+      time: soloPrecio ? p.time : Math.round(p.time + deltaTime),
+      price: soloTiempo ? p.price : p.price + deltaPrice,
+    })),
+  };
 }
+
+
 
 /** The ruler: how far, how much, how long -- the three things you want when eyeballing a move. */
 function drawMeasure(
@@ -1664,119 +1783,20 @@ function formatDuration(seconds: number): string {
   return `${(hours / 24).toFixed(1)}d`;
 }
 
-/** Pixel tolerance for grabbing a drawing -- generous enough for a fingertip, not so wide that shapes fight each other. */
-const HIT_TOLERANCE_PX = 8;
 
-function distanceToSegment(
-  p: { x: number; y: number },
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-  // Projection of p onto the segment, clamped to its endpoints.
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-}
-
-function hitsShape(
-  tool: PersistedDrawingTool,
-  pointer: { x: number; y: number },
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): boolean {
-  if (tool === "TRENDLINE") return distanceToSegment(pointer, a, b) <= HIT_TOLERANCE_PX;
-  if (tool === "FIB") {
-    // Grabbable anywhere in the band the levels span, like the rectangle --
-    // the individual 1px level lines are far too thin to aim at.
-    const minX = Math.min(a.x, b.x) - HIT_TOLERANCE_PX;
-    const maxX = Math.max(a.x, b.x) + HIT_TOLERANCE_PX;
-    const minY = Math.min(a.y, b.y) - HIT_TOLERANCE_PX;
-    const maxY = Math.max(a.y, b.y) + HIT_TOLERANCE_PX;
-    return pointer.x >= minX && pointer.x <= maxX && pointer.y >= minY && pointer.y <= maxY;
-  }
-  if (tool === "RECTANGLE") {
-    // Anywhere inside counts, so a rectangle is easy to grab rather than
-    // requiring a precise hit on a 1.5px edge.
-    const minX = Math.min(a.x, b.x) - HIT_TOLERANCE_PX;
-    const maxX = Math.max(a.x, b.x) + HIT_TOLERANCE_PX;
-    const minY = Math.min(a.y, b.y) - HIT_TOLERANCE_PX;
-    const maxY = Math.max(a.y, b.y) + HIT_TOLERANCE_PX;
-    return pointer.x >= minX && pointer.x <= maxX && pointer.y >= minY && pointer.y <= maxY;
-  }
-  return false;
-}
-
-/** Shifts every point of a drawing by a delta expressed in data space (time seconds / price), not pixels, so a shape keeps its shape across zoom levels. */
-function translateDrawing(
-  drawing: TradeChartDrawing,
-  deltaTime: number,
-  deltaPrice: number,
-): TradeChartDrawing {
-  if (drawing.tool === "HLINE") {
-    const { price } = drawing.points as { price: number };
-    return { ...drawing, points: { price: price + deltaPrice } };
-  }
-  if (drawing.tool === "VLINE") {
-    // A vertical line marks a moment, so only the time component moves.
-    const { time } = drawing.points as { time: number };
-    return { ...drawing, points: { time: Math.round(time + deltaTime) } };
-  }
-  const { p1, p2 } = drawing.points as { p1: DrawingPoint; p2: DrawingPoint };
-  return {
-    ...drawing,
-    points: {
-      p1: { time: p1.time + deltaTime, price: p1.price + deltaPrice },
-      p2: { time: p2.time + deltaTime, price: p2.price + deltaPrice },
-    },
-  };
-}
-
-function drawShape(
-  ctx: CanvasRenderingContext2D,
-  tool: PersistedDrawingTool,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  color: string,
-  dashed: boolean,
-): void {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash(dashed ? [4, 4] : []);
-
-  if (tool === "TRENDLINE") {
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  } else if (tool === "RECTANGLE") {
-    const x = Math.min(a.x, b.x);
-    const y = Math.min(a.y, b.y);
-    const w = Math.abs(b.x - a.x);
-    const h = Math.abs(b.y - a.y);
-    if (!dashed) {
-      ctx.fillStyle = `${color}22`;
-      ctx.fillRect(x, y, w, h);
-    }
-    ctx.strokeRect(x, y, w, h);
-  }
-  ctx.setLineDash([]);
-}
 
 function describeDrawing(d: TradeChartDrawing): string {
-  if (d.tool === "HLINE") {
-    return `Línea horizontal @ ${formatMoney((d.points as { price: number }).price)}`;
-  }
+  const nombre = TOOL_BY_ID[d.tool].label;
+  const primero = d.points[0];
+  const ultimo = d.points[d.points.length - 1];
+
   if (d.tool === "VLINE") {
-    const { time } = d.points as { time: number };
-    return `Línea vertical @ ${new Date(time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+    const fecha = new Date(primero.time * 1000).toISOString().slice(0, 16).replace("T", " ");
+    return `${nombre} @ ${fecha} UTC`;
   }
-  const { p1, p2 } = d.points as { p1: DrawingPoint; p2: DrawingPoint };
-  const label =
-    d.tool === "TRENDLINE" ? "Línea de tendencia" : d.tool === "FIB" ? "Fibonacci" : "Rectángulo";
-  return `${label}: ${formatMoney(p1.price)} → ${formatMoney(p2.price)}`;
+  if (d.points.length === 1) return `${nombre} @ ${formatMoney(primero.price)}`;
+
+  return `${nombre}: ${formatMoney(primero.price)} → ${formatMoney(ultimo.price)}`;
 }
 
 

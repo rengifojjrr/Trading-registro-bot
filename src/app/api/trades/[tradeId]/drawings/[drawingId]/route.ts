@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { requireUser } from "@/lib/auth/require-user";
-import { isDrawingTool, parseDrawingPoints } from "@/lib/chart-drawings";
+import {
+  isDrawingTool,
+  parseDrawingPoints,
+  parseDrawingStyle,
+  serialiseDrawingStyle,
+} from "@/lib/chart-drawings";
+import type { Json } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -47,7 +53,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Cuerpo inválido." }, { status: 400 });
   }
 
-  const { tool, points } = (body ?? {}) as { tool?: unknown; points?: unknown };
+  const { tool, points, style } = (body ?? {}) as {
+    tool?: unknown;
+    points?: unknown;
+    style?: unknown;
+  };
   if (typeof tool !== "string" || !isDrawingTool(tool)) {
     return NextResponse.json({ error: "Herramienta desconocida." }, { status: 400 });
   }
@@ -56,10 +66,19 @@ export async function PATCH(
     return NextResponse.json({ error: "Coordenadas inválidas." }, { status: 400 });
   }
 
+  // El estilo es opcional al mover: arrastrar un dibujo cambia sus puntos y
+  // no sus ajustes, y mandarlos en cada arrastre sería reescribirlos por nada.
+  const parsedStyle = style === undefined ? null : parseDrawingStyle(tool, style);
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("chart_drawings")
-    .update({ points: parsedPoints })
+    .update({
+      points: parsedPoints as unknown as Json,
+      ...(parsedStyle
+        ? { style: serialiseDrawingStyle(tool, parsedStyle) as Json }
+        : {}),
+    })
     .eq("id", drawingId)
     .eq("trade_id", tradeId)
     .eq("user_id", user.id)

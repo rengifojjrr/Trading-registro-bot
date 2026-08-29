@@ -51,6 +51,8 @@ vi.mock("@/lib/hooks/use-current-price", () => ({
   useCurrentPrice: () => ({ price: null }),
 }));
 
+import { TOOLS } from "@/lib/charts/tools";
+
 import { TradeChart } from "./trade-chart";
 
 const OPENED = Math.floor(new Date("2026-08-12T03:05:37Z").getTime() / 1000);
@@ -97,7 +99,7 @@ describe("TradeChart timeframes", () => {
     const user = userEvent.setup();
     renderChart();
 
-    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("combobox", { name: "Temporalidad" }));
     const listbox = await screen.findByRole("listbox");
 
     for (const label of ["1 min", "5 min", "15 min", "30 min", "1 h", "2 h", "4 h", "6 h", "1 día"]) {
@@ -114,7 +116,7 @@ describe("TradeChart timeframes", () => {
     // At 1 h the 2-day position fits (48 candles), so no warning.
     expect(screen.queryByText(/la entrada queda fuera de la vista/)).toBeNull();
 
-    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("combobox", { name: "Temporalidad" }));
     await user.click(await screen.findByRole("option", { name: "1 min" }));
 
     // 2 days can't fit in 300 one-minute candles, so the chart shows the
@@ -199,19 +201,48 @@ describe("TradeChart live refresh", () => {
 describe("TradeChart tools", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("exposes the full markup toolbar", () => {
+  it("ofrece las herramientas agrupadas por familia", async () => {
+    // Veintitrés herramientas no caben en una fila de botones -- y en el móvil
+    // menos -- así que van en un desplegable agrupado, como en TradingView.
+    // Cursor y medir se quedan como botón: son los dos que más se alternan.
+    const user = userEvent.setup();
     renderChart();
 
+    expect(screen.getByRole("button", { name: "Cursor" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Medir movimiento" })).toBeTruthy();
+
+    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
+    const listbox = await screen.findByRole("listbox");
+
     for (const label of [
-      "Cursor",
-      "Línea horizontal (precio)",
-      "Línea vertical (momento)",
       "Línea de tendencia",
+      "Rayo",
+      "Línea horizontal",
       "Rectángulo",
+      "Canal paralelo",
       "Retroceso de Fibonacci",
-      "Medir movimiento (no se guarda)",
+      "Horquilla de Andrews",
+      "Posición larga",
+      "Posición corta",
+      "Onda de Elliott",
+      "Patrón XABCD",
+      "Caja de Gann",
     ]) {
-      expect(screen.getByRole("button", { name: label }), label).toBeTruthy();
+      expect(within(listbox).getByRole("option", { name: label }), label).toBeTruthy();
+    }
+  });
+
+  it("no deja fuera del desplegable ninguna herramienta del catálogo", async () => {
+    // Una herramienta que existe en el catálogo y no se puede elegir es código
+    // muerto que nadie descubre.
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
+    const listbox = await screen.findByRole("listbox");
+
+    for (const tool of TOOLS) {
+      expect(within(listbox).getByRole("option", { name: tool.label }), tool.id).toBeTruthy();
     }
   });
 
@@ -230,14 +261,21 @@ describe("TradeChart tools", () => {
     expect(screen.getByRole("button", { name: "Ocultar dibujos" })).toBeDisabled();
   });
 
-  it("explains what to do once a tool is picked", async () => {
+  it("dice cuántos clics faltan, no un texto fijo por herramienta", async () => {
+    // Con herramientas de uno a cinco puntos, «haz clic dos veces» dejó de ser
+    // cierto: el aviso cuenta los clics que quedan en cada momento.
     const user = userEvent.setup();
     renderChart();
 
-    await user.click(screen.getByRole("button", { name: "Línea vertical (momento)" }));
-    expect(screen.getByText(/marcar un momento en el tiempo/)).toBeTruthy();
+    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
+    await user.click(await screen.findByRole("option", { name: "Línea vertical" }));
+    expect(screen.getByText(/Un clic más para completar línea vertical/)).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Medir movimiento (no se guarda)" }));
+    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
+    await user.click(await screen.findByRole("option", { name: "Patrón XABCD" }));
+    expect(screen.getByText(/faltan 5 clics/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Medir movimiento" }));
     expect(screen.getByText(/inicio del movimiento que quieres medir/)).toBeTruthy();
   });
 });

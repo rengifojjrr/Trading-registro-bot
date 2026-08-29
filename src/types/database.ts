@@ -1437,18 +1437,29 @@ export interface Database {
           id: string;
           user_id: string;
           trade_id: string;
-          tool: "HLINE" | "VLINE" | "TRENDLINE" | "RECTANGLE" | "FIB";
+          /**
+           * El catálogo vive en `lib/charts/tools.ts`; aquí se escribe como
+           * `string` a propósito. Repetir veintitrés literales en dos sitios
+           * es garantizar que se desincronicen: quien manda es la restricción
+           * de la tabla, y el código valida contra el catálogo antes de
+           * escribir.
+           */
+          tool: string;
+          /** Lista de {time, price}: de uno a cinco según la herramienta. */
           points: Json;
           color: string;
+          /** Sólo lo que se aparta de los valores de fábrica. */
+          style: Json;
           created_at: string;
         },
         {
           id?: string;
           user_id: string;
           trade_id: string;
-          tool: "HLINE" | "VLINE" | "TRENDLINE" | "RECTANGLE" | "FIB";
+          tool: string;
           points: Json;
           color?: string;
+          style?: Json;
         }
       >;
 

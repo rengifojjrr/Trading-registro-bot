@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth/require-user";
-import { isDrawingTool, parseDrawingPoints } from "@/lib/chart-drawings";
+import {
+  isDrawingTool,
+  parseDrawingPoints,
+  parseDrawingStyle,
+  serialiseDrawingStyle,
+} from "@/lib/chart-drawings";
+import type { Json } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -27,7 +33,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
   } catch {
     return NextResponse.json({ error: "Datos inválidos.", id: null }, { status: 400 });
   }
-  const { tool, points } = (body ?? {}) as { tool?: unknown; points?: unknown };
+  const { tool, points, style } = (body ?? {}) as {
+    tool?: unknown;
+    points?: unknown;
+    style?: unknown;
+  };
   if (typeof tool !== "string" || !isDrawingTool(tool)) {
     return NextResponse.json({ error: "Datos inválidos.", id: null }, { status: 400 });
   }
@@ -48,9 +58,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
     return NextResponse.json({ error: "Operación no encontrada.", id: null }, { status: 404 });
   }
 
+  // El estilo se sanea antes de guardarse y se guarda ya reducido a lo que se
+  // aparta de fábrica: así lo que entra en la tabla es exactamente lo que el
+  // lector espera encontrar, sin pasar por un formato intermedio.
+  const parsedStyle = parseDrawingStyle(tool, style);
+  const styleToStore = parsedStyle ? serialiseDrawingStyle(tool, parsedStyle) : {};
+
   const { data, error } = await supabase
     .from("chart_drawings")
-    .insert({ user_id: user.id, trade_id: tradeId, tool, points: parsedPoints })
+    .insert({
+      user_id: user.id,
+      trade_id: tradeId,
+      tool,
+      // `DrawingPoint[]` es estructuralmente un `Json[]`, pero TypeScript no lo
+      // acepta sin firma de índice. El casteo está aquí, en una línea y con el
+      // motivo escrito, en vez de aflojar el tipo de `Json`.
+      points: parsedPoints as unknown as Json,
+      style: styleToStore as Json,
+    })
     .select("id")
     .single();
   if (error || !data) {

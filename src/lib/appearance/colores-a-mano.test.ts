@@ -55,6 +55,21 @@ const PERMITIDOS = new Map<string, string>([
       "archivo y es el mismo de la marca.",
   ],
   [
+    "components/trades/drawing-settings.tsx",
+    "La paleta que se ofrece para los dibujos del gráfico. El color de una " +
+      "línea de tendencia lo elige quien dibuja y se guarda con el dibujo: es " +
+      "un dato del usuario, igual que el color de una etiqueta de Notion, no " +
+      "una decisión de diseño de esta aplicación. Cambiar de paleta no puede " +
+      "cambiar de color un dibujo que alguien pintó de rojo a propósito.",
+  ],
+  [
+    "lib/charts/style.ts",
+    "Los colores de fábrica de cada herramienta, que son datos del dibujo por " +
+      "el mismo motivo. El verde de la posición larga y el rojo de la corta " +
+      "son convención de trading, no tema: en cualquier paleta, una posición " +
+      "larga se pinta verde.",
+  ],
+  [
     "core/notion-colors.ts",
     "Traduce los nombres de color de Notion a algo pintable. El color de una " +
       "etiqueta lo eligió una persona en Notion: es un dato, no una decisión " +

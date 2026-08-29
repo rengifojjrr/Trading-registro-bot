@@ -88,4 +88,33 @@ function SelectItem({
   );
 }
 
-export { Select, SelectValue, SelectTrigger, SelectContent, SelectItem };
+/**
+ * Agrupar opciones con su encabezado.
+ *
+ * Hizo falta al pasar el gráfico de cinco herramientas a veintitrés: una lista
+ * plana de veintitrés obliga a leerlas todas para encontrar una, y agrupadas
+ * por familia se va directo a la que se busca.
+ */
+function SelectGroup(props: React.ComponentProps<typeof SelectPrimitive.Group>) {
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />;
+}
+
+function SelectLabel({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Label>) {
+  return (
+    <SelectPrimitive.Label
+      data-slot="select-label"
+      className={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+export {
+  Select,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectGroup,
+  SelectLabel,
+};
