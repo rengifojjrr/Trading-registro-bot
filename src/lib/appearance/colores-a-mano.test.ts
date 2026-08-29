@@ -70,6 +70,14 @@ const PERMITIDOS = new Map<string, string>([
       "larga se pinta verde.",
   ],
   [
+    "components/trades/indicator-pane.tsx",
+    "Los colores de respaldo del panel de indicadores, para cuando " +
+      "`getComputedStyle` no devuelve el token -- que en un navegador de " +
+      "verdad no pasa, pero en una captura de miniatura o en una prueba sí. " +
+      "No son una paleta: es el último recurso para que el panel se dibuje en " +
+      "vez de quedarse en blanco, igual que el respaldo del tema del gráfico.",
+  ],
+  [
     "core/notion-colors.ts",
     "Traduce los nombres de color de Notion a algo pintable. El color de una " +
       "etiqueta lo eligió una persona en Notion: es un dato, no una decisión " +

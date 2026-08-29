@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2, X } from "lucide-react";
+import { BookmarkPlus, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,12 +96,19 @@ export function DrawingSettings({
   onChange,
   onDelete,
   onClose,
+  isTemplate,
+  onSaveTemplate,
+  onClearTemplate,
 }: {
   tool: ToolId;
   style: DrawingStyle;
   onChange: (next: DrawingStyle) => void;
   onDelete: () => void;
   onClose: () => void;
+  /** Si esta herramienta ya tiene guardada una configuración propia. */
+  isTemplate: boolean;
+  onSaveTemplate: () => void;
+  onClearTemplate: () => void;
 }) {
   const meta = TOOL_BY_ID[tool];
   const set = <K extends keyof DrawingStyle>(key: K, value: DrawingStyle[K]) =>
@@ -121,6 +128,35 @@ export function DrawingSettings({
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Cerrar los ajustes">
             <X className="size-4" aria-hidden />
           </Button>
+        </div>
+      </div>
+
+      {/* Guardar esta configuración como la de esta herramienta.
+          Ajustar una línea a tu gusto y que la siguiente vuelva a los valores
+          de fábrica es la clase de fricción que hace que nadie toque nunca los
+          ajustes. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2">
+        <span className="text-xs text-muted-foreground">
+          {isTemplate
+            ? `Todas las «${meta.label.toLowerCase()}» nuevas salen así.`
+            : "¿Que todas las nuevas salgan así?"}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onSaveTemplate}>
+            <BookmarkPlus className="size-3.5" aria-hidden />
+            {isTemplate ? "Actualizar" : "Guardar como mía"}
+          </Button>
+          {isTemplate ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onClearTemplate}
+              aria-label="Volver a los valores de fábrica de esta herramienta"
+            >
+              Quitar
+            </Button>
+          ) : null}
         </div>
       </div>
 

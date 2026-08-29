@@ -3,6 +3,7 @@
 import {
   BarChart3,
   Camera,
+  CopyPlus,
   Eye,
   EyeOff,
   Magnet,
@@ -12,10 +13,12 @@ import {
   Play,
   Repeat,
   Ruler,
-  Scaling,
+  Lock,
   Target,
+  Unlock,
   Undo2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -23,6 +26,7 @@ import {
   ColorType,
   CrosshairMode,
   HistogramSeries,
+  LineSeries,
   LineStyle,
   PriceScaleMode,
   createChart,
@@ -59,10 +63,36 @@ import {
 } from "@/lib/charts/fills-at-time";
 import { type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import { DrawingSettings } from "@/components/trades/drawing-settings";
+import { IndicatorMenu } from "@/components/trades/indicator-menu";
+import { IndicatorPane } from "@/components/trades/indicator-pane";
 import { ToolPalette } from "@/components/trades/tool-palette";
 import { buildShape, type Point as ShapePoint } from "@/lib/charts/geometry";
 import { distanceToShape, renderShape } from "@/lib/charts/render";
+import {
+  computeIndicator,
+  INDICATOR_BY_ID,
+  isIndicatorId,
+  type IndicatorId,
+} from "@/lib/charts/indicators";
+import {
+  parseView,
+  SCALE_HINTS,
+  SCALE_LABELS,
+  SCALE_MODES,
+  viewStorageKey,
+  type ChartViewState,
+  type ScaleMode,
+} from "@/lib/charts/scale";
 import { snapToCandle } from "@/lib/charts/snap";
+import {
+  hasTemplate,
+  parseTemplates,
+  styleForTool,
+  TEMPLATES_KEY,
+  withTemplate,
+  withoutTemplate,
+  type StoredTemplates,
+} from "@/lib/charts/templates";
 import { defaultStyle, serialiseStyle, type DrawingStyle } from "@/lib/charts/style";
 import { TOOL_BY_ID, type ToolId } from "@/lib/charts/tools";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
@@ -108,6 +138,18 @@ export interface TradeChartDrawing {
 }
 
 const CHART_HEIGHT = 360;
+
+/**
+ * Los tres modos del eje, traducidos a lo que la librería entiende.
+ *
+ * En un mapa y no en un `switch` repartido: el día que se añada un cuarto
+ * modo, este archivo es el único que hay que tocar además del catálogo.
+ */
+const MODO_LIBRERIA: Record<ScaleMode, PriceScaleMode> = {
+  NORMAL: PriceScaleMode.Normal,
+  LOG: PriceScaleMode.Logarithmic,
+  PERCENT: PriceScaleMode.Percentage,
+};
 /** How often an open position's candles are re-fetched. One request a minute is nothing against Coinbase's limits, and it's the granularity at which new candles actually appear. */
 const CANDLE_REFRESH_MS = 60_000;
 /** One candle per second: fast enough not to be boring, slow enough to read. */
@@ -160,6 +202,19 @@ function withAlpha(color: string, alpha: number): string {
   const fn = color.trim().match(/^(hsl|rgb)\((.+)\)$/i);
   if (fn) return `${fn[1].toLowerCase()}a(${fn[2]}, ${alpha})`;
   return color;
+}
+
+/**
+ * Un token del tema, resuelto a color.
+ *
+ * Los indicadores declaran su color como token (`--primary`) para seguir la
+ * paleta como todo lo demás; el canvas no entiende `var()`, así que hay que
+ * resolverlo aquí. Sin ventana -- en las pruebas -- se queda con el de
+ * respaldo, que es más que suficiente para que el gráfico se dibuje.
+ */
+function leerToken(token: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
 }
 
 function resolveTheme(): ChartTheme {
@@ -226,6 +281,48 @@ interface Measurement {
  * own coordinate-conversion methods, is the simpler, equally-correct path
  * for a small, fixed set of shapes).
  */
+/**
+ * La vista guardada de una operación, o la de fábrica.
+ *
+ * Todo dentro de un try: en una ventana privada, con las cookies de sitio
+ * bloqueadas o en la captura de miniaturas, `localStorage` no sólo viene
+ * vacío, es que *lanza* al tocarlo. Un gráfico que no abre por una preferencia
+ * de aspecto sería un mal cambio.
+ */
+function leerVista(tradeId: string, porDefecto: string): ChartViewState {
+  try {
+    const crudo = window.localStorage.getItem(viewStorageKey(tradeId));
+    return parseView(crudo ? JSON.parse(crudo) : null, porDefecto);
+  } catch {
+    return parseView(null, porDefecto);
+  }
+}
+
+function leerPlantillas(): StoredTemplates {
+  try {
+    const crudo = window.localStorage.getItem(TEMPLATES_KEY);
+    return parseTemplates(crudo ? JSON.parse(crudo) : null);
+  } catch {
+    return {};
+  }
+}
+
+function guardarPlantillas(plantillas: StoredTemplates): void {
+  try {
+    window.localStorage.setItem(TEMPLATES_KEY, JSON.stringify(plantillas));
+  } catch {
+    // Igual que la vista: se pierde la preferencia, no la sesión.
+  }
+}
+
+function guardarVista(tradeId: string, vista: ChartViewState): void {
+  try {
+    window.localStorage.setItem(viewStorageKey(tradeId), JSON.stringify(vista));
+  } catch {
+    // Sin sitio o sin permiso: se pierde la preferencia, no la sesión.
+  }
+}
+
 export function TradeChart({
   tradeId,
   productId,
@@ -277,8 +374,33 @@ export function TradeChart({
   const drawingPriceLinesRef = useRef<IPriceLine[]>([]);
   const hoverPointRef = useRef<DrawingPoint | null>(null);
 
+  /**
+   * La vista guardada de esta operación.
+   *
+   * Se lee una sola vez, en el inicializador perezoso, y no en un efecto: un
+   * `setState` dentro de un efecto pinta primero la vista de fábrica y luego
+   * la guardada, y eso se ve como un parpadeo en cada carga. Además el propio
+   * ESLint lo prohíbe, y con razón.
+   *
+   * Va en el navegador y no en la base de datos porque es una preferencia de
+   * *este* dispositivo: la temporalidad que quieres en el móvil no es la que
+   * quieres en el escritorio.
+   */
+  const vistaGuardada = useState(() => leerVista(tradeId, initialGranularity))[0];
+
+  /**
+   * Las plantillas: «así quiero yo esta herramienta».
+   *
+   * Al contrario que la vista, no van por operación sino por persona: un
+   * grosor de línea que te gusta te gusta en todas. Siguen en el navegador
+   * porque son aspecto, no dato.
+   */
+  const [templates, setTemplates] = useState<StoredTemplates>(() => leerPlantillas());
+
   const [candles, setCandles] = useState(initialCandles);
-  const [granularity, setGranularity] = useState(initialGranularity);
+  const [granularity, setGranularity] = useState(
+    () => vistaGuardada.granularity as CoinbaseCandleGranularity,
+  );
 
   /**
    * Lo que hay bajo el cursor y lo que se dejó fijado al pulsar.
@@ -326,9 +448,34 @@ export function TradeChart({
    */
   const [pendingPoints, setPendingPoints] = useState<DrawingPoint[]>([]);
   const [measurement, setMeasurement] = useState<Measurement | null>(null);
-  const [showVolume, setShowVolume] = useState(false);
-  const [logScale, setLogScale] = useState(false);
-  const [showDrawings, setShowDrawings] = useState(true);
+
+  const [showVolume, setShowVolume] = useState(vistaGuardada.showVolume);
+  const [scaleMode, setScaleMode] = useState<ScaleMode>(vistaGuardada.scaleMode);
+  const [autoScale, setAutoScale] = useState(vistaGuardada.autoScale);
+  const [indicators, setIndicators] = useState<IndicatorId[]>(
+    vistaGuardada.indicators.filter(isIndicatorId),
+  );
+  const [showDrawings, setShowDrawings] = useState(vistaGuardada.showDrawings);
+  /**
+   * El tramo de tiempo que se ve arriba, para cuadrar el panel de indicadores.
+   *
+   * Sólo se actualiza cuando cambia de verdad: al arrastrar el gráfico este
+   * evento dispara decenas de veces por segundo, y un re-render por cada uno
+   * atasca todo. Con la comparación, arrastrar dentro de la misma vela no
+   * vuelve a pintar nada.
+   */
+  const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
+
+  /**
+   * El stop y el objetivo, en estado local.
+   *
+   * Vienen del diario por props, pero se pueden arrastrar aquí, así que hacen
+   * falta en estado: durante el arrastre lo que se ve es este valor, y sólo al
+   * soltar se manda al servidor. Con las props solas la raya se quedaría
+   * clavada hasta que respondiera la red.
+   */
+  const [planLevels, setPlanLevels] = useState({ stop: stopLoss, target: takeProfit });
+  const dragLevelRef = useRef<"stop" | "target" | null>(null);
   /**
    * El imán: los clics se pegan al máximo, mínimo, apertura o cierre más
    * cercano de la vela.
@@ -337,7 +484,7 @@ export function TradeChart({
    * y luego no coincide con nada. Con él, un soporte trazado sobre un mínimo
    * está *en* el mínimo, que es lo que se quiso decir al trazarlo.
    */
-  const [magnet, setMagnet] = useState(true);
+  const [magnet, setMagnet] = useState(vistaGuardada.magnet);
   /**
    * Seguir en la misma herramienta después de dibujar.
    *
@@ -352,7 +499,7 @@ export function TradeChart({
    * Encendido de salida cuando hay plan: es el contexto que explica la
    * operación, no un adorno. Apagable porque al dibujar encima estorba.
    */
-  const [showPlan, setShowPlan] = useState(true);
+  const [showPlan, setShowPlan] = useState(vistaGuardada.showPlan);
   const legendRef = useRef<HTMLDivElement>(null);
 
   // Every timeframe is selectable. This only tracks whether the chosen one
@@ -373,7 +520,9 @@ export function TradeChart({
     chartRef.current?.timeScale().fitContent();
   }
 
+  const router = useRouter();
   const [capturing, setCapturing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   /**
    * Replay: how many candles are revealed. null means replay is off and the
@@ -539,6 +688,7 @@ export function TradeChart({
   }
   const dragRef = useRef<{ id: string; startPoint: DrawingPoint; original: TradeChartDrawing } | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const indicatorSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   // Read by the crosshair legend and by the chart-creation effect, neither
   // of which should re-run just because a candle ticked.
   const candlesRef = useRef(candles);
@@ -585,6 +735,39 @@ export function TradeChart({
     await loadCandles(nextGranularity);
   }
 
+  /**
+   * Guarda la vista al cambiar cualquiera de sus piezas.
+   *
+   * En un efecto y no en cada manejador: son ocho interruptores, y escribir el
+   * guardado en los ocho es garantizar que el noveno se olvide.
+   */
+  useEffect(() => {
+    guardarVista(tradeId, {
+      granularity,
+      scaleMode,
+      autoScale,
+      showVolume,
+      showDrawings,
+      showPlan,
+      magnet,
+      indicators,
+    });
+  }, [
+    tradeId,
+    granularity,
+    scaleMode,
+    autoScale,
+    showVolume,
+    showDrawings,
+    showPlan,
+    magnet,
+    indicators,
+  ]);
+
+  function toggleIndicator(id: IndicatorId) {
+    setIndicators((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  }
+
   function selectTool(tool: ActiveTool) {
     setActiveTool(tool);
     setPendingPoints([]);
@@ -592,7 +775,9 @@ export function TradeChart({
   }
 
   async function saveDrawing(tool: ToolId, points: DrawingPoint[]) {
-    const style = defaultStyle(tool);
+    // De la plantilla, no de fábrica: es lo que hace que la segunda línea de
+    // tendencia salga ya como te gusta.
+    const style = styleForTool(tool, templates);
     try {
       const response = await fetch(`/api/trades/${tradeId}/drawings`, {
         method: "POST",
@@ -614,6 +799,29 @@ export function TradeChart({
     }
   }
 
+
+  /**
+   * Guarda un nivel del plan arrastrado en el gráfico.
+   *
+   * Escribe en `journal_entries`, donde el stop y el objetivo han vivido
+   * siempre: el diario, el análisis de riesgo y el gráfico tienen que seguir
+   * hablando del mismo número, y una tabla nueva sólo para «el nivel que se
+   * arrastró» los habría separado.
+   */
+  async function persistPlanLevel(cual: "stop" | "target", precio: number | null) {
+    try {
+      const res = await fetch(`/api/trades/${tradeId}/plan`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cual === "stop" ? { stopLoss: precio } : { takeProfit: precio }),
+      });
+      const result = (await res.json()) as { error: string | null };
+      if (result.error) toast.error(result.error);
+      else toast.success(cual === "stop" ? "Stop actualizado." : "Objetivo actualizado.");
+    } catch {
+      toast.error("No se pudo guardar el nivel.");
+    }
+  }
 
   /** Persists a drag. The optimistic local move already happened during the drag itself. */
   async function persistMovedDrawing(drawing: TradeChartDrawing) {
@@ -638,6 +846,32 @@ export function TradeChart({
       if (result.error) toast.error(result.error);
     } catch {
       toast.error("No se pudo eliminar el dibujo.");
+    }
+  }
+
+  /**
+   * Trae los dibujos de la operación anterior del mismo producto.
+   *
+   * Se recarga la página al terminar en vez de insertar en el estado local: lo
+   * que vuelve del servidor son filas nuevas con identificadores nuevos, y
+   * fabricarlos aquí para no recargar sería mantener dos versiones de la
+   * verdad hasta el siguiente refresco.
+   */
+  async function handleImportDrawings() {
+    setImporting(true);
+    try {
+      const res = await fetch(`/api/trades/${tradeId}/drawings/import`, { method: "POST" });
+      const result = (await res.json()) as { error: string | null; copiados: number };
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`${result.copiados} dibujo(s) copiados. Recargando…`);
+      router.refresh();
+    } catch {
+      toast.error("No se pudieron copiar los dibujos.");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -701,8 +935,16 @@ export function TradeChart({
       },
       rightPriceScale: {
         borderColor: THEME.grid,
-        mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+        mode: MODO_LIBRERIA[scaleMode],
+        // Apagar la autoescala fija el rango que se ve: sin esto, mirar una
+        // zona plana la amplía hasta que un movimiento de dos dólares parece
+        // un desplome.
+        autoScale,
       },
+      // Arrastrar el eje para comprimir o estirar. Va explícito porque es la
+      // otra mitad de «escala de verdad»: los tres modos dicen *cómo* se
+      // reparte el precio, y esto deja decidir *cuánto* espacio ocupa.
+      handleScale: { axisPressedMouseMove: { price: true, time: true } },
       timeScale: { borderColor: THEME.grid, timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       // Explicit rather than the library's default (the visiting browser's
@@ -832,9 +1074,9 @@ export function TradeChart({
       });
     }
 
-    if (stopLoss !== null) {
+    if (planLevels.stop !== null) {
       series.createPriceLine({
-        price: stopLoss,
+        price: planLevels.stop,
         color: THEME.down,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -842,9 +1084,9 @@ export function TradeChart({
         title: "SL",
       });
     }
-    if (takeProfit !== null) {
+    if (planLevels.target !== null) {
       series.createPriceLine({
-        price: takeProfit,
+        price: planLevels.target,
         color: THEME.up,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -957,12 +1199,21 @@ export function TradeChart({
       setPinned(group ? { group, granularity: granularityRef.current } : null);
     }
 
-    updateLegend({} as MouseEventParams<Time>);
     // Con la última vela puesta desde el principio. Sin esto, la barra de
     // datos nace vacía y sólo se llena al mover el cursor -- que en un
     // teléfono no pasa nunca.
     updateLegend({} as MouseEventParams<Time>);
 
+    function onVisibleRange(rango: { from: Time; to: Time } | null) {
+      if (!rango) return;
+      const from = Number(rango.from);
+      const to = Number(rango.to);
+      setVisibleRange((previo) =>
+        previo && previo.from === from && previo.to === to ? previo : { from, to },
+      );
+    }
+
+    chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleRange);
     chart.subscribeCrosshairMove(onCrosshair);
     chart.subscribeClick(onClick);
 
@@ -981,6 +1232,7 @@ export function TradeChart({
 
     return () => {
       resizeObserver.disconnect();
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleRange);
       chart.unsubscribeCrosshairMove(onCrosshair);
       chart.unsubscribeClick(onClick);
       chart.remove();
@@ -1006,10 +1258,11 @@ export function TradeChart({
     // nuevas. Se depende de la longitud y no del array para no reconstruir el
     // gráfico entero en cada render por una identidad de objeto distinta.
     fills?.length,
-    stopLoss,
-    takeProfit,
+    planLevels,
     showVolume,
-    logScale,
+    scaleMode,
+    autoScale,
+    indicators,
     themeVersion,
     replaying,
   ]);
@@ -1039,6 +1292,45 @@ export function TradeChart({
       })),
     );
 
+    /**
+     * Los indicadores que van sobre las velas.
+     *
+     * Se rehacen enteros cada vez en vez de mantener una serie viva por
+     * indicador: son cuatro líneas de trescientos puntos, el coste no se nota,
+     * y llevar la contabilidad de qué serie corresponde a qué indicador -- y
+     * acordarse de destruirla al quitarlo -- es exactamente donde se cuelan
+     * las fugas de memoria en un gráfico que se repinta cada minuto.
+     */
+    const grafico = chartRef.current;
+    for (const vieja of indicatorSeriesRef.current) grafico?.removeSeries(vieja);
+    indicatorSeriesRef.current = [];
+
+    const sesionDe = (t: number) => String(Math.floor(t / 86400));
+    for (const id of indicators) {
+      const meta = INDICATOR_BY_ID[id];
+      if (meta.pane !== "PRECIO" || !grafico) continue;
+
+      const serie = grafico.addSeries(LineSeries, {
+        color: leerToken(meta.colorToken, THEME.text),
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+
+      const valores = computeIndicator(id, visibleCandles, sesionDe);
+      serie.setData(
+        visibleCandles
+          .map((c, i) => ({ time: c.time as UTCTimestamp, value: valores[i] }))
+          // Los tramos sin datos se quitan en vez de mandarse como cero: un
+          // cero se pinta, y una media que arranca en cero cae en picado desde
+          // el borde inferior hasta su primer valor de verdad.
+          .filter((p): p is { time: UTCTimestamp; value: number } => p.value !== null),
+      );
+
+      indicatorSeriesRef.current.push(serie);
+    }
+
     // Frame the data on a new chart or a new timeframe only. A background
     // refresh must leave the view exactly where the user put it.
     // Keyed on replay too: entering or leaving a replay changes how much
@@ -1052,7 +1344,7 @@ export function TradeChart({
     // themeVersion: the volume bars carry their colour per-point, so they
     // have to be rewritten when the palette changes -- unlike the candle
     // series, whose colours live in its options.
-  }, [visibleCandles, granularity, showVolume, logScale, themeVersion, replaying]);
+  }, [visibleCandles, granularity, showVolume, scaleMode, autoScale, indicators, themeVersion, replaying]);
 
   /**
    * Keeps an open position's chart current.
@@ -1220,14 +1512,14 @@ export function TradeChart({
        * roja y verde y el mismo cálculo. Va antes que los dibujos para que
        * quede debajo de ellos: es contexto, no anotación.
        */
-      if (showPlan && stopLoss !== null && takeProfit !== null) {
+      if (showPlan && planLevels.stop !== null && planLevels.target !== null) {
         const planTool = direction === "LONG" ? "LONG_POSITION" : "SHORT_POSITION";
         pintar(
           planTool,
           [
             { time: entry.time, price: entry.price },
-            { time: entry.time, price: stopLoss },
-            { time: entry.time, price: takeProfit },
+            { time: entry.time, price: planLevels.stop },
+            { time: entry.time, price: planLevels.target },
           ],
           { ...defaultStyle(planTool), fillOpacity: 10 },
           {},
@@ -1253,7 +1545,7 @@ export function TradeChart({
           const b = toPixel(previa[1]);
           if (a && b) drawMeasure(ctx, a, b, previa[0], previa[1]);
         } else {
-          pintar(activeTool, previa, defaultStyle(activeTool), { ghost: true });
+          pintar(activeTool, previa, styleForTool(activeTool, templates), { ghost: true });
         }
       }
 
@@ -1366,13 +1658,45 @@ export function TradeChart({
         };
         return;
       }
+
+      /**
+       * Ningún dibujo debajo: puede ser el stop o el objetivo.
+       *
+       * Se comprueba **después** de los dibujos y no antes porque estas dos
+       * rayas cruzan el gráfico entero: yendo primero, robarían el clic a
+       * cualquier dibujo que las cruce, que son casi todos.
+       */
+      for (const cual of ["stop", "target"] as const) {
+        const nivel = cual === "stop" ? planLevels.stop : planLevels.target;
+        if (nivel === null) continue;
+        const y = series!.priceToCoordinate(nivel);
+        if (y === null || Math.abs(y - pointer.y) > HIT_TOLERANCE_PX) continue;
+
+        event.preventDefault();
+        event.stopPropagation();
+        dragLevelRef.current = cual;
+        setSelectedDrawingId(null);
+        return;
+      }
+
       setSelectedDrawingId(null);
     }
 
     function handlePointerMove(event: PointerEvent) {
+      const rect = container!.getBoundingClientRect();
+
+      // Arrastrando un nivel del plan: sólo cambia el precio, nunca el
+      // momento. Un stop no está en un instante, está en un precio.
+      const nivel = dragLevelRef.current;
+      if (nivel) {
+        const precio = series!.coordinateToPrice(event.clientY - rect.top);
+        if (precio === null) return;
+        setPlanLevels((prev) => ({ ...prev, [nivel === "stop" ? "stop" : "target"]: precio }));
+        return;
+      }
+
       const drag = dragRef.current;
       if (!drag) return;
-      const rect = container!.getBoundingClientRect();
       const price = series!.coordinateToPrice(event.clientY - rect.top);
       const time = chart!.timeScale().coordinateToTime(event.clientX - rect.left);
       if (price === null || time === null) return;
@@ -1386,6 +1710,19 @@ export function TradeChart({
     }
 
     function handlePointerUp() {
+      // Al soltar un nivel del plan es cuando se guarda, no durante: arrastrar
+      // dispara decenas de eventos, y una petición por cada uno sería
+      // machacar la fila con estados intermedios que nadie pidió.
+      const nivel = dragLevelRef.current;
+      if (nivel) {
+        dragLevelRef.current = null;
+        setPlanLevels((actual) => {
+          void persistPlanLevel(nivel, nivel === "stop" ? actual.stop : actual.target);
+          return actual;
+        });
+        return;
+      }
+
       const drag = dragRef.current;
       if (!drag) return;
       dragRef.current = null;
@@ -1434,14 +1771,15 @@ export function TradeChart({
     // timeframe or toggling volume.
     candles,
     showVolume,
-    logScale,
+    scaleMode,
+    autoScale,
+    indicators,
     direction,
     entry.time,
     entry.price,
     exit?.time,
     exit?.price,
-    stopLoss,
-    takeProfit,
+    planLevels,
     showPlan,
     themeVersion,
   ]);
@@ -1471,6 +1809,32 @@ export function TradeChart({
               ))}
             </SelectContent>
           </Select>
+
+          {/* Los tres modos del eje. Excluyentes entre sí, así que un
+              desplegable y no tres interruptores: con interruptores existiría
+              «logarítmica y porcentaje a la vez», que no significa nada. */}
+          <Select value={scaleMode} onValueChange={(v) => setScaleMode(v as ScaleMode)}>
+            <SelectTrigger className="h-8 w-32 text-xs" aria-label="Escala de precios">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SCALE_MODES.map((m) => (
+                <SelectItem key={m} value={m}>
+                  <span className="flex flex-col gap-0.5">
+                    <span>{SCALE_LABELS[m]}</span>
+                    <span className="text-[10px] leading-tight text-muted-foreground">
+                      {SCALE_HINTS[m]}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Los indicadores, en un desplegable de varios a la vez: la mitad
+              de las veces se quiere EMA 9 *y* EMA 21, no una u otra. */}
+          <IndicatorMenu active={indicators} onToggle={toggleIndicator} />
+
           {/* Cursor, medir y los dos interruptores de modo: lo que se alterna
               constantemente mientras se dibuja. Las herramientas en sí están
               en su propia paleta, debajo. */}
@@ -1530,15 +1894,15 @@ export function TradeChart({
               onClick={() => setShowVolume((v) => !v)}
             />
             <ToggleButton
-              label="Escala logarítmica"
-              Icon={Scaling}
-              pressed={logScale}
-              onClick={() => setLogScale((v) => !v)}
+              label={autoScale ? "Fijar la escala" : "Volver a la escala automática"}
+              Icon={autoScale ? Unlock : Lock}
+              pressed={!autoScale}
+              onClick={() => setAutoScale((v) => !v)}
             />
             {/* Sólo cuando hay plan que enseñar: un interruptor que no puede
                 cambiar nada se pulsa una vez y se deja de confiar en el resto
                 de la barra. */}
-            {stopLoss !== null && takeProfit !== null ? (
+            {planLevels.stop !== null && planLevels.target !== null ? (
               <ToggleButton
                 label={showPlan ? "Ocultar el plan" : "Enseñar el plan (stop y objetivo)"}
                 Icon={Target}
@@ -1564,6 +1928,13 @@ export function TradeChart({
               disabled={drawings.length === 0}
             />
             <ToggleButton label="Restablecer vista" Icon={Maximize2} pressed={false} onClick={resetView} />
+            <ToggleButton
+              label="Traer los dibujos de la operación anterior"
+              Icon={CopyPlus}
+              pressed={false}
+              onClick={() => void handleImportDrawings()}
+              disabled={importing}
+            />
             <ToggleButton
               label="Reproducir la operación vela a vela"
               Icon={Play}
@@ -1687,6 +2058,16 @@ export function TradeChart({
         />
       </div>
 
+      {/* Los indicadores que no caben en el eje del precio: RSI de 0 a 100 y
+          ATR en dólares. Debajo del gráfico y cuadrados con su rango de tiempo
+          visible, para que las dos mitades hablen del mismo momento. */}
+      <IndicatorPane
+        indicators={indicators}
+        candles={visibleCandles}
+        from={visibleRange?.from ?? null}
+        to={visibleRange?.to ?? null}
+      />
+
       {/* El resumen que se queda al pulsar.
           Debajo del gráfico y no encima: un panel flotante sobre las velas
           tapa justo lo que se acaba de pulsar para poder mirarlo. */}
@@ -1758,6 +2139,21 @@ export function TradeChart({
           tool={selectedDrawing.tool}
           style={selectedDrawing.style}
           onChange={(next) => void updateDrawingStyle(selectedDrawing.id, next)}
+          isTemplate={hasTemplate(templates, selectedDrawing.tool)}
+          onSaveTemplate={() => {
+            const siguiente = withTemplate(templates, selectedDrawing.tool, selectedDrawing.style);
+            setTemplates(siguiente);
+            guardarPlantillas(siguiente);
+            toast.success(
+              `Las «${TOOL_BY_ID[selectedDrawing.tool].label.toLowerCase()}» nuevas saldrán así.`,
+            );
+          }}
+          onClearTemplate={() => {
+            const siguiente = withoutTemplate(templates, selectedDrawing.tool);
+            setTemplates(siguiente);
+            guardarPlantillas(siguiente);
+            toast.success("Vuelve a los valores de fábrica.");
+          }}
           onDelete={() => {
             void handleDeleteDrawing(selectedDrawing.id);
             setSelectedDrawingId(null);

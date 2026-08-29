@@ -29,6 +29,7 @@ const series = {
 vi.mock("lightweight-charts", () => ({
   createChart: () => ({
     addSeries: () => series,
+    removeSeries: vi.fn(),
     priceScale: () => priceScale,
     timeScale: () => timeScale,
     subscribeClick: vi.fn(),
@@ -41,16 +42,35 @@ vi.mock("lightweight-charts", () => ({
   createSeriesMarkers: vi.fn(),
   CandlestickSeries: {},
   HistogramSeries: {},
+  LineSeries: {},
   ColorType: { Solid: "solid" },
   CrosshairMode: { Normal: 0 },
   LineStyle: { Solid: 0, Dotted: 1, Dashed: 2 },
-  PriceScaleMode: { Normal: 0, Logarithmic: 1 },
+  PriceScaleMode: { Normal: 0, Logarithmic: 1, Percentage: 2 },
 }));
 
 vi.mock("@/lib/hooks/use-current-price", () => ({
   useCurrentPrice: () => ({ price: null }),
 }));
 
+// El gráfico recarga la ruta tras copiarse los dibujos de otra operación, y
+// fuera de Next no hay router que montar.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+}));
+
+/**
+ * El gráfico recuerda su vista por operación, en `localStorage`.
+ *
+ * Sin vaciarla entre pruebas, la que enciende dos indicadores se los deja
+ * puestos a la siguiente -- y como todas usan el mismo identificador de
+ * operación, la siguiente hereda una configuración que nunca pidió. Lo cazó
+ * la prueba de la reproducción, que de pronto medía la serie del indicador
+ * en vez de la de las velas.
+ */
+beforeEach(() => window.localStorage.clear());
+
+import { SCALE_LABELS, SCALE_MODES } from "@/lib/charts/scale";
 import { GROUP_LABELS, TOOLS } from "@/lib/charts/tools";
 
 import { TradeChart } from "./trade-chart";
@@ -259,9 +279,47 @@ describe("TradeChart tools", () => {
   it("exposes the view toggles", () => {
     renderChart();
 
-    for (const label of ["Volumen", "Escala logarítmica", "Restablecer vista"]) {
+    for (const label of ["Volumen", "Fijar la escala", "Restablecer vista"]) {
       expect(screen.getByRole("button", { name: label }), label).toBeTruthy();
     }
+  });
+
+  it("ofrece los tres modos de escala, no un interruptor de logarítmica", async () => {
+    // Lineal, logarítmica y porcentaje son excluyentes: con interruptores
+    // independientes existiría «logarítmica y porcentaje a la vez», que no
+    // significa nada y habría que prohibir a mano en cada sitio.
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("combobox", { name: "Escala de precios" }));
+    const listbox = await screen.findByRole("listbox");
+
+    for (const modo of SCALE_MODES) {
+      expect(
+        within(listbox).getByRole("option", { name: new RegExp(SCALE_LABELS[modo]) }),
+        modo,
+      ).toBeTruthy();
+    }
+  });
+
+  it("ofrece los indicadores, y se pueden marcar varios", async () => {
+    // La mitad de las veces se quiere EMA 9 *y* EMA 21 -- es el cruce que se
+    // mira -- así que marcar uno no puede desmarcar el anterior.
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("button", { name: "Indicadores" }));
+    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
+    await user.click(screen.getByRole("checkbox", { name: /EMA 21/ }));
+
+    expect(screen.getByRole("checkbox", { name: /EMA 9/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("checkbox", { name: /EMA 21/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 
   it("disables undo and hide until there is something drawn", () => {
