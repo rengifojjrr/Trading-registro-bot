@@ -39,8 +39,21 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { coversWholeTrade, GRANULARITY_LABELS, GRANULARITY_ORDER } from "@/lib/analytics/chart-window";
+import {
+  coversWholeTrade,
+  GRANULARITY_LABELS,
+  GRANULARITY_ORDER,
+  GRANULARITY_SECONDS,
+} from "@/lib/analytics/chart-window";
+import {
+  describeGroupLines,
+  findGroupNear,
+  groupFillsByTime,
+  toleranceFor,
+  type FillGroup,
+} from "@/lib/charts/fills-at-time";
 import { FIB_LEVELS, type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { uploadTradeScreenshot } from "@/app/(dashboard)/trades/[tradeId]/actions";
@@ -255,6 +268,40 @@ export function TradeChart({
 
   const [candles, setCandles] = useState(initialCandles);
   const [granularity, setGranularity] = useState(initialGranularity);
+
+  /**
+   * Lo que hay bajo el cursor y lo que se dejó fijado al pulsar.
+   *
+   * El aviso flotante se escribe directamente en el DOM y no por estado: el
+   * evento del cursor dispara en cada píxel, y un re-render por píxel hace que
+   * el gráfico entero se atasque. Lo que sí va por estado es lo fijado al
+   * pulsar, que pasa una vez por clic.
+   */
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  // Se guarda con la temporalidad en la que se fijó: al cambiarla, la vela
+  // que se pulsó ya no existe con ese tamaño, así que el resumen deja de
+  // corresponder. Se comprueba al pintar en vez de vaciarlo desde un efecto,
+  // que sería un render en cascada para representar algo ya deducible.
+  const [pinned, setPinned] = useState<{ group: FillGroup; granularity: string } | null>(null);
+  const fillGroupsRef = useRef<Map<number, FillGroup>>(new Map());
+  const toleranceRef = useRef(60);
+
+  // Se recalcula al cambiar las ejecuciones, no en cada render del gráfico:
+  // agrupar veinticinco ejecuciones es barato, pero hacerlo en cada movimiento
+  // del ratón no lo sería.
+  useEffect(() => {
+    fillGroupsRef.current = groupFillsByTime(fills ?? []);
+  }, [fills]);
+
+  // Por referencia y no por estado: lo leen los manejadores del gráfico, que
+  // se registran una vez y no se vuelven a crear al cambiar de temporalidad.
+  const granularityRef = useRef(granularity);
+  useEffect(() => {
+    toleranceRef.current = toleranceFor(GRANULARITY_SECONDS[granularity]);
+    granularityRef.current = granularity;
+  }, [granularity]);
+
+
   const [isLoading, setIsLoading] = useState(false);
   const [drawings, setDrawings] = useState(initialDrawings);
   const [activeTool, setActiveTool] = useState<ActiveTool>("CURSOR");
@@ -636,16 +683,25 @@ export function TradeChart({
       for (const fill of agrupados.values()) {
         const esEntrada = fill.role === "ENTRY";
         if (!esEntrada && replaying) continue;
+        // La flecha sola, sin etiqueta.
+        //
+        // Antes cada flecha llevaba escrito el tamaño y el precio. Con dos
+        // ejecuciones se lee; con veinticinco es una pared de texto que se
+        // solapa consigo misma y tapa las velas -- justo lo que se iba a
+        // mirar. El detalle sale al pasar por encima y al pulsar, que es como
+        // lo resuelve TradingView y la única forma que escala.
         markers.push({
           time: fill.time as UTCTimestamp,
           position: esEntrada === isLong ? "belowBar" : "aboveBar",
           shape: esEntrada === isLong ? "arrowUp" : "arrowDown",
           color: esEntrada ? THEME.entry : THEME.exit,
-          text: `${esEntrada ? "+" : "-"}${fill.size} · ${formatMoney(fill.price)}`,
         });
       }
       markers.sort((a, b) => (a.time as number) - (b.time as number));
     } else {
+      // Sin ejecución a ejecución sólo hay dos flechas, así que aquí sí cabe
+      // la etiqueta: dos textos no se tapan entre sí, y sin datos por
+      // ejecución tampoco habría nada que enseñar al pasar por encima.
       markers.push({
         time: entry.time as UTCTimestamp,
         position: isLong ? "belowBar" : "aboveBar",
@@ -736,8 +792,69 @@ export function TradeChart({
         `${sign}${changePct.toFixed(2)}%  Vol ${shown.volume.toLocaleString("en-US")}`;
       node.style.color = change >= 0 ? THEME.up : THEME.down;
     }
+    /**
+     * El aviso flotante con lo que hay bajo el cursor.
+     *
+     * Se escribe al DOM directamente, como la lectura OHLC de arriba y por el
+     * mismo motivo: esto dispara en cada píxel de movimiento.
+     *
+     * El cursor cae sobre una vela, no sobre un segundo, así que se busca la
+     * ejecución más cercana dentro de media vela. Con más tolerancia, dos
+     * velas contiguas enseñarían la misma; con menos, habría que acertar el
+     * píxel exacto.
+     */
+    function updateFillTooltip(param: MouseEventParams<Time>) {
+      const node = tooltipRef.current;
+      if (!node) return;
+
+      const group =
+        param.time && param.point
+          ? findGroupNear(fillGroupsRef.current, Number(param.time), toleranceRef.current)
+          : null;
+
+      if (!group || !param.point) {
+        node.hidden = true;
+        return;
+      }
+
+      node.hidden = false;
+      node.textContent = describeGroupLines(group).join("  ·  ");
+
+      // Se coloca a la izquierda del cursor cuando no cabe a la derecha: un
+      // aviso cortado por el borde es peor que uno que cambia de lado.
+      const ancho = node.offsetWidth;
+      const cabeALaDerecha = param.point.x + 16 + ancho < (container?.clientWidth ?? 0);
+      node.style.left = `${cabeALaDerecha ? param.point.x + 16 : param.point.x - ancho - 16}px`;
+      node.style.top = `${Math.max(4, param.point.y - 40)}px`;
+    }
+
+    function onCrosshair(param: MouseEventParams<Time>) {
+      updateLegend(param);
+      updateFillTooltip(param);
+    }
+
+    /**
+     * Al pulsar, el resumen se queda.
+     *
+     * Pulsar donde no hay nada lo quita, que es lo que se espera de algo
+     * fijado: sin eso habría que buscar una equis pequeña para cerrarlo.
+     */
+    function onClick(param: MouseEventParams<Time>) {
+      if (!param.time) {
+        setPinned(null);
+        return;
+      }
+      const group = findGroupNear(
+        fillGroupsRef.current,
+        Number(param.time),
+        toleranceRef.current,
+      );
+      setPinned(group ? { group, granularity: granularityRef.current } : null);
+    }
+
     updateLegend({} as MouseEventParams<Time>);
-    chart.subscribeCrosshairMove(updateLegend);
+    chart.subscribeCrosshairMove(onCrosshair);
+    chart.subscribeClick(onClick);
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -754,7 +871,8 @@ export function TradeChart({
 
     return () => {
       resizeObserver.disconnect();
-      chart.unsubscribeCrosshairMove(updateLegend);
+      chart.unsubscribeCrosshairMove(onCrosshair);
+      chart.unsubscribeClick(onClick);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -1338,7 +1456,24 @@ export function TradeChart({
             regardless of DOM order, so without this the overlay silently
             painted underneath the chart's own canvases. */}
         <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
+
+        {/* Lo que hay bajo el cursor.
+            z-20 para quedar por encima de los lienzos de la librería, que se
+            ponen z-index 1 y 2 a sí mismos. Sin eventos de puntero: si los
+            capturara, moverse hacia el aviso lo haría desaparecer. */}
+        <div
+          ref={tooltipRef}
+          hidden
+          className="pointer-events-none absolute z-20 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] tabular-nums shadow-lg"
+        />
       </div>
+
+      {/* El resumen que se queda al pulsar.
+          Debajo del gráfico y no encima: un panel flotante sobre las velas
+          tapa justo lo que se acaba de pulsar para poder mirarlo. */}
+      {pinned && pinned.granularity === granularity ? (
+        <PinnedFillSummary group={pinned.group} onClose={() => setPinned(null)} />
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           Velas de {GRANULARITY_LABELS[granularity]} · datos de Coinbase
@@ -1642,4 +1777,89 @@ function describeDrawing(d: TradeChartDrawing): string {
   const label =
     d.tool === "TRENDLINE" ? "Línea de tendencia" : d.tool === "FIB" ? "Fibonacci" : "Rectángulo";
   return `${label}: ${formatMoney(p1.price)} → ${formatMoney(p2.price)}`;
+}
+
+
+/**
+ * El resumen de lo que pasó en el momento que se pulsó.
+ *
+ * Va debajo del gráfico y no flotando encima: un panel sobre las velas tapa
+ * justo lo que se acaba de pulsar para poder mirarlo.
+ *
+ * La hora se formatea en la zona del navegador a propósito, no en la del
+ * usuario configurada en la aplicación: el eje del gráfico usa la del
+ * navegador, y que el panel dijera una hora distinta de la que se está
+ * señalando en el eje sería peor que no decir ninguna.
+ */
+function PinnedFillSummary({ group, onClose }: { group: FillGroup; onClose: () => void }) {
+  const hora = new Date(group.time * 1000).toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-sm font-medium">
+            {group.role === null
+              ? "Entrada y salida a la vez"
+              : group.role === "ENTRY"
+                ? "Entrada"
+                : "Salida"}
+          </span>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">{hora}</span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {group.role !== "EXIT" ? (
+          <Figure label="Contratos entrados" value={group.entryQty} />
+        ) : null}
+        {group.role !== "ENTRY" ? <Figure label="Contratos salidos" value={group.exitQty} /> : null}
+        <Figure label="Precio medio" value={formatMoney(Number(group.wap))} />
+        <Figure label="Ejecuciones" value={String(group.fills.length)} />
+      </div>
+
+      {/* Las ejecuciones una a una sólo cuando fueron varias: con una, la
+          tabla repetiría lo que ya dicen las cifras de arriba. */}
+      {group.fills.length > 1 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[18rem] text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-1 pr-3 font-medium">Tipo</th>
+                <th className="py-1 pr-3 text-right font-medium">Contratos</th>
+                <th className="py-1 text-right font-medium">Precio</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {group.fills.map((fill, i) => (
+                <tr key={`${fill.time}-${fill.price}-${i}`}>
+                  <td className="py-1 pr-3">{fill.role === "ENTRY" ? "Entrada" : "Salida"}</td>
+                  <td className="py-1 pr-3 text-right tabular-nums">{fill.size}</td>
+                  <td className="py-1 text-right tabular-nums">{formatMoney(fill.price)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="font-mono text-sm tabular-nums">{value}</span>
+    </div>
+  );
 }

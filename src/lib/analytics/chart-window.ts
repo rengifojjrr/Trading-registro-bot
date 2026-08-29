@@ -5,7 +5,14 @@ import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 // ever needing pagination just to draw a trade chart.
 const MAX_CANDLES_PER_REQUEST = 300;
 
-const GRANULARITY_SECONDS: Record<CoinbaseCandleGranularity, number> = {
+/**
+ * Cuántos segundos abarca cada vela.
+ *
+ * Se exporta porque el gráfico lo necesita para saber cuánta tolerancia dar al
+ * cursor: el puntero cae sobre una vela, no sobre un segundo, y sin este dato
+ * habría que acertar el instante exacto de una ejecución.
+ */
+export const GRANULARITY_SECONDS: Record<CoinbaseCandleGranularity, number> = {
   ONE_MINUTE: 60,
   FIVE_MINUTE: 5 * 60,
   FIFTEEN_MINUTE: 15 * 60,
