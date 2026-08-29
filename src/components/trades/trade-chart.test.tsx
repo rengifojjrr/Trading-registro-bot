@@ -51,7 +51,7 @@ vi.mock("@/lib/hooks/use-current-price", () => ({
   useCurrentPrice: () => ({ price: null }),
 }));
 
-import { TOOLS } from "@/lib/charts/tools";
+import { GROUP_LABELS, TOOLS } from "@/lib/charts/tools";
 
 import { TradeChart } from "./trade-chart";
 
@@ -201,49 +201,59 @@ describe("TradeChart live refresh", () => {
 describe("TradeChart tools", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("ofrece las herramientas agrupadas por familia", async () => {
-    // Veintitrés herramientas no caben en una fila de botones -- y en el móvil
-    // menos -- así que van en un desplegable agrupado, como en TradingView.
-    // Cursor y medir se quedan como botón: son los dos que más se alternan.
+  it("ofrece las herramientas como botones, agrupadas por familia", async () => {
+    // Cuarenta y seis líneas de texto en un desplegable obligaban a leer una
+    // lista para elegir. Ahora son botones con el dibujo de la herramienta, y
+    // las familias se pliegan porque cuarenta y seis iconos a la vez tampoco
+    // se leen. Cursor y medir se quedan aparte: son los que más se alternan.
     const user = userEvent.setup();
     renderChart();
 
     expect(screen.getByRole("button", { name: "Cursor" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Medir movimiento" })).toBeTruthy();
 
-    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
-    const listbox = await screen.findByRole("listbox");
+    // La familia de líneas se abre de salida: es el 80% del uso.
+    expect(screen.getByRole("button", { name: "Línea de tendencia" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rayo" })).toBeTruthy();
 
-    for (const label of [
-      "Línea de tendencia",
-      "Rayo",
-      "Línea horizontal",
-      "Rectángulo",
-      "Canal paralelo",
-      "Retroceso de Fibonacci",
-      "Horquilla de Andrews",
-      "Posición larga",
-      "Posición corta",
-      "Onda de Elliott",
-      "Patrón XABCD",
-      "Caja de Gann",
-    ]) {
-      expect(within(listbox).getByRole("option", { name: label }), label).toBeTruthy();
-    }
+    await user.click(screen.getByRole("tab", { name: "Fibonacci y Gann" }));
+    expect(screen.getByRole("button", { name: "Retroceso de Fibonacci" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Horquilla de Andrews" })).toBeTruthy();
+    // Y la familia anterior deja de ocupar sitio.
+    expect(screen.queryByRole("button", { name: "Línea de tendencia" })).toBeNull();
   });
 
-  it("no deja fuera del desplegable ninguna herramienta del catálogo", async () => {
+  it("no deja ninguna herramienta del catálogo sin botón", async () => {
     // Una herramienta que existe en el catálogo y no se puede elegir es código
     // muerto que nadie descubre.
     const user = userEvent.setup();
     renderChart();
 
-    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
-    const listbox = await screen.findByRole("listbox");
-
-    for (const tool of TOOLS) {
-      expect(within(listbox).getByRole("option", { name: tool.label }), tool.id).toBeTruthy();
+    const familias = [...new Set(TOOLS.map((t) => t.group))];
+    for (const familia of familias) {
+      await user.click(screen.getByRole("tab", { name: GROUP_LABELS[familia] }));
+      for (const tool of TOOLS.filter((t) => t.group === familia)) {
+        expect(screen.getByRole("button", { name: tool.label }), tool.id).toBeTruthy();
+      }
     }
+  });
+
+  it("marca en qué familia está la herramienta que tienes puesta", async () => {
+    // Con la familia plegada, sin esto no hay forma de saber dónde está lo que
+    // está activo -- y parece que no hay nada seleccionado.
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("tab", { name: "Patrones" }));
+    await user.click(screen.getByRole("button", { name: "Onda de Elliott" }));
+    expect(screen.getByRole("button", { name: "Onda de Elliott" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Líneas" }));
+    // La herramienta sigue activa aunque su familia esté plegada.
+    expect(screen.getByText(/onda de elliott/i)).toBeTruthy();
   });
 
   it("exposes the view toggles", () => {
@@ -267,12 +277,11 @@ describe("TradeChart tools", () => {
     const user = userEvent.setup();
     renderChart();
 
-    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
-    await user.click(await screen.findByRole("option", { name: "Línea vertical" }));
+    await user.click(screen.getByRole("button", { name: "Línea vertical" }));
     expect(screen.getByText(/Un clic más para completar línea vertical/)).toBeTruthy();
 
-    await user.click(screen.getByRole("combobox", { name: "Herramienta de dibujo" }));
-    await user.click(await screen.findByRole("option", { name: "Patrón XABCD" }));
+    await user.click(screen.getByRole("tab", { name: "Patrones" }));
+    await user.click(screen.getByRole("button", { name: "Patrón XABCD" }));
     expect(screen.getByText(/faltan 5 clics/)).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Medir movimiento" }));

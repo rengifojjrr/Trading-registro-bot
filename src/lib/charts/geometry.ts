@@ -1019,7 +1019,11 @@ function posicion({ points, style, width, prices, formatPrice }: BuildParams): S
 
   const shape = vacio();
   const x0 = entrada.x;
-  const x1 = Math.max(entrada.x + 40, width * 0.6);
+  // El ancho mínimo va en proporción y no en cuarenta píxeles fijos: en un
+  // lienzo estrecho -- el icono de la barra, un móvil en vertical -- cuarenta
+  // píxeles desde la entrada se salen del gráfico, y la figura se pinta
+  // entera fuera de lo que se ve.
+  const x1 = Math.max(entrada.x + Math.min(40, width * 0.3), width * 0.6);
 
   // Dos zonas: la del riesgo y la del beneficio. Se pintan aunque `fill` esté
   // apagado porque son la herramienta, no un adorno, y cada una con su color

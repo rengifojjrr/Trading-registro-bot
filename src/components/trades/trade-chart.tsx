@@ -13,6 +13,7 @@ import {
   Repeat,
   Ruler,
   Scaling,
+  Target,
   Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -39,9 +40,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -60,11 +59,12 @@ import {
 } from "@/lib/charts/fills-at-time";
 import { type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import { DrawingSettings } from "@/components/trades/drawing-settings";
+import { ToolPalette } from "@/components/trades/tool-palette";
 import { buildShape, type Point as ShapePoint } from "@/lib/charts/geometry";
 import { distanceToShape, renderShape } from "@/lib/charts/render";
 import { snapToCandle } from "@/lib/charts/snap";
 import { defaultStyle, serialiseStyle, type DrawingStyle } from "@/lib/charts/style";
-import { TOOL_BY_ID, toolsByGroup, type ToolId } from "@/lib/charts/tools";
+import { TOOL_BY_ID, type ToolId } from "@/lib/charts/tools";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { uploadTradeScreenshot } from "@/app/(dashboard)/trades/[tradeId]/actions";
 import { formatMoney } from "@/lib/format";
@@ -346,6 +346,13 @@ export function TradeChart({
    * volver al desplegable diez veces.
    */
   const [stayInDrawing, setStayInDrawing] = useState(false);
+  /**
+   * Enseñar el plan -- entrada, stop y objetivo -- como zonas.
+   *
+   * Encendido de salida cuando hay plan: es el contexto que explica la
+   * operación, no un adorno. Apagable porque al dibujar encima estorba.
+   */
+  const [showPlan, setShowPlan] = useState(true);
   const legendRef = useRef<HTMLDivElement>(null);
 
   // Every timeframe is selectable. This only tracks whether the chosen one
@@ -861,11 +868,34 @@ export function TradeChart({
       const change = shown.close - shown.open;
       const changePct = shown.open === 0 ? 0 : (change / shown.open) * 100;
       const sign = change >= 0 ? "+" : "";
-      node.textContent =
-        `A ${formatMoney(shown.open)}  M ${formatMoney(shown.high)}  ` +
-        `m ${formatMoney(shown.low)}  C ${formatMoney(shown.close)}  ` +
-        `${sign}${changePct.toFixed(2)}%  Vol ${shown.volume.toLocaleString("en-US")}`;
-      node.style.color = change >= 0 ? THEME.up : THEME.down;
+      const color = change >= 0 ? THEME.up : THEME.down;
+
+      // Cada dato con su etiqueta en gris y su cifra en color, en vez de una
+      // ristra de texto: «A 68000 M 68100» obliga a descifrar las abreviaturas
+      // cada vez, y con seis cifras seguidas se lee mal en el móvil.
+      const campos: [string, string, boolean][] = [
+        ["A", formatMoney(shown.open), false],
+        ["Máx", formatMoney(shown.high), false],
+        ["Mín", formatMoney(shown.low), false],
+        ["C", formatMoney(shown.close), true],
+        ["Var", `${sign}${changePct.toFixed(2)}%`, true],
+        ["Vol", shown.volume.toLocaleString("es-ES"), false],
+      ];
+
+      node.replaceChildren(
+        ...campos.map(([etiqueta, valor, coloreado]) => {
+          const span = document.createElement("span");
+          span.className = "flex items-center gap-1";
+          const clave = document.createElement("span");
+          clave.className = "text-muted-foreground";
+          clave.textContent = etiqueta;
+          const dato = document.createElement("span");
+          dato.textContent = valor;
+          if (coloreado) dato.style.color = color;
+          span.append(clave, dato);
+          return span;
+        }),
+      );
     }
     /**
      * El aviso flotante con lo que hay bajo el cursor.
@@ -928,6 +958,11 @@ export function TradeChart({
     }
 
     updateLegend({} as MouseEventParams<Time>);
+    // Con la última vela puesta desde el principio. Sin esto, la barra de
+    // datos nace vacía y sólo se llena al mover el cursor -- que en un
+    // teléfono no pasa nunca.
+    updateLegend({} as MouseEventParams<Time>);
+
     chart.subscribeCrosshairMove(onCrosshair);
     chart.subscribeClick(onClick);
 
@@ -1172,6 +1207,33 @@ export function TradeChart({
         });
       };
 
+      /**
+       * El plan de la operación, con las mismas zonas que la herramienta.
+       *
+       * La herramienta de posición calculaba el riesgo/beneficio de una
+       * posición **hipotética**, mientras que la operación de verdad -- con su
+       * entrada, su stop y su objetivo ya guardados en el diario -- sólo
+       * pintaba dos rayas discontinuas y ningún número. Era la comparación al
+       * revés: lo inventado se explicaba y lo real no.
+       *
+       * Se pinta con la misma herramienta y por tanto con las mismas zonas
+       * roja y verde y el mismo cálculo. Va antes que los dibujos para que
+       * quede debajo de ellos: es contexto, no anotación.
+       */
+      if (showPlan && stopLoss !== null && takeProfit !== null) {
+        const planTool = direction === "LONG" ? "LONG_POSITION" : "SHORT_POSITION";
+        pintar(
+          planTool,
+          [
+            { time: entry.time, price: entry.price },
+            { time: entry.time, price: stopLoss },
+            { time: entry.time, price: takeProfit },
+          ],
+          { ...defaultStyle(planTool), fillOpacity: 10 },
+          {},
+        );
+      }
+
       for (const drawing of visibleDrawings) {
         pintar(drawing.tool, drawing.points, drawing.style, {
           selected: drawing.id === selectedDrawingId,
@@ -1380,6 +1442,7 @@ export function TradeChart({
     exit?.price,
     stopLoss,
     takeProfit,
+    showPlan,
     themeVersion,
   ]);
 
@@ -1408,9 +1471,9 @@ export function TradeChart({
               ))}
             </SelectContent>
           </Select>
-          {/* Veintitrés herramientas no caben en una fila de botones, y en el
-              móvil menos. Van en un desplegable agrupado por familia, que es
-              como las tiene TradingView: se abre, se elige, se cierra. */}
+          {/* Cursor, medir y los dos interruptores de modo: lo que se alterna
+              constantemente mientras se dibuja. Las herramientas en sí están
+              en su propia paleta, debajo. */}
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
             <button
               type="button"
@@ -1427,29 +1490,6 @@ export function TradeChart({
             >
               <MousePointer2 className="size-4" aria-hidden />
             </button>
-
-            <Select
-              value={activeTool === "CURSOR" || activeTool === "MEASURE" ? "" : activeTool}
-              onValueChange={(v) => selectTool(v as ActiveTool)}
-            >
-              <SelectTrigger className="h-7 w-44 text-xs" aria-label="Herramienta de dibujo">
-                <SelectValue placeholder="Herramienta…" />
-              </SelectTrigger>
-              <SelectContent>
-                {toolsByGroup().map((grupo) => (
-                  <SelectGroup key={grupo.group}>
-                    <SelectLabel className="text-[10px] uppercase tracking-wide">
-                      {grupo.label}
-                    </SelectLabel>
-                    {grupo.tools.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
 
             <button
               type="button"
@@ -1495,6 +1535,17 @@ export function TradeChart({
               pressed={logScale}
               onClick={() => setLogScale((v) => !v)}
             />
+            {/* Sólo cuando hay plan que enseñar: un interruptor que no puede
+                cambiar nada se pulsa una vez y se deja de confiar en el resto
+                de la barra. */}
+            {stopLoss !== null && takeProfit !== null ? (
+              <ToggleButton
+                label={showPlan ? "Ocultar el plan" : "Enseñar el plan (stop y objetivo)"}
+                Icon={Target}
+                pressed={showPlan}
+                onClick={() => setShowPlan((v) => !v)}
+              />
+            ) : null}
             <ToggleButton
               label={showDrawings ? "Ocultar dibujos" : "Mostrar dibujos"}
               Icon={showDrawings ? Eye : EyeOff}
@@ -1540,6 +1591,11 @@ export function TradeChart({
         </div>
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
       </div>
+
+      <ToolPalette
+        active={activeTool === "CURSOR" || activeTool === "MEASURE" ? null : activeTool}
+        onSelect={(t) => selectTool(t)}
+      />
 
       {replaying ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
@@ -1599,11 +1655,17 @@ export function TradeChart({
           })()}
         </p>
       ) : null}
+      {/* La barra de datos, fija y siempre visible.
+          Antes vivía flotando sobre las velas y sólo se rellenaba al mover el
+          cursor. En el móvil no hay cursor, así que ahí no aparecía nunca: la
+          lectura OHLC no existía en el sitio donde más falta hace, porque las
+          velas se ven peor. Ahora es una barra de verdad, con la última vela
+          puesta de salida y la señalada mientras se señala. */}
+      <div
+        ref={legendRef}
+        className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md border border-border bg-secondary/40 px-2 py-1.5 font-mono text-[11px] tabular-nums"
+      />
       <div className="relative">
-        <div
-          ref={legendRef}
-          className="pointer-events-none absolute left-2 top-2 z-20 font-mono text-[11px] tabular-nums"
-        />
         <div ref={containerRef} className="w-full" />
         {/* z-10: lightweight-charts' own internal canvases set explicit
             z-index (1/2) on themselves; since their non-positioned parent
