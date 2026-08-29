@@ -5,10 +5,12 @@ import {
   Camera,
   Eye,
   EyeOff,
+  Magnet,
   Maximize2,
   MousePointer2,
   Pause,
   Play,
+  Repeat,
   Ruler,
   Scaling,
   Undo2,
@@ -60,6 +62,7 @@ import { type DrawingTool as PersistedDrawingTool } from "@/lib/chart-drawings";
 import { DrawingSettings } from "@/components/trades/drawing-settings";
 import { buildShape, type Point as ShapePoint } from "@/lib/charts/geometry";
 import { distanceToShape, renderShape } from "@/lib/charts/render";
+import { snapToCandle } from "@/lib/charts/snap";
 import { defaultStyle, serialiseStyle, type DrawingStyle } from "@/lib/charts/style";
 import { TOOL_BY_ID, toolsByGroup, type ToolId } from "@/lib/charts/tools";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
@@ -326,6 +329,23 @@ export function TradeChart({
   const [showVolume, setShowVolume] = useState(false);
   const [logScale, setLogScale] = useState(false);
   const [showDrawings, setShowDrawings] = useState(true);
+  /**
+   * El imán: los clics se pegan al máximo, mínimo, apertura o cierre más
+   * cercano de la vela.
+   *
+   * Sin él, una línea de soporte queda tres píxeles por debajo del mínimo real
+   * y luego no coincide con nada. Con él, un soporte trazado sobre un mínimo
+   * está *en* el mínimo, que es lo que se quiso decir al trazarlo.
+   */
+  const [magnet, setMagnet] = useState(true);
+  /**
+   * Seguir en la misma herramienta después de dibujar.
+   *
+   * Apagado -- lo normal -- se vuelve al cursor, que es lo que se quiere el 90%
+   * de las veces. Encendido, dibujar diez líneas horizontales no obliga a
+   * volver al desplegable diez veces.
+   */
+  const [stayInDrawing, setStayInDrawing] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
 
   // Every timeframe is selectable. This only tracks whether the chosen one
@@ -1134,6 +1154,11 @@ export function TradeChart({
           width,
           height,
           prices: puntos.map((p) => p.price),
+          // El tiempo real de cada punto, para lo que mide duraciones: en
+          // píxeles el eje no es lineal, porque las velas que no existen (un
+          // fin de semana, un hueco de datos) no ocupan sitio.
+          times: puntos.map((p) => p.time),
+          barSeconds: GRANULARITY_SECONDS[granularity],
           formatPrice: (n) => formatMoney(n),
         });
 
@@ -1182,7 +1207,9 @@ export function TradeChart({
       const price = series!.coordinateToPrice(param.point.y);
       const time = chart!.timeScale().coordinateToTime(param.point.x);
       if (price === null || time === null) return;
-      const point: DrawingPoint = { time: Number(time), price };
+      const point = magnet
+        ? snapToCandle({ time: Number(time), price }, candlesRef.current)
+        : { time: Number(time), price };
 
       /**
        * Se juntan clics hasta llegar a los que la herramienta pide.
@@ -1209,7 +1236,9 @@ export function TradeChart({
 
       void saveDrawing(activeTool, acumulados);
       setPendingPoints([]);
-      selectTool("CURSOR");
+      // Con «seguir dibujando» se queda la herramienta puesta para el
+      // siguiente; sin él se vuelve al cursor, que es lo habitual.
+      if (!stayInDrawing) selectTool("CURSOR");
     }
 
 
@@ -1330,6 +1359,12 @@ export function TradeChart({
     selectedDrawingId,
     measurement,
     showDrawings,
+    // Los leen los manejadores de clic y el pintado. Sin ellos el gráfico se
+    // queda con el valor que tenían al montarse: apagar el imán no apagaría
+    // nada hasta cambiar de temporalidad.
+    magnet,
+    stayInDrawing,
+    granularity,
     // Mirrors the chart-creation effect's deps. Not redundancy: when that
     // effect tears the chart down and builds a new one, this effect has to
     // re-attach to it. Without these, the handlers stayed bound to a
@@ -1431,6 +1466,21 @@ export function TradeChart({
             >
               <Ruler className="size-4" aria-hidden />
             </button>
+
+            {/* Los dos interruptores de la barra de TradingView que cambian
+                cómo se dibuja, no qué se dibuja. */}
+            <ToggleButton
+              label="Imán: pegar a máximos y mínimos"
+              Icon={Magnet}
+              pressed={magnet}
+              onClick={() => setMagnet((v) => !v)}
+            />
+            <ToggleButton
+              label="Seguir dibujando con la misma herramienta"
+              Icon={Repeat}
+              pressed={stayInDrawing}
+              onClick={() => setStayInDrawing((v) => !v)}
+            />
           </div>
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
             <ToggleButton

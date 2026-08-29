@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  DEFAULT_CIRCLE_LEVELS,
   DEFAULT_EXTENSION_LEVELS,
+  DEFAULT_FAN_LEVELS,
   DEFAULT_FIB_LEVELS,
+  DEFAULT_GANN_ANGLES,
   DEFAULT_GANN_LEVELS,
   WAVE_DEGREE_LABELS,
   hasParam,
@@ -66,7 +69,26 @@ const PRESETS: Partial<Record<ToolId, { label: string; levels: number[] }[]>> = 
     { label: "Octavos", levels: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1] },
     { label: "Tercios", levels: [0, 0.333, 0.5, 0.667, 1] },
   ],
+  FIB_FAN: [
+    { label: "Los tres", levels: [...DEFAULT_FAN_LEVELS] },
+    { label: "Con el 0,786", levels: [0.382, 0.5, 0.618, 0.786] },
+  ],
+  FIB_CHANNEL: [
+    { label: "Clásicos", levels: [...DEFAULT_FIB_LEVELS] },
+    { label: "Con proyección", levels: [0, 0.5, 1, 1.618, 2.618] },
+  ],
+  FIB_CIRCLE: [
+    { label: "Clásicos", levels: [...DEFAULT_CIRCLE_LEVELS] },
+    { label: "Con extensión", levels: [0.382, 0.618, 1, 1.618] },
+  ],
+  GANN_FAN: [
+    { label: "Los nueve", levels: [...DEFAULT_GANN_ANGLES] },
+    { label: "Sólo los cinco", levels: [0.25, 0.5, 1, 2, 4] },
+  ],
 };
+
+/** Los cuerpos de letra que se ofrecen, en píxeles. */
+const CUERPOS = [10, 11, 13, 16, 20];
 
 export function DrawingSettings({
   tool,
@@ -317,19 +339,41 @@ export function DrawingSettings({
       ) : null}
 
       {hasParam(tool, "textLabel") ? (
-        <Field label="Nota">
+        <Field label={ES_ANOTACION.has(tool) ? "Texto" : "Nota"}>
           <Input
             value={style.textLabel}
             onChange={(e) => set("textLabel", e.target.value)}
             maxLength={80}
-            placeholder="Ej.: soporte de la semana"
+            placeholder={
+              ES_ANOTACION.has(tool) ? "Lo que quieras que ponga" : "Ej.: soporte de la semana"
+            }
             className="h-8"
           />
+        </Field>
+      ) : null}
+
+      {hasParam(tool, "fontSize") ? (
+        <Field label="Tamaño del texto">
+          <div className="flex gap-1.5">
+            {CUERPOS.map((n) => (
+              <Chip key={n} active={style.fontSize === n} onClick={() => set("fontSize", n)}>
+                {n}
+              </Chip>
+            ))}
+          </div>
         </Field>
       ) : null}
     </div>
   );
 }
+
+/**
+ * Las herramientas cuyo texto *es* el dibujo.
+ *
+ * En un rectángulo el texto es una nota al margen; en una etiqueta o una
+ * llamada es lo único que hay, y llamarlo «nota» hace pensar que es opcional.
+ */
+const ES_ANOTACION = new Set<ToolId>(["TEXT", "NOTE", "CALLOUT", "PRICE_LABEL", "FLAG"]);
 
 /**
  * Qué niveles se ofrecen para marcar uno a uno.
@@ -338,15 +382,25 @@ export function DrawingSettings({
  * traída de otro sitio no pierde un nivel raro sólo por no estar en la lista.
  */
 function nivelesOfrecidos(tool: ToolId, actuales: number[]): number[] {
-  const base =
-    tool === "FIB_EXTENSION"
-      ? [0, 0.382, 0.5, 0.618, 1, 1.272, 1.618, 2, 2.618, 3.618, 4.236]
-      : tool === "GANN_BOX"
-        ? [0, 0.125, 0.25, 0.333, 0.375, 0.5, 0.625, 0.667, 0.75, 0.875, 1]
-        : [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618];
-
+  const base = NIVELES_OFRECIDOS[tool] ?? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618];
   return [...new Set([...base, ...actuales])].sort((a, b) => a - b);
 }
+
+/**
+ * Qué números tienen sentido marcar en cada familia.
+ *
+ * El abanico de Gann es el que más se sale: sus «niveles» no son proporciones
+ * de un movimiento sino pendientes, y ofrecer un 0,236 ahí sería ofrecer un
+ * ángulo que nadie usa.
+ */
+const NIVELES_OFRECIDOS: Partial<Record<ToolId, number[]>> = {
+  FIB_EXTENSION: [0, 0.382, 0.5, 0.618, 1, 1.272, 1.618, 2, 2.618, 3.618, 4.236],
+  GANN_BOX: [0, 0.125, 0.25, 0.333, 0.375, 0.5, 0.625, 0.667, 0.75, 0.875, 1],
+  GANN_FAN: [0.125, 0.25, 0.333, 0.5, 1, 2, 3, 4, 8],
+  FIB_FAN: [0.236, 0.382, 0.5, 0.618, 0.786],
+  FIB_CIRCLE: [0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618],
+  FIB_CHANNEL: [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618],
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

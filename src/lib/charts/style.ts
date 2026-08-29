@@ -19,6 +19,17 @@ export type LineStyle = "SOLID" | "DASHED" | "DOTTED";
 export const DEFAULT_FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 export const DEFAULT_EXTENSION_LEVELS = [0, 0.618, 1, 1.618, 2.618, 4.236] as const;
 export const DEFAULT_GANN_LEVELS = [0, 0.25, 0.5, 0.75, 1] as const;
+/** El abanico lleva menos rayos que el retroceso: con siete no se ve nada. */
+export const DEFAULT_FAN_LEVELS = [0.382, 0.5, 0.618] as const;
+export const DEFAULT_CIRCLE_LEVELS = [0.236, 0.382, 0.5, 0.618, 1] as const;
+/**
+ * Los ángulos de Gann, como proporción del 1×1.
+ *
+ * Son los de siempre -- 1/8, 1/4, 1/3, 1/2, 1, 2, 3, 4, 8 -- y no una
+ * repartición cualquiera: la gracia del abanico es que el 1×1 marca el
+ * equilibrio entre precio y tiempo, y el resto son múltiplos suyos.
+ */
+export const DEFAULT_GANN_ANGLES = [0.125, 0.25, 0.333, 0.5, 1, 2, 3, 4, 8] as const;
 
 /** Cómo se etiqueta una onda de Elliott según su grado. */
 export const WAVE_DEGREES = {
@@ -57,6 +68,8 @@ export interface DrawingStyle {
   accountSize: number | null;
   riskPercent: number | null;
   waveDegree: WaveDegree;
+  /** El cuerpo del texto, en píxeles. Las anotaciones lo suelen querer mayor. */
+  fontSize: number;
 }
 
 const BASE: DrawingStyle = {
@@ -75,6 +88,7 @@ const BASE: DrawingStyle = {
   accountSize: null,
   riskPercent: null,
   waveDegree: "MINOR",
+  fontSize: 11,
 };
 
 /**
@@ -109,6 +123,30 @@ const POR_HERRAMIENTA: Partial<Record<ToolId, Partial<DrawingStyle>>> = {
   ELLIOTT: { fill: false },
   XABCD: { fillOpacity: 8 },
   HEAD_SHOULDERS: { fill: false },
+
+  // ------------------------------------------------- añadidas en la ronda 2
+  TREND_ANGLE: { fill: false, extendRight: true },
+  INFO_LINE: { fill: false },
+  ARROW: { fill: false },
+  CURVE: { fillOpacity: 10 },
+  POLYLINE: { fillOpacity: 10 },
+  FIB_FAN: { fill: false, levels: [...DEFAULT_FAN_LEVELS] },
+  FIB_TIMEZONE: { fill: false },
+  FIB_CHANNEL: { fill: false, extendRight: true },
+  FIB_CIRCLE: { fillOpacity: 6, levels: [...DEFAULT_CIRCLE_LEVELS] },
+  GANN_FAN: { fill: false, levels: [...DEFAULT_GANN_ANGLES] },
+  PRICE_RANGE: { fillOpacity: 10 },
+  DATE_RANGE: { fillOpacity: 10 },
+  CYPHER: { fillOpacity: 8 },
+  ABCD: { fillOpacity: 8 },
+  TRIANGLE_PATTERN: { fillOpacity: 8 },
+  THREE_DRIVES: { fill: false },
+  // El texto suelto se lee, no se enmarca; el resto de anotaciones sí.
+  TEXT: { fill: false, fontSize: 13 },
+  NOTE: { fillOpacity: 18, fontSize: 12 },
+  CALLOUT: { fillOpacity: 18, fontSize: 12 },
+  PRICE_LABEL: { fillOpacity: 22, fontSize: 12 },
+  FLAG: { fillOpacity: 70, fontSize: 12 },
 };
 
 export function defaultStyle(tool: ToolId): DrawingStyle {
@@ -144,6 +182,7 @@ export function parseStyle(tool: ToolId, raw: unknown): DrawingStyle {
     accountSize: positivo(o.accountSize) ?? base.accountSize,
     riskPercent: rango(o.riskPercent, 0.01, 100) ?? base.riskPercent,
     waveDegree: grado(o.waveDegree) ?? base.waveDegree,
+    fontSize: entero(o.fontSize, 8, 32) ?? base.fontSize,
   };
 }
 

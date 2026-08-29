@@ -23,30 +23,60 @@ export type ToolId =
   | "RAY"
   | "EXTENDED"
   | "CROSSLINE"
+  | "TREND_ANGLE"
+  | "INFO_LINE"
+  | "ARROW"
   // -------------------------------------------------------------- Figuras
   | "RECTANGLE"
+  | "ROTATED_RECTANGLE"
   | "ELLIPSE"
   | "TRIANGLE"
   | "PARALLEL_CHANNEL"
   | "ARC"
+  | "CURVE"
   | "PATH"
+  | "POLYLINE"
   // ------------------------------------------------------------ Fibonacci
   | "FIB"
   | "FIB_EXTENSION"
+  | "FIB_FAN"
+  | "FIB_TIMEZONE"
+  | "FIB_CHANNEL"
+  | "FIB_CIRCLE"
   | "PITCHFORK"
   | "GANN_BOX"
+  | "GANN_FAN"
   // ------------------------------------------------------------ Posición
   | "LONG_POSITION"
   | "SHORT_POSITION"
   // -------------------------------------------------------------- Medida
   | "DATE_PRICE_RANGE"
+  | "PRICE_RANGE"
+  | "DATE_RANGE"
   | "FORECAST"
   // ------------------------------------------------------------- Patrones
   | "ELLIOTT"
   | "XABCD"
-  | "HEAD_SHOULDERS";
+  | "CYPHER"
+  | "ABCD"
+  | "TRIANGLE_PATTERN"
+  | "THREE_DRIVES"
+  | "HEAD_SHOULDERS"
+  // ----------------------------------------------------------- Anotaciones
+  | "TEXT"
+  | "NOTE"
+  | "CALLOUT"
+  | "PRICE_LABEL"
+  | "FLAG";
 
-export type ToolGroup = "LINEAS" | "FIGURAS" | "FIBONACCI" | "POSICION" | "MEDIDA" | "PATRONES";
+export type ToolGroup =
+  | "LINEAS"
+  | "FIGURAS"
+  | "FIBONACCI"
+  | "POSICION"
+  | "MEDIDA"
+  | "PATRONES"
+  | "ANOTACION";
 
 export const GROUP_LABELS: Record<ToolGroup, string> = {
   LINEAS: "Líneas",
@@ -55,6 +85,7 @@ export const GROUP_LABELS: Record<ToolGroup, string> = {
   POSICION: "Posición",
   MEDIDA: "Medida y proyección",
   PATRONES: "Patrones",
+  ANOTACION: "Anotaciones",
 };
 
 /** Qué parámetros expone una herramienta en su panel de ajustes. */
@@ -73,7 +104,8 @@ export type ParamId =
   | "riskReward"
   | "accountSize"
   | "riskPercent"
-  | "waveDegree";
+  | "waveDegree"
+  | "fontSize";
 
 export interface ToolMeta {
   id: ToolId;
@@ -157,6 +189,30 @@ export const TOOLS: ToolMeta[] = [
     points: 1,
     params: ["color", "lineWidth", "lineStyle", "showPrice"],
   },
+  {
+    id: "TREND_ANGLE",
+    label: "Ángulo de tendencia",
+    hint: "Una línea que además dice con cuántos grados sube o baja.",
+    group: "LINEAS",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "extendRight", "showLabels", "fontSize"],
+  },
+  {
+    id: "INFO_LINE",
+    label: "Línea informativa",
+    hint: "Una línea que dice cuánto se movió el precio y en cuántas velas.",
+    group: "LINEAS",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "showPrice", "showLabels", "fontSize"],
+  },
+  {
+    id: "ARROW",
+    label: "Flecha",
+    hint: "Señalar algo concreto: aquí entré, aquí me salté el plan.",
+    group: "LINEAS",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "textLabel", "fontSize"],
+  },
 
   // -------------------------------------------------------------- Figuras
   {
@@ -165,6 +221,14 @@ export const TOOLS: ToolMeta[] = [
     hint: "Una zona: rango, consolidación, hueco por cerrar.",
     group: "FIGURAS",
     points: 2,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "textLabel"],
+  },
+  {
+    id: "ROTATED_RECTANGLE",
+    label: "Rectángulo rotado",
+    hint: "Una zona que sigue la pendiente: dos puntos y un tercero para el grosor.",
+    group: "FIGURAS",
+    points: 3,
     params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "textLabel"],
   },
   {
@@ -200,12 +264,28 @@ export const TOOLS: ToolMeta[] = [
     params: ["color", "lineWidth", "lineStyle", "textLabel"],
   },
   {
+    id: "CURVE",
+    label: "Curva",
+    hint: "Como el arco, pero cerrada y rellena: una zona curva.",
+    group: "FIGURAS",
+    points: 3,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "textLabel"],
+  },
+  {
     id: "PATH",
     label: "Trazado",
     hint: "Varios puntos seguidos. Para seguir un movimiento que no es recto.",
     group: "FIGURAS",
     points: 4,
     params: ["color", "lineWidth", "lineStyle", "showLabels", "textLabel"],
+  },
+  {
+    id: "POLYLINE",
+    label: "Polilínea",
+    hint: "Cinco puntos que se cierran solos: una zona de la forma que quieras.",
+    group: "FIGURAS",
+    points: 5,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "textLabel"],
   },
 
   // ------------------------------------------------------------ Fibonacci
@@ -226,6 +306,38 @@ export const TOOLS: ToolMeta[] = [
     params: ["color", "lineWidth", "lineStyle", "levels", "showLabels", "showPrice"],
   },
   {
+    id: "FIB_FAN",
+    label: "Abanico de Fibonacci",
+    hint: "Rayos que salen del primer punto por cada nivel del movimiento.",
+    group: "FIBONACCI",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "levels", "showLabels", "fontSize"],
+  },
+  {
+    id: "FIB_TIMEZONE",
+    label: "Zonas horarias de Fibonacci",
+    hint: "Verticales en 1, 2, 3, 5, 8, 13… veces la distancia que marques.",
+    group: "FIBONACCI",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "showLabels", "fontSize"],
+  },
+  {
+    id: "FIB_CHANNEL",
+    label: "Canal de Fibonacci",
+    hint: "Un canal con los niveles repartidos entre sus dos bordes.",
+    group: "FIBONACCI",
+    points: 3,
+    params: ["color", "lineWidth", "lineStyle", "levels", "showLabels", "extendRight", "fontSize"],
+  },
+  {
+    id: "FIB_CIRCLE",
+    label: "Círculos de Fibonacci",
+    hint: "Anillos alrededor del primer punto, a cada nivel del radio.",
+    group: "FIBONACCI",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "levels", "fill", "fillOpacity", "showLabels"],
+  },
+  {
     id: "PITCHFORK",
     label: "Horquilla de Andrews",
     hint: "Tres puntos: la mediana sale del primero, entre los otros dos.",
@@ -240,6 +352,14 @@ export const TOOLS: ToolMeta[] = [
     group: "FIBONACCI",
     points: 2,
     params: ["color", "lineWidth", "lineStyle", "levels", "showLabels"],
+  },
+  {
+    id: "GANN_FAN",
+    label: "Abanico de Gann",
+    hint: "Los ángulos de Gann desde un punto: el 1×1 lo fija el segundo.",
+    group: "FIBONACCI",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "levels", "showLabels", "fontSize"],
   },
 
   // ------------------------------------------------------------- Posición
@@ -270,6 +390,22 @@ export const TOOLS: ToolMeta[] = [
     params: ["color", "lineWidth", "fill", "fillOpacity", "showLabels"],
   },
   {
+    id: "PRICE_RANGE",
+    label: "Rango de precio",
+    hint: "Sólo cuánto se movió, sin contar el tiempo.",
+    group: "MEDIDA",
+    points: 2,
+    params: ["color", "lineWidth", "fill", "fillOpacity", "showLabels", "fontSize"],
+  },
+  {
+    id: "DATE_RANGE",
+    label: "Rango de fechas",
+    hint: "Sólo cuánto duró, sin contar el precio.",
+    group: "MEDIDA",
+    points: 2,
+    params: ["color", "lineWidth", "fill", "fillOpacity", "showLabels", "fontSize"],
+  },
+  {
     id: "FORECAST",
     label: "Proyección",
     hint: "Dónde crees que va: dos puntos y la flecha hacia donde apuntas.",
@@ -296,12 +432,86 @@ export const TOOLS: ToolMeta[] = [
     params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "showLabels"],
   },
   {
+    id: "CYPHER",
+    label: "Patrón Cypher",
+    hint: "Un XABCD que además dice si cada tramo cae donde el Cypher pide.",
+    group: "PATRONES",
+    points: 5,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "showLabels"],
+  },
+  {
+    id: "ABCD",
+    label: "Patrón ABCD",
+    hint: "Cuatro puntos: el tramo CD debería medir lo que midió el AB.",
+    group: "PATRONES",
+    points: 4,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "showLabels"],
+  },
+  {
+    id: "TRIANGLE_PATTERN",
+    label: "Patrón triangular",
+    hint: "Cuatro toques que estrechan el rango: el triángulo de manual.",
+    group: "PATRONES",
+    points: 4,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "showLabels"],
+  },
+  {
+    id: "THREE_DRIVES",
+    label: "Tres impulsos",
+    hint: "Siete puntos: tres empujes con sus dos retrocesos.",
+    group: "PATRONES",
+    points: 7,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "showLabels"],
+  },
+  {
     id: "HEAD_SHOULDERS",
     label: "Hombro-cabeza-hombro",
     hint: "Cinco puntos y la línea de cuello entre los valles.",
     group: "PATRONES",
     points: 5,
     params: ["color", "lineWidth", "lineStyle", "showLabels"],
+  },
+
+  // ---------------------------------------------------------- Anotaciones
+  {
+    id: "TEXT",
+    label: "Texto",
+    hint: "Escribir sobre el gráfico. El texto se pone en los ajustes.",
+    group: "ANOTACION",
+    points: 1,
+    params: ["color", "textLabel", "fontSize"],
+  },
+  {
+    id: "NOTE",
+    label: "Nota",
+    hint: "Texto dentro de un recuadro, para que destaque sobre las velas.",
+    group: "ANOTACION",
+    points: 1,
+    params: ["color", "lineWidth", "fill", "fillOpacity", "textLabel", "fontSize"],
+  },
+  {
+    id: "CALLOUT",
+    label: "Llamada",
+    hint: "Un recuadro con una línea que apunta a lo que comenta.",
+    group: "ANOTACION",
+    points: 2,
+    params: ["color", "lineWidth", "lineStyle", "fill", "fillOpacity", "textLabel", "fontSize"],
+  },
+  {
+    id: "PRICE_LABEL",
+    label: "Etiqueta de precio",
+    hint: "El precio de ese punto, escrito y enmarcado.",
+    group: "ANOTACION",
+    points: 1,
+    params: ["color", "lineWidth", "fill", "fillOpacity", "textLabel", "fontSize"],
+  },
+  {
+    id: "FLAG",
+    label: "Banderín",
+    hint: "Clavar una marca en un momento: la noticia, el error, la entrada.",
+    group: "ANOTACION",
+    points: 1,
+    params: ["color", "lineWidth", "fill", "fillOpacity", "textLabel", "fontSize"],
   },
 ];
 
@@ -317,7 +527,15 @@ export function isToolId(value: string): value is ToolId {
 
 /** Las herramientas agrupadas, en el orden de los grupos. */
 export function toolsByGroup(): { group: ToolGroup; label: string; tools: ToolMeta[] }[] {
-  const orden: ToolGroup[] = ["LINEAS", "FIGURAS", "FIBONACCI", "POSICION", "MEDIDA", "PATRONES"];
+  const orden: ToolGroup[] = [
+    "LINEAS",
+    "FIGURAS",
+    "FIBONACCI",
+    "POSICION",
+    "MEDIDA",
+    "PATRONES",
+    "ANOTACION",
+  ];
   return orden.map((group) => ({
     group,
     label: GROUP_LABELS[group],

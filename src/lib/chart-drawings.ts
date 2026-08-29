@@ -38,7 +38,9 @@ const pointSchema = z.object({
 export function parseDrawingPoints(tool: string, points: unknown): DrawingPoint[] | null {
   if (!isToolId(tool)) return null;
 
-  const parsed = z.array(pointSchema).min(1).max(5).safeParse(points);
+  // El tope lo pone la herramienta más larga que hay (tres impulsos, siete);
+  // el `max` sólo evita que alguien mande diez mil puntos por la API.
+  const parsed = z.array(pointSchema).min(1).max(12).safeParse(points);
   if (!parsed.success) return null;
 
   return parsed.data.length === TOOL_BY_ID[tool].points ? parsed.data : null;

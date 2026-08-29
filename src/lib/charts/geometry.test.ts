@@ -53,8 +53,14 @@ describe("cada herramienta produce algo", () => {
       const points = Array.from({ length: tool.points }, (_, i) => p(100 + i * 60, 100 + i * 40));
       const prices = Array.from({ length: tool.points }, (_, i) => 68000 + i * 100);
       const shape = build(tool.id, points, {}, prices);
+      // Las etiquetas cuentan: el texto suelto no pinta más que texto, y es
+      // exactamente lo que tiene que pintar.
       const total =
-        shape.segments.length + shape.polygons.length + shape.ellipses.length + shape.curves.length;
+        shape.segments.length +
+        shape.polygons.length +
+        shape.ellipses.length +
+        shape.curves.length +
+        shape.labels.length;
       expect(total, `${tool.id} no pinta nada`).toBeGreaterThan(0);
     }
   });
@@ -276,5 +282,339 @@ describe("la onda de Elliott", () => {
   it("sin etiquetas no pone ninguna", () => {
     const puntos = Array.from({ length: 5 }, (_, i) => p(100 + i * 50, 200));
     expect(build("ELLIOTT", puntos, { showLabels: false }).labels).toHaveLength(0);
+  });
+});
+
+// ----------------------------------------------------- las de la ronda 2
+
+/** Como `build`, pero pasando también los tiempos reales de los puntos. */
+const buildConTiempo = (
+  tool: Parameters<typeof buildShape>[0]["tool"],
+  points: Point[],
+  times: number[],
+  barSeconds: number,
+  over = {},
+  prices?: number[],
+) =>
+  buildShape({
+    tool,
+    points,
+    style: { ...defaultStyle(tool), ...over },
+    width: 800,
+    height: 400,
+    times,
+    barSeconds,
+    prices,
+    formatPrice: money,
+  });
+
+describe("el ángulo de tendencia", () => {
+  it("una subida da grados positivos y una bajada negativos", () => {
+    // En pantalla la y crece hacia abajo, así que subir es que la y baje. Sin
+    // invertirlo, el ángulo diría lo contrario de lo que se ve.
+    const sube = build("TREND_ANGLE", [p(100, 300), p(200, 200)]);
+    expect(sube.labels[0].text).toBe("+45.0°");
+
+    const baja = build("TREND_ANGLE", [p(100, 200), p(200, 300)]);
+    expect(baja.labels[0].text).toBe("-45.0°");
+  });
+
+  it("una horizontal da cero", () => {
+    expect(build("TREND_ANGLE", [p(100, 200), p(300, 200)]).labels[0].text).toBe("+0.0°");
+  });
+});
+
+describe("la línea informativa", () => {
+  it("dice el movimiento, el porcentaje y las velas", () => {
+    const shape = buildConTiempo(
+      "INFO_LINE",
+      [p(100, 300), p(300, 100)],
+      [1000, 4600],
+      3600,
+      {},
+      [68000, 69360],
+    );
+    const texto = shape.labels[0].text;
+    expect(texto).toContain("+1360.00");
+    expect(texto).toContain("2.00%");
+    expect(texto).toContain("1 vela");
+  });
+
+  it("cuenta las velas por el tiempo real, no por los píxeles", () => {
+    // El eje de tiempo no es lineal en píxeles: un fin de semana no ocupa
+    // sitio. Contar por píxeles daría menos velas de las que hubo.
+    const shape = buildConTiempo(
+      "INFO_LINE",
+      [p(100, 300), p(110, 100)],
+      [0, 3600 * 24],
+      3600,
+      {},
+      [68000, 69000],
+    );
+    expect(shape.labels[0].text).toContain("24 velas");
+  });
+});
+
+describe("el rango de fechas", () => {
+  it("dice cuántas velas y cuánto tiempo", () => {
+    const shape = buildConTiempo("DATE_RANGE", [p(100, 100), p(300, 200)], [0, 7200], 3600);
+    expect(shape.labels[0].text).toContain("2 velas");
+    expect(shape.labels[0].text).toContain("2.0 h");
+  });
+
+  it("sin tiempos no inventa una duración", () => {
+    expect(build("DATE_RANGE", [p(100, 100), p(300, 200)]).labels).toHaveLength(0);
+  });
+});
+
+describe("el abanico de Fibonacci", () => {
+  it("saca un rayo por nivel, más la base", () => {
+    const shape = build("FIB_FAN", [p(100, 300), p(300, 100)], { levels: [0.382, 0.5, 0.618] });
+    expect(shape.segments).toHaveLength(4);
+  });
+
+  it("los rayos salen todos del primer punto", () => {
+    const shape = build("FIB_FAN", [p(100, 300), p(300, 100)], { levels: [0.5] });
+    // El segundo segmento es el rayo; el primero es la base a-b.
+    expect(shape.segments[1].from).toEqual(p(100, 300));
+  });
+
+  it("el del 50% pasa por el medio de la vertical del segundo punto", () => {
+    const shape = build("FIB_FAN", [p(100, 300), p(300, 100)], {
+      levels: [0.5],
+      showLabels: false,
+    });
+    const rayo = shape.segments[1];
+    const t = (300 - rayo.from.x) / (rayo.to.x - rayo.from.x);
+    expect(rayo.from.y + (rayo.to.y - rayo.from.y) * t).toBeCloseTo(200, 6);
+  });
+});
+
+describe("las zonas horarias de Fibonacci", () => {
+  it("las verticales caen en la sucesión, no a intervalos iguales", () => {
+    const shape = build("FIB_TIMEZONE", [p(100, 200), p(120, 200)], { showLabels: false });
+    expect(shape.segments.map((s) => s.from.x)).toEqual([
+      100, 120, 140, 160, 200, 260, 360, 520, 780,
+    ]);
+  });
+
+  it("lo que se sale del lienzo no se pinta", () => {
+    const shape = build("FIB_TIMEZONE", [p(700, 200), p(760, 200)]);
+    // 700 y 760 caben; 820 ya no.
+    expect(shape.segments.every((s) => s.from.x <= 800)).toBe(true);
+  });
+
+  it("dos puntos en la misma vertical no dan nada", () => {
+    // Sin unidad de tiempo no hay zonas que repartir; dividir daría infinitos.
+    expect(build("FIB_TIMEZONE", [p(100, 200), p(100, 300)]).segments).toHaveLength(0);
+  });
+});
+
+describe("el abanico de Gann", () => {
+  it("el 1×1 pasa por el segundo punto", () => {
+    const shape = build("GANN_FAN", [p(100, 300), p(300, 100)], { levels: [1] });
+    const rayo = shape.segments[0];
+    const t = (300 - rayo.from.x) / (rayo.to.x - rayo.from.x);
+    expect(rayo.from.y + (rayo.to.y - rayo.from.y) * t).toBeCloseTo(100, 6);
+  });
+
+  it("nombra los ángulos como se nombran en Gann", () => {
+    const shape = build("GANN_FAN", [p(100, 300), p(300, 100)], { levels: [0.5, 1, 2] });
+    expect(shape.labels.map((l) => l.text)).toEqual(["1×2", "1×1", "2×1"]);
+  });
+
+  it("un tercio se dice 1×3, no 1×3.00", () => {
+    const shape = build("GANN_FAN", [p(100, 300), p(300, 100)], { levels: [0.333] });
+    expect(shape.labels[0].text).toBe("1×3");
+  });
+});
+
+describe("los círculos de Fibonacci", () => {
+  it("un anillo por nivel, centrados en el primer punto", () => {
+    const shape = build("FIB_CIRCLE", [p(200, 200), p(300, 250)], { levels: [0.5, 1] });
+    expect(shape.ellipses).toHaveLength(2);
+    expect(shape.ellipses.every((e) => e.center.x === 200 && e.center.y === 200)).toBe(true);
+    expect(shape.ellipses[0].rx).toBeCloseTo(50, 6);
+    expect(shape.ellipses[1].rx).toBeCloseTo(100, 6);
+  });
+
+  it("sólo se rellena el mayor, para no tapar el centro", () => {
+    const shape = build("FIB_CIRCLE", [p(200, 200), p(300, 250)], {
+      levels: [0.5, 1],
+      fill: true,
+    });
+    expect(shape.ellipses.map((e) => e.filled)).toEqual([false, true]);
+  });
+});
+
+describe("el canal de Fibonacci", () => {
+  it("el 0% pasa por la base y el 100% por el tercer punto", () => {
+    const shape = build("FIB_CHANNEL", [p(100, 200), p(300, 200), p(100, 260)], {
+      levels: [0, 1],
+      extendRight: false,
+      extendLeft: false,
+      showLabels: false,
+    });
+    expect(shape.segments[0].from.y).toBeCloseTo(200, 6);
+    expect(shape.segments[1].from.y).toBeCloseTo(260, 6);
+  });
+
+  it("el desplazamiento es vertical, no perpendicular", () => {
+    // El eje vertical es el precio: un desplazamiento perpendicular mezclaría
+    // precio con tiempo y el canal dejaría de cubrir un rango constante.
+    const shape = build("FIB_CHANNEL", [p(100, 100), p(300, 300), p(100, 150)], {
+      levels: [1],
+      extendRight: false,
+      extendLeft: false,
+      showLabels: false,
+    });
+    expect(shape.segments[0].from.x).toBeCloseTo(100, 6);
+    expect(shape.segments[0].from.y).toBeCloseTo(150, 6);
+  });
+});
+
+describe("el rectángulo rotado", () => {
+  it("los dos lados largos son paralelos", () => {
+    const shape = build("ROTATED_RECTANGLE", [p(100, 100), p(300, 200), p(100, 160)]);
+    const [a, b, c, d] = shape.polygons[0].points;
+    expect(b.y - a.y).toBeCloseTo(c.y - d.y, 6);
+    expect(b.x - a.x).toBeCloseTo(c.x - d.x, 6);
+  });
+
+  it("el grosor lo da el tercer punto", () => {
+    const shape = build("ROTATED_RECTANGLE", [p(100, 100), p(300, 100), p(200, 180)]);
+    const pts = shape.polygons[0].points;
+    expect(pts[3].y - pts[0].y).toBeCloseTo(80, 6);
+  });
+});
+
+describe("la polilínea y la curva", () => {
+  it("la polilínea se cierra sobre sí misma", () => {
+    const puntos = [p(100, 100), p(200, 80), p(300, 140), p(250, 220), p(120, 200)];
+    expect(build("POLYLINE", puntos).polygons[0].points).toHaveLength(5);
+  });
+
+  it("la curva se aproxima por tramos para poder rellenarse", () => {
+    const shape = build("CURVE", [p(100, 300), p(300, 300), p(200, 100)]);
+    expect(shape.polygons[0].points.length).toBeGreaterThan(20);
+    // Empieza y acaba donde se pinchó.
+    expect(shape.polygons[0].points[0]).toEqual(p(100, 300));
+    expect(shape.polygons[0].points.at(-1)).toEqual(p(300, 300));
+  });
+});
+
+describe("los patrones nuevos", () => {
+  const cinco = [p(100, 300), p(160, 150), p(220, 240), p(280, 120), p(340, 260)];
+
+  it("el Cypher etiqueta como el XABCD", () => {
+    expect(build("CYPHER", cinco).labels.slice(0, 5).map((l) => l.text)).toEqual([
+      "X",
+      "A",
+      "B",
+      "C",
+      "D",
+    ]);
+  });
+
+  it("el Cypher marca si cada tramo cae donde el patrón pide", () => {
+    // Es lo único que lo separa del XABCD: la forma es la misma, cambia dónde
+    // tienen que caer los tramos.
+    const shape = build("CYPHER", cinco, {}, [100, 200, 150, 280, 190]);
+    const proporciones = shape.labels.slice(5).map((l) => l.text);
+    expect(proporciones).toHaveLength(3);
+    expect(proporciones[0]).toContain("✓"); // 50/100 = 0,5, dentro de 0,382-0,618
+    expect(proporciones[1]).toContain("✗"); // 130/50 = 2,6, fuera de 1,13-1,414
+    expect(proporciones[2]).toContain("✓"); // 90/130 = 0,692, dentro de 0,618-0,786
+  });
+
+  it("un XABCD con los mismos puntos no lleva veredicto", () => {
+    // Es lo que justifica que sean dos herramientas: el XABCD sólo mide, el
+    // Cypher además dice si el patrón se cumple.
+    const shape = build("XABCD", cinco, {}, [100, 200, 150, 280, 190]);
+    const proporciones = shape.labels.slice(5).map((l) => l.text);
+    expect(proporciones.some((t) => t.includes("✓") || t.includes("✗"))).toBe(false);
+  });
+
+  it("el ABCD lleva cuatro letras y tres proporciones", () => {
+    const cuatro = [p(100, 300), p(180, 150), p(260, 220), p(340, 100)];
+    const shape = build("ABCD", cuatro, {}, [100, 200, 160, 260]);
+    expect(shape.labels.slice(0, 4).map((l) => l.text)).toEqual(["A", "B", "C", "D"]);
+    expect(shape.labels.slice(4)).toHaveLength(2);
+  });
+
+  it("los tres impulsos usan siete puntos", () => {
+    const siete = Array.from({ length: 7 }, (_, i) => p(100 + i * 40, 300 - i * 20));
+    expect(build("THREE_DRIVES", siete).labels.map((l) => l.text)).toEqual([
+      "0",
+      "1",
+      "A",
+      "2",
+      "B",
+      "3",
+      "C",
+    ]);
+  });
+
+  it("el patrón triangular se rellena entero, no en zigzag", () => {
+    const cuatro = [p(100, 100), p(300, 200), p(120, 260), p(300, 210)];
+    const shape = build("TRIANGLE_PATTERN", cuatro, { fill: true });
+    expect(shape.polygons).toHaveLength(1);
+    expect(shape.polygons[0].points).toHaveLength(4);
+  });
+});
+
+describe("las anotaciones", () => {
+  it("el texto vacío deja una marca en vez de nada", () => {
+    // Un dibujo recién puesto que no pinta nada parece que no se guardó.
+    expect(build("TEXT", [p(200, 200)]).labels[0].text).toBe("Texto…");
+    expect(build("TEXT", [p(200, 200)], { textLabel: "doble suelo" }).labels[0].text).toBe(
+      "doble suelo",
+    );
+  });
+
+  it("la etiqueta de precio dice el precio de su punto", () => {
+    const shape = build("PRICE_LABEL", [p(200, 200)], {}, [68123.5]);
+    expect(shape.labels[0].text).toContain("68123.50");
+    expect(shape.polygons).toHaveLength(1);
+  });
+
+  it("la llamada apunta del recuadro a lo que comenta", () => {
+    const shape = build("CALLOUT", [p(100, 100), p(300, 250)], { textLabel: "aquí" });
+    // El primer segmento va de la caja al objetivo, no al revés.
+    expect(shape.segments[0].from).toEqual(p(300, 250));
+    expect(shape.segments[0].to).toEqual(p(100, 100));
+    expect(shape.labels[0].text).toBe("aquí");
+  });
+
+  it("el recuadro crece con el texto y con el cuerpo de letra", () => {
+    const corto = build("NOTE", [p(200, 200)], { textLabel: "hm", fontSize: 11 });
+    const largo = build("NOTE", [p(200, 200)], { textLabel: "una nota bastante más larga", fontSize: 11 });
+    const grande = build("NOTE", [p(200, 200)], { textLabel: "hm", fontSize: 20 });
+
+    const ancho = (s: ReturnType<typeof build>) =>
+      s.polygons[0].points[1].x - s.polygons[0].points[0].x;
+    expect(ancho(largo)).toBeGreaterThan(ancho(corto));
+    expect(ancho(grande)).toBeGreaterThan(ancho(corto));
+  });
+
+  it("el banderín se clava en su punto y sube desde ahí", () => {
+    const shape = build("FLAG", [p(200, 300)]);
+    expect(shape.segments[0].from).toEqual(p(200, 300));
+    expect(shape.segments[0].to.y).toBeLessThan(300);
+    expect(shape.polygons).toHaveLength(1);
+  });
+});
+
+describe("el rango de precio", () => {
+  it("mide sólo el precio, con su porcentaje", () => {
+    const shape = build("PRICE_RANGE", [p(100, 300), p(300, 100)], {}, [68000, 69360]);
+    expect(shape.labels[0].text).toContain("+1360.00");
+    expect(shape.labels[0].text).toContain("2.00%");
+  });
+
+  it("lleva flecha en los dos extremos", () => {
+    const shape = build("PRICE_RANGE", [p(100, 300), p(300, 100)]);
+    // Un tramo central más dos puntas de dos segmentos cada una.
+    expect(shape.segments).toHaveLength(5);
   });
 });

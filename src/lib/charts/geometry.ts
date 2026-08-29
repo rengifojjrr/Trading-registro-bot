@@ -97,6 +97,16 @@ export interface BuildParams {
    * logarítmica y las proporciones no se conservan.
    */
   prices?: number[];
+  /**
+   * Los momentos reales de los puntos, en segundos unix y en el mismo orden.
+   *
+   * Los usan las herramientas que miden tiempo -- la línea informativa, el
+   * rango de fechas -- porque en píxeles el eje de tiempo no es lineal: las
+   * velas que no existen (fin de semana, hueco de datos) no ocupan sitio.
+   */
+  times?: number[];
+  /** Cuántos segundos dura una vela, para contar velas en vez de segundos. */
+  barSeconds?: number;
   /** Formatea un precio para las etiquetas. */
   formatPrice?: (price: number) => string;
 }
@@ -118,8 +128,16 @@ export function buildShape(params: BuildParams): Shape {
       return vertical(params);
     case "CROSSLINE":
       return cruz(params);
+    case "TREND_ANGLE":
+      return anguloDeTendencia(params);
+    case "INFO_LINE":
+      return lineaInformativa(params);
+    case "ARROW":
+      return flecha(params);
     case "RECTANGLE":
       return rectangulo(params);
+    case "ROTATED_RECTANGLE":
+      return rectanguloRotado(params);
     case "ELLIPSE":
       return elipse(params);
     case "TRIANGLE":
@@ -128,29 +146,95 @@ export function buildShape(params: BuildParams): Shape {
       return canal(params);
     case "ARC":
       return arco(params);
+    case "CURVE":
+      return curva(params);
+    case "POLYLINE":
+      return polilinea(params);
     case "PATH":
     case "ELLIOTT":
     case "HEAD_SHOULDERS":
     case "XABCD":
+    case "CYPHER":
+    case "ABCD":
+    case "TRIANGLE_PATTERN":
+    case "THREE_DRIVES":
       return poligonal(params);
     case "FIB":
       return fibonacci(params);
     case "FIB_EXTENSION":
       return fibExtension(params);
+    case "FIB_FAN":
+      return abanicoFibonacci(params);
+    case "FIB_TIMEZONE":
+      return zonasHorarias(params);
+    case "FIB_CHANNEL":
+      return canalFibonacci(params);
+    case "FIB_CIRCLE":
+      return circulosFibonacci(params);
     case "PITCHFORK":
       return horquilla(params);
     case "GANN_BOX":
       return gann(params);
+    case "GANN_FAN":
+      return abanicoGann(params);
     case "LONG_POSITION":
     case "SHORT_POSITION":
       return posicion(params);
     case "DATE_PRICE_RANGE":
       return rango(params);
+    case "PRICE_RANGE":
+      return rangoDePrecio(params);
+    case "DATE_RANGE":
+      return rangoDeFechas(params);
     case "FORECAST":
       return proyeccion(params);
+    case "TEXT":
+      return texto(params);
+    case "NOTE":
+    case "PRICE_LABEL":
+      return notaEnmarcada(params);
+    case "CALLOUT":
+      return llamada(params);
+    case "FLAG":
+      return banderin(params);
     default:
       return vacio();
   }
+}
+
+/**
+ * La punta de flecha, como dos segmentos.
+ *
+ * Sale aquí fuera porque la usan la proyección, la flecha y los rangos, y
+ * tenerla tres veces era garantizar que una de ellas apuntase al revés.
+ */
+function puntaDeFlecha(desde: Point, hasta: Point, largo = 9): Segment[] {
+  const angulo = Math.atan2(hasta.y - desde.y, hasta.x - desde.x);
+  return [Math.PI * 0.85, -Math.PI * 0.85].map((giro) => ({
+    from: hasta,
+    to: {
+      x: hasta.x + largo * Math.cos(angulo + giro),
+      y: hasta.y + largo * Math.sin(angulo + giro),
+    },
+    emphasis: "SECONDARY" as const,
+  }));
+}
+
+/** Un recuadro alrededor de un texto, para que se lea sobre las velas. */
+function recuadroDeTexto(centro: Point, texto: string, style: DrawingStyle): Polygon {
+  // El ancho se estima por el número de caracteres: medir de verdad exige un
+  // canvas, y esto es geometría pura. Con monoespaciada la estimación es buena.
+  const ancho = Math.max(24, texto.length * style.fontSize * 0.62) + 10;
+  const alto = style.fontSize + 8;
+  return {
+    points: [
+      { x: centro.x - ancho / 2, y: centro.y - alto / 2 },
+      { x: centro.x + ancho / 2, y: centro.y - alto / 2 },
+      { x: centro.x + ancho / 2, y: centro.y + alto / 2 },
+      { x: centro.x - ancho / 2, y: centro.y + alto / 2 },
+    ],
+    filled: style.fill,
+  };
 }
 
 // ---------------------------------------------------------------- líneas
@@ -194,6 +278,94 @@ function cruz({ points, width, height }: BuildParams): Shape {
   const shape = vacio();
   shape.segments.push({ from: { x: 0, y: a.y }, to: { x: width, y: a.y } });
   shape.segments.push({ from: { x: a.x, y: 0 }, to: { x: a.x, y: height } });
+  return shape;
+}
+
+/**
+ * El ángulo de tendencia: la línea y con cuántos grados sube.
+ *
+ * El ángulo se mide en píxeles, no en precio partido por tiempo, y es lo
+ * correcto: el ángulo que se ve depende del zoom, y lo que interesa es lo que
+ * se ve. Un ángulo «real» en unidades de precio/segundo no significaría nada,
+ * porque precio y tiempo no comparten unidad.
+ */
+function anguloDeTendencia({ points, style, width }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  shape.segments.push(extendSegment(a, b, width, style.extendLeft, style.extendRight));
+  // La horizontal de referencia, que es contra lo que se mide el ángulo.
+  const radio = Math.min(48, Math.max(20, Math.hypot(b.x - a.x, b.y - a.y) / 3));
+  shape.segments.push({
+    from: a,
+    to: { x: a.x + radio, y: a.y },
+    emphasis: "SECONDARY",
+  });
+
+  if (!style.showLabels) return shape;
+
+  // Negativo en pantalla es hacia arriba, que para quien mira es subir.
+  const grados = (Math.atan2(a.y - b.y, b.x - a.x) * 180) / Math.PI;
+  shape.labels.push({
+    at: { x: a.x + radio + 6, y: a.y - 4 },
+    text: `${grados >= 0 ? "+" : ""}${grados.toFixed(1)}°`,
+    align: "left",
+  });
+  return shape;
+}
+
+/** La línea que dice cuánto se movió el precio y en cuántas velas. */
+function lineaInformativa({
+  points,
+  style,
+  prices,
+  times,
+  barSeconds,
+  formatPrice,
+}: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  shape.segments.push({ from: a, to: b });
+  shape.segments.push(...puntaDeFlecha(a, b));
+
+  if (!style.showLabels) return shape;
+
+  const partes: string[] = [];
+  if (style.showPrice && prices && prices.length >= 2 && formatPrice) {
+    const delta = new Decimal(prices[1]).minus(prices[0]);
+    partes.push(`${delta.isNegative() ? "" : "+"}${formatPrice(delta.toNumber())}`);
+    if (prices[0] !== 0) {
+      partes.push(`${delta.dividedBy(prices[0]).times(100).toFixed(2)}%`);
+    }
+  }
+  if (barSeconds && barSeconds > 0 && times && times.length >= 2) {
+    const velas = Math.round(Math.abs(times[1] - times[0]) / barSeconds);
+    partes.push(`${velas} ${velas === 1 ? "vela" : "velas"}`);
+  }
+  if (partes.length === 0) return shape;
+
+  shape.labels.push({
+    at: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 },
+    text: partes.join("  ·  "),
+    align: "center",
+  });
+  return shape;
+}
+
+/** Una flecha que señala algo. El texto va donde acaba la punta. */
+function flecha({ points, style }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  shape.segments.push({ from: a, to: b });
+  shape.segments.push(...puntaDeFlecha(a, b, 12));
+  if (style.textLabel) {
+    shape.labels.push({ at: { x: a.x, y: a.y - 8 }, text: style.textLabel, align: "center" });
+  }
   return shape;
 }
 
@@ -300,6 +472,85 @@ function arco({ points, style }: BuildParams): Shape {
   return shape;
 }
 
+/**
+ * El rectángulo rotado: una zona que sigue la pendiente.
+ *
+ * Como el canal, el grosor se toma en vertical y no en perpendicular, porque el
+ * eje vertical es el precio: un grosor perpendicular mezclaría precio y tiempo
+ * y la zona dejaría de cubrir un rango de precio constante.
+ */
+function rectanguloRotado({ points, style }: BuildParams): Shape {
+  const [a, b, c] = points;
+  if (!c) return poligonalSimple(points);
+
+  const pendiente = b.x === a.x ? 0 : (b.y - a.y) / (b.x - a.x);
+  const desplazamiento = c.y - (a.y + pendiente * (c.x - a.x));
+
+  const shape = vacio();
+  shape.polygons.push({
+    points: [
+      a,
+      b,
+      { x: b.x, y: b.y + desplazamiento },
+      { x: a.x, y: a.y + desplazamiento },
+    ],
+    filled: style.fill,
+  });
+  if (style.textLabel) {
+    shape.labels.push({
+      at: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + desplazamiento / 2 },
+      text: style.textLabel,
+      align: "center",
+      baseline: "middle",
+    });
+  }
+  return shape;
+}
+
+/**
+ * La curva cerrada: el arco más la cuerda, rellenable.
+ *
+ * Se aproxima la parábola por tramos para poder rellenarla; el arco suelto no
+ * lo necesita porque no se rellena nunca.
+ */
+function curva({ points, style }: BuildParams): Shape {
+  const [a, b, c] = points;
+  if (!c) return arco({ points, style } as BuildParams);
+
+  const shape = vacio();
+  const muestras: Point[] = [];
+  for (let i = 0; i <= 24; i += 1) {
+    const t = i / 24;
+    muestras.push({
+      x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t ** 2 * b.x,
+      y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t ** 2 * b.y,
+    });
+  }
+  shape.polygons.push({ points: muestras, filled: style.fill });
+  if (style.textLabel) {
+    shape.labels.push({ at: c, text: style.textLabel, align: "center" });
+  }
+  return shape;
+}
+
+/** La polilínea: los puntos que se pincharon, cerrados sobre sí mismos. */
+function polilinea({ points, style }: BuildParams): Shape {
+  if (points.length < 3) return poligonalSimple(points);
+  const shape = vacio();
+  shape.polygons.push({ points, filled: style.fill });
+  if (style.textLabel) {
+    const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+    const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+    shape.labels.push({
+      at: { x: cx, y: cy },
+      text: style.textLabel,
+      align: "center",
+      baseline: "middle",
+    });
+  }
+  return shape;
+}
+
 function poligonalSimple(points: Point[]): Shape {
   const shape = vacio();
   for (let i = 0; i < points.length - 1; i += 1) {
@@ -317,11 +568,15 @@ function poligonalSimple(points: Point[]): Shape {
 function poligonal({ tool, points, style, prices, formatPrice }: BuildParams): Shape {
   const shape = poligonalSimple(points);
 
-  if (tool === "XABCD" && style.fill && points.length >= 4) {
-    // Los dos triángulos que forman la «M» del patrón: es lo que hace que se
+  if (RELLENAN_EN_ZIGZAG.has(tool) && style.fill && points.length >= 4) {
+    // Los triángulos que forman el zigzag del patrón: es lo que hace que se
     // vea como una figura y no como cuatro rayas.
-    shape.polygons.push({ points: points.slice(0, 3), filled: true });
-    if (points.length >= 5) shape.polygons.push({ points: points.slice(2, 5), filled: true });
+    for (let i = 0; i + 2 < points.length; i += 2) {
+      shape.polygons.push({ points: points.slice(i, i + 3), filled: true });
+    }
+  }
+  if (tool === "TRIANGLE_PATTERN" && style.fill && points.length >= 3) {
+    shape.polygons.push({ points, filled: true });
   }
 
   if (!style.showLabels) return shape;
@@ -333,10 +588,10 @@ function poligonal({ tool, points, style, prices, formatPrice }: BuildParams): S
     shape.labels.push({ at: { x: p.x, y: p.y - 10 }, text: texto, align: "center" });
   });
 
-  // Las proporciones entre tramos: es lo que se mira de un XABCD, y sin ellas
-  // el patrón es un garabato con letras.
-  if (tool === "XABCD" && prices && prices.length >= 4 && formatPrice) {
-    const ratios = xabcdRatios(prices);
+  // Las proporciones entre tramos: es lo que se mira de un patrón armónico, y
+  // sin ellas es un garabato con letras.
+  if (CON_PROPORCIONES.has(tool) && prices && prices.length >= 3 && formatPrice) {
+    const ratios = tool === "CYPHER" ? cypherRatios(prices) : xabcdRatios(prices);
     ratios.forEach((r, i) => {
       const desde = points[i + 1];
       const hasta = points[i + 2];
@@ -352,10 +607,17 @@ function poligonal({ tool, points, style, prices, formatPrice }: BuildParams): S
   return shape;
 }
 
+/** Los patrones que se rellenan como una «M»: triángulos alternos. */
+const RELLENAN_EN_ZIGZAG = new Set<ToolId>(["XABCD", "CYPHER", "ABCD", "THREE_DRIVES"]);
+/** Los que enseñan la proporción de cada tramo respecto al anterior. */
+const CON_PROPORCIONES = new Set<ToolId>(["XABCD", "CYPHER", "ABCD"]);
+
 function etiquetasDe(tool: ToolId, style: DrawingStyle, n: number): string[] {
   if (tool === "ELLIOTT") return [...WAVE_DEGREES[style.waveDegree]].slice(0, n);
-  if (tool === "XABCD") return ["X", "A", "B", "C", "D"].slice(0, n);
+  if (tool === "XABCD" || tool === "CYPHER") return ["X", "A", "B", "C", "D"].slice(0, n);
+  if (tool === "ABCD") return ["A", "B", "C", "D"].slice(0, n);
   if (tool === "HEAD_SHOULDERS") return ["HI", "V1", "C", "V2", "HD"].slice(0, n);
+  if (tool === "THREE_DRIVES") return ["0", "1", "A", "2", "B", "3", "C"].slice(0, n);
   return Array.from({ length: n }, (_, i) => String(i + 1));
 }
 
@@ -371,6 +633,46 @@ export function xabcdRatios(prices: number[]): string[] {
     const anterior = new Decimal(prices[i]).minus(prices[i - 1]).abs();
     const actual = new Decimal(prices[i + 1]).minus(prices[i]).abs();
     salida.push(anterior.isZero() ? "--" : actual.dividedBy(anterior).toFixed(3));
+  }
+  return salida;
+}
+
+/**
+ * Las proporciones que pide un Cypher, tramo a tramo, con su veredicto.
+ *
+ * Es lo único que distingue al Cypher del XABCD: la forma es la misma y lo que
+ * cambia es dónde tienen que caer los tramos. Sin esto serían dos nombres para
+ * el mismo dibujo, que es exactamente lo que no hay que hacer.
+ *
+ * Los rangos son los canónicos: XA→AB entre 0,382 y 0,618; AB→BC entre 1,13 y
+ * 1,414; BC→CD en 0,786 del tramo XC (aquí se comprueba contra el tramo
+ * anterior, que es lo que se puede medir sin más datos).
+ */
+const CYPHER_RANGOS: [number, number][] = [
+  [0.382, 0.618],
+  [1.13, 1.414],
+  [0.618, 0.786],
+];
+
+export function cypherRatios(prices: number[]): string[] {
+  const salida: string[] = [];
+  for (let i = 1; i < prices.length - 1; i += 1) {
+    const anterior = new Decimal(prices[i]).minus(prices[i - 1]).abs();
+    const actual = new Decimal(prices[i + 1]).minus(prices[i]).abs();
+    if (anterior.isZero()) {
+      salida.push("--");
+      continue;
+    }
+    const ratio = actual.dividedBy(anterior);
+    const rango = CYPHER_RANGOS[i - 1];
+    // Un tick o una cruz al lado del número: el patrón se valida de un vistazo
+    // en vez de tener que recordar los tres rangos de memoria.
+    const marca = rango
+      ? ratio.greaterThanOrEqualTo(rango[0]) && ratio.lessThanOrEqualTo(rango[1])
+        ? " ✓"
+        : " ✗"
+      : "";
+    salida.push(`${ratio.toFixed(3)}${marca}`);
   }
   return salida;
 }
@@ -455,6 +757,136 @@ function fibExtension({ points, style, width, prices, formatPrice }: BuildParams
 }
 
 /**
+ * El abanico de Fibonacci.
+ *
+ * Los rayos salen del primer punto y pasan por los niveles repartidos sobre la
+ * vertical del segundo. Es lo que lo distingue del retroceso: en vez de rayas
+ * horizontales a cada nivel, rectas que se abren con el tiempo.
+ */
+function abanicoFibonacci({ points, style, width }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  shape.segments.push({ from: a, to: b, emphasis: "SECONDARY" });
+
+  for (const nivel of style.levels) {
+    const destino = { x: b.x, y: a.y + (b.y - a.y) * nivel };
+    const rayo = extendSegment(a, destino, width, false, true);
+    shape.segments.push({ ...rayo, emphasis: nivel === 0.5 ? "PRIMARY" : "SECONDARY" });
+
+    if (!style.showLabels) continue;
+    shape.labels.push({
+      at: { x: destino.x + 4, y: destino.y - 3 },
+      text: `${(nivel * 100).toFixed(1).replace(/\.0$/, "")}%`,
+      align: "left",
+    });
+  }
+  return shape;
+}
+
+/**
+ * Los primeros términos de Fibonacci, que son las verticales que se pintan.
+ *
+ * Se para en 89 porque a partir de ahí la siguiente vertical cae tan lejos que
+ * ya no está en la pantalla en ninguna temporalidad razonable.
+ */
+const SUCESION_FIBONACCI = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
+
+/** Las zonas horarias: verticales a 1, 2, 3, 5, 8… veces la unidad marcada. */
+function zonasHorarias({ points, style, width, height }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const unidad = b.x - a.x;
+  if (unidad === 0) return vacio();
+
+  const shape = vacio();
+  for (const n of SUCESION_FIBONACCI) {
+    const x = a.x + unidad * n;
+    // Fuera del lienzo no se pinta: alargar la lista hasta 89 sólo tiene
+    // sentido si lo que se sale se descarta.
+    if (x < 0 || x > width) continue;
+    shape.segments.push({
+      from: { x, y: 0 },
+      to: { x, y: height },
+      emphasis: n <= 1 ? "PRIMARY" : "SECONDARY",
+    });
+    if (style.showLabels) {
+      shape.labels.push({ at: { x: x + 4, y: 12 }, text: String(n), align: "left" });
+    }
+  }
+  return shape;
+}
+
+/**
+ * El canal de Fibonacci: un canal con los niveles repartidos entre sus bordes.
+ *
+ * Como el canal normal, el desplazamiento es vertical, por el mismo motivo: el
+ * eje vertical es el precio.
+ */
+function canalFibonacci({ points, style, width }: BuildParams): Shape {
+  const [a, b, c] = points;
+  if (!c) return poligonalSimple(points);
+
+  const shape = vacio();
+  const pendiente = b.x === a.x ? 0 : (b.y - a.y) / (b.x - a.x);
+  const ancho = c.y - (a.y + pendiente * (c.x - a.x));
+
+  for (const nivel of style.levels) {
+    const dy = ancho * nivel;
+    const linea = extendSegment(
+      { x: a.x, y: a.y + dy },
+      { x: b.x, y: b.y + dy },
+      width,
+      style.extendLeft,
+      style.extendRight,
+    );
+    shape.segments.push({
+      ...linea,
+      emphasis: nivel === 0 || nivel === 1 ? "PRIMARY" : "SECONDARY",
+    });
+    if (style.showLabels) {
+      shape.labels.push({
+        at: { x: linea.to.x - 4, y: linea.to.y - 4 },
+        text: `${(nivel * 100).toFixed(1).replace(/\.0$/, "")}%`,
+        align: "right",
+      });
+    }
+  }
+  return shape;
+}
+
+/** Anillos alrededor del primer punto, a cada nivel del radio marcado. */
+function circulosFibonacci({ points, style }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  const rx = Math.abs(b.x - a.x);
+  const ry = Math.abs(b.y - a.y);
+
+  for (const nivel of style.levels) {
+    if (nivel <= 0) continue;
+    shape.ellipses.push({
+      center: a,
+      rx: rx * nivel,
+      ry: ry * nivel,
+      // Sólo el mayor se rellena: rellenar todos deja el centro opaco.
+      filled: style.fill && nivel === Math.max(...style.levels),
+    });
+    if (style.showLabels) {
+      shape.labels.push({
+        at: { x: a.x, y: a.y - ry * nivel - 3 },
+        text: `${(nivel * 100).toFixed(1).replace(/\.0$/, "")}%`,
+        align: "center",
+      });
+    }
+  }
+  return shape;
+}
+
+/**
  * La horquilla de Andrews.
  *
  * La mediana sale del primer punto y pasa por el medio de los otros dos; las
@@ -520,6 +952,47 @@ function gann({ points, style }: BuildParams): Shape {
   shape.segments.push({ from: { x: x0, y: y0 }, to: { x: x1, y: y1 }, emphasis: "PRIMARY" });
 
   return shape;
+}
+
+/**
+ * El abanico de Gann.
+ *
+ * El segundo punto fija el 1×1 -- una unidad de precio por una de tiempo -- y
+ * el resto de rayos son múltiplos suyos: 2×1 sube el doble de rápido, 1×2 la
+ * mitad. Por eso los niveles se aplican a la *pendiente* y no a la altura, que
+ * es lo que separa un abanico de Gann de un abanico de Fibonacci.
+ */
+function abanicoGann({ points, style, width }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (dx === 0) return vacio();
+
+  const shape = vacio();
+  for (const factor of style.levels) {
+    if (factor <= 0) continue;
+    const destino = { x: b.x, y: a.y + dy * factor };
+    const rayo = extendSegment(a, destino, width, false, true);
+    shape.segments.push({ ...rayo, emphasis: factor === 1 ? "PRIMARY" : "SECONDARY" });
+
+    if (!style.showLabels) continue;
+    // Se nombra como se nombra en Gann: 1×1, 2×1, 1×2.
+    const nombre = factor >= 1 ? `${redondeaGann(factor)}×1` : `1×${redondeaGann(1 / factor)}`;
+    shape.labels.push({
+      at: { x: destino.x + 4, y: destino.y - 3 },
+      text: nombre,
+      align: "left",
+    });
+  }
+  return shape;
+}
+
+/** 0,333 es un tercio; sin esto la etiqueta diría «1×3.003003003». */
+function redondeaGann(n: number): string {
+  const cerca = Math.round(n);
+  return Math.abs(n - cerca) < 0.02 ? String(cerca) : n.toFixed(2);
 }
 
 // -------------------------------------------------------------- posición
@@ -672,6 +1145,172 @@ function rango({ points, style, prices, formatPrice }: BuildParams): Shape {
 }
 
 /**
+ * El rango de precio: sólo cuánto se movió, sin contar el tiempo.
+ *
+ * Se pinta como una banda que cruza el ancho que se marcó, con las dos flechas
+ * verticales que dicen de dónde a dónde se mide.
+ */
+function rangoDePrecio({ points, style, prices, formatPrice }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  const x0 = Math.min(a.x, b.x);
+  const x1 = Math.max(a.x, b.x);
+  const medio = (x0 + x1) / 2;
+
+  shape.polygons.push({
+    points: [
+      { x: x0, y: a.y },
+      { x: x1, y: a.y },
+      { x: x1, y: b.y },
+      { x: x0, y: b.y },
+    ],
+    filled: style.fill,
+  });
+  shape.segments.push({ from: { x: medio, y: a.y }, to: { x: medio, y: b.y } });
+  shape.segments.push(...puntaDeFlecha({ x: medio, y: a.y }, { x: medio, y: b.y }));
+  shape.segments.push(...puntaDeFlecha({ x: medio, y: b.y }, { x: medio, y: a.y }));
+
+  if (!style.showLabels || !prices || prices.length < 2 || !formatPrice) return shape;
+
+  const delta = new Decimal(prices[1]).minus(prices[0]);
+  const pct = prices[0] === 0 ? null : delta.dividedBy(prices[0]).times(100);
+  shape.labels.push({
+    at: { x: medio + 6, y: (a.y + b.y) / 2 },
+    text: `${delta.isNegative() ? "" : "+"}${formatPrice(delta.toNumber())}${
+      pct ? `  (${pct.toFixed(2)}%)` : ""
+    }`,
+    align: "left",
+    baseline: "middle",
+  });
+  return shape;
+}
+
+/** El rango de fechas: cuánto duró, en velas y en tiempo de reloj. */
+function rangoDeFechas({ points, style, times, barSeconds }: BuildParams): Shape {
+  const [a, b] = points;
+  if (!b) return vacio();
+
+  const shape = vacio();
+  const y0 = Math.min(a.y, b.y);
+  const y1 = Math.max(a.y, b.y);
+  const medio = (y0 + y1) / 2;
+
+  shape.polygons.push({
+    points: [
+      { x: a.x, y: y0 },
+      { x: b.x, y: y0 },
+      { x: b.x, y: y1 },
+      { x: a.x, y: y1 },
+    ],
+    filled: style.fill,
+  });
+  shape.segments.push({ from: { x: a.x, y: medio }, to: { x: b.x, y: medio } });
+  shape.segments.push(...puntaDeFlecha({ x: a.x, y: medio }, { x: b.x, y: medio }));
+  shape.segments.push(...puntaDeFlecha({ x: b.x, y: medio }, { x: a.x, y: medio }));
+
+  if (!style.showLabels || !times || times.length < 2) return shape;
+
+  const segundos = Math.abs(times[1] - times[0]);
+  const partes: string[] = [];
+  if (barSeconds && barSeconds > 0) {
+    const velas = Math.round(segundos / barSeconds);
+    partes.push(`${velas} ${velas === 1 ? "vela" : "velas"}`);
+  }
+  partes.push(duracionLegible(segundos));
+
+  shape.labels.push({
+    at: { x: (a.x + b.x) / 2, y: medio - 6 },
+    text: partes.join("  ·  "),
+    align: "center",
+  });
+  return shape;
+}
+
+/** Una duración en segundos dicha como la diría una persona. */
+export function duracionLegible(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos));
+  if (s < 60) return `${s} s`;
+  const minutos = Math.round(s / 60);
+  if (minutos < 60) return `${minutos} min`;
+  const horas = s / 3600;
+  if (horas < 48) return `${horas.toFixed(horas < 10 ? 1 : 0)} h`;
+  return `${Math.round(horas / 24)} d`;
+}
+
+// ----------------------------------------------------------- anotaciones
+
+/** Texto suelto sobre el gráfico. */
+function texto({ points, style }: BuildParams): Shape {
+  const [a] = points;
+  const shape = vacio();
+  // Sin texto todavía no hay nada que pintar, pero sí que marcar: si no, un
+  // dibujo recién puesto parece que no se guardó.
+  const contenido = style.textLabel || "Texto…";
+  shape.labels.push({ at: a, text: contenido, align: "center", baseline: "middle" });
+  return shape;
+}
+
+/** Nota y etiqueta de precio: el mismo recuadro, distinto contenido. */
+function notaEnmarcada({ tool, points, style, prices, formatPrice }: BuildParams): Shape {
+  const [a] = points;
+  const shape = vacio();
+
+  const contenido =
+    tool === "PRICE_LABEL"
+      ? [prices && formatPrice ? formatPrice(prices[0]) : null, style.textLabel]
+          .filter(Boolean)
+          .join("  ")
+      : style.textLabel || "Nota…";
+
+  shape.polygons.push(recuadroDeTexto(a, contenido, style));
+  shape.labels.push({ at: a, text: contenido, align: "center", baseline: "middle" });
+  return shape;
+}
+
+/** La llamada: el recuadro en el segundo punto, apuntando al primero. */
+function llamada({ points, style }: BuildParams): Shape {
+  const [objetivo, caja] = points;
+  if (!caja) return vacio();
+
+  const shape = vacio();
+  const contenido = style.textLabel || "Llamada…";
+  shape.segments.push({ from: caja, to: objetivo, emphasis: "SECONDARY" });
+  shape.segments.push(...puntaDeFlecha(caja, objetivo));
+  shape.polygons.push(recuadroDeTexto(caja, contenido, style));
+  shape.labels.push({ at: caja, text: contenido, align: "center", baseline: "middle" });
+  return shape;
+}
+
+/** El banderín: un mástil y un triángulo, con el texto al lado. */
+function banderin({ points, style }: BuildParams): Shape {
+  const [a] = points;
+  const shape = vacio();
+  const alto = style.fontSize * 1.6;
+  const ancho = style.fontSize * 1.3;
+
+  shape.segments.push({ from: a, to: { x: a.x, y: a.y - alto * 1.6 } });
+  shape.polygons.push({
+    points: [
+      { x: a.x, y: a.y - alto * 1.6 },
+      { x: a.x + ancho, y: a.y - alto * 1.3 },
+      { x: a.x, y: a.y - alto },
+    ],
+    filled: style.fill,
+  });
+  if (style.textLabel) {
+    shape.labels.push({
+      at: { x: a.x + ancho + 4, y: a.y - alto * 1.3 },
+      text: style.textLabel,
+      align: "left",
+      baseline: "middle",
+    });
+  }
+  return shape;
+}
+
+/**
  * La proyección: de dónde viene, dónde está y a dónde se cree que va.
  *
  * El tercer punto es la previsión, y se dibuja con una flecha para que se
@@ -688,17 +1327,7 @@ function proyeccion({ points, style, prices, formatPrice }: BuildParams): Shape 
 
   shape.segments.push({ from: b, to: c, emphasis: "SECONDARY" });
 
-  // La punta de flecha, como dos segmentos: no hace falta un polígono para
-  // algo que se ve a doce píxeles.
-  const angulo = Math.atan2(c.y - b.y, c.x - b.x);
-  const largo = 10;
-  for (const giro of [Math.PI * 0.85, -Math.PI * 0.85]) {
-    shape.segments.push({
-      from: c,
-      to: { x: c.x + largo * Math.cos(angulo + giro), y: c.y + largo * Math.sin(angulo + giro) },
-      emphasis: "SECONDARY",
-    });
-  }
+  shape.segments.push(...puntaDeFlecha(b, c, 10));
 
   if (style.fill) {
     shape.polygons.push({ points: [a, b, c], filled: true });

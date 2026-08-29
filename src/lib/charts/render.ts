@@ -83,7 +83,7 @@ export function renderShape(
 
   if (shape.labels.length > 0) {
     ctx.setLineDash([]);
-    ctx.font = "11px ui-monospace, monospace";
+    ctx.font = `${style.fontSize}px ui-monospace, monospace`;
     ctx.fillStyle = labelColor ?? style.color;
     for (const label of shape.labels) {
       ctx.textAlign = label.align ?? "left";

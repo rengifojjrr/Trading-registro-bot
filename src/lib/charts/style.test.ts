@@ -21,7 +21,10 @@ describe("el catálogo de herramientas", () => {
     // colocar.
     for (const t of TOOLS) {
       expect(t.points, `${t.id} sin puntos`).toBeGreaterThanOrEqual(1);
-      expect(t.points, `${t.id} con demasiados puntos`).toBeLessThanOrEqual(5);
+      // El tope es el de la más larga que hay (tres impulsos, siete) y el que
+      // acepta la API. Subirlo aquí sin subirlo allí guardaría dibujos que la
+      // API rechaza.
+      expect(t.points, `${t.id} con demasiados puntos`).toBeLessThanOrEqual(7);
     }
   });
 
