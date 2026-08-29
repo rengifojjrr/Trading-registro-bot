@@ -1245,6 +1245,37 @@ export interface Database {
        * las da juntas y tirarlas obligaría a volver a pedir permiso el día que
        * se quiera mandar contenido.
        */
+      /** Lo que hay que comprar y no viene de ninguna comida planificada. */
+      shopping_extras: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          quantity: string | null;
+          unit: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          quantity?: string | number | null;
+          unit?: string | null;
+        },
+        { name?: string; quantity?: string | number | null; unit?: string | null }
+      >;
+      /**
+       * Lo que ya está en el carro.
+       *
+       * La clave es el nombre normalizado y no un identificador de fila: la
+       * lista se recalcula de las comidas planificadas en cada carga, así que
+       * las filas no sobreviven de una a la siguiente y el nombre sí.
+       */
+      shopping_checked: Table<
+        { user_id: string; item_key: string; checked_at: string },
+        { user_id: string; item_key: string },
+        { checked_at?: string }
+      >;
       push_subscriptions: Table<
         {
           endpoint: string;

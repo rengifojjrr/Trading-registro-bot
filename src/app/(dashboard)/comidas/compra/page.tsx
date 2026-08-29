@@ -10,6 +10,14 @@ import { BarSeries, RankSeries } from "@/core/ui/charts";
 import { userTimezone } from "@/core/user-settings";
 import { buildShoppingList, formatShoppingAmount } from "@/modules/meals/domain/meals";
 import {
+  guessAisle,
+  normaliseName,
+  type ShoppingLine,
+} from "@/modules/meals/domain/shopping";
+import { ShoppingList } from "@/modules/meals/ui/shopping-list";
+import { requireUser } from "@/lib/auth/require-user";
+import { createClient } from "@/lib/supabase/server";
+import {
   commonIngredients,
   countsByType,
   repeatedMeals,
@@ -35,6 +43,8 @@ export default async function ShoppingPage({
 }: {
   searchParams: Promise<{ dias?: string }>;
 }) {
+  const user = await requireUser();
+  const supabase = await createClient();
   const timezone = await userTimezone();
   const today = todayIn(timezone);
   const { dias } = await searchParams;
@@ -46,7 +56,33 @@ export default async function ShoppingPage({
   const rows = await fetchMeals(shiftDate(today, -HISTORY_DAYS), shiftDate(today, horizon));
 
   const upcoming = rows.filter((m) => m.meal_date >= today && m.meal_date <= shiftDate(today, horizon));
-  const shopping = buildShoppingList(upcoming.flatMap((m) => m.ingredients));
+
+  // Lo añadido a mano entra en la misma suma que lo de las comidas: si la
+  // semana pide dos litros de leche y además apuntaste uno, la lista tiene que
+  // decir tres, no dos y uno por separado.
+  const [{ data: extras }, { data: marcados }] = await Promise.all([
+    supabase.from("shopping_extras").select("id, name, quantity, unit").eq("user_id", user.id),
+    supabase.from("shopping_checked").select("item_key").eq("user_id", user.id),
+  ]);
+
+  const shopping = buildShoppingList([
+    ...upcoming.flatMap((m) => m.ingredients),
+    ...(extras ?? []).map((e) => ({
+      name: e.name,
+      quantity: e.quantity === null ? null : Number(e.quantity),
+      unit: e.unit,
+    })),
+  ]);
+
+  const nombresExtra = new Set((extras ?? []).map((e) => normaliseName(e.name)));
+
+  const lineas: ShoppingLine[] = shopping.map((item) => ({
+    key: normaliseName(item.name),
+    name: item.name,
+    amount: formatShoppingAmount(item),
+    aisle: guessAisle(item.name),
+    extra: nombresExtra.has(normaliseName(item.name)),
+  }));
 
   const history: AnalysableMeal[] = rows
     .filter((m) => m.meal_date <= today)
@@ -89,8 +125,9 @@ export default async function ShoppingPage({
               Lista de la compra
             </CardTitle>
             <CardDescription>
-              De todo lo planificado desde hoy. Las cantidades se suman por unidad, nunca entre
-              unidades distintas: 200 g y 2 ud no son 202 de nada.
+              De todo lo planificado desde hoy, más lo que añadas a mano. Agrupada por zona de la
+              tienda para no cruzarla seis veces, y con lo comprado marcable: el estado se guarda,
+              así que planificarlo en el ordenador y tacharlo en el móvil es lo mismo.
             </CardDescription>
           </div>
 
@@ -112,26 +149,21 @@ export default async function ShoppingPage({
           </div>
         </CardHeader>
         <CardContent>
-          {shopping.length === 0 ? (
+          {lineas.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nada que comprar todavía. Planifica comidas con ingredientes en{" "}
               <Link href="/comidas/semana" className="underline underline-offset-4">
                 la semana
               </Link>{" "}
-              y aquí se juntan solas.
+              y aquí se juntan solas. También puedes añadir cosas sueltas.
             </p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-border text-sm">
-              {shopping.map((item) => (
-                <li key={item.name} className="flex items-center justify-between gap-4 py-2">
-                  <span>{item.name}</span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {formatShoppingAmount(item)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : null}
+
+          <ShoppingList
+            lines={lineas}
+            checked={(marcados ?? []).map((m) => m.item_key)}
+            extras={(extras ?? []).map((e) => ({ id: e.id, name: e.name }))}
+          />
         </CardContent>
       </Card>
 
