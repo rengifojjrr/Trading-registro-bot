@@ -1,7 +1,7 @@
 import { Decimal } from "decimal.js";
 
 import type { DrawingStyle } from "./style";
-import { WAVE_DEGREES } from "./style";
+import { REWARD_FILL, RISK_FILL, WAVE_DEGREES, zoneFill } from "./style";
 import type { ToolId } from "./tools";
 
 /**
@@ -42,6 +42,14 @@ export interface Polygon {
   points: Point[];
   /** Rellenar con el color de relleno, no sólo el borde. */
   filled: boolean;
+  /**
+   * Un relleno propio, distinto del color del dibujo.
+   *
+   * Lo usa la posición, cuyas dos zonas tienen que ser rojo y verde aunque la
+   * herramienta sea de otro color: si comparten color no se ve dónde acaba el
+   * riesgo y empieza el beneficio, que es lo único que la herramienta enseña.
+   */
+  fillColor?: string;
 }
 
 export interface Shape {
@@ -1014,7 +1022,9 @@ function posicion({ points, style, width, prices, formatPrice }: BuildParams): S
   const x1 = Math.max(entrada.x + 40, width * 0.6);
 
   // Dos zonas: la del riesgo y la del beneficio. Se pintan aunque `fill` esté
-  // apagado porque son la herramienta, no un adorno.
+  // apagado porque son la herramienta, no un adorno, y cada una con su color
+  // -- rojo el riesgo, verde el beneficio -- porque con un color común la
+  // figura es un rectángulo liso en el que no se distingue una de otra.
   shape.polygons.push({
     points: [
       { x: x0, y: entrada.y },
@@ -1023,6 +1033,7 @@ function posicion({ points, style, width, prices, formatPrice }: BuildParams): S
       { x: x0, y: stop.y },
     ],
     filled: true,
+    fillColor: zoneFill(RISK_FILL, style.fillOpacity),
   });
   shape.polygons.push({
     points: [
@@ -1032,6 +1043,7 @@ function posicion({ points, style, width, prices, formatPrice }: BuildParams): S
       { x: x0, y: objetivo.y },
     ],
     filled: true,
+    fillColor: zoneFill(REWARD_FILL, style.fillOpacity),
   });
 
   for (const [punto, etiqueta] of [
@@ -1061,8 +1073,15 @@ function posicion({ points, style, width, prices, formatPrice }: BuildParams): S
   }
 
   if (style.riskReward && calculo) {
+    // Una línea por encima de todo lo demás, no junto a la entrada: ahí
+    // chocaba con «Entrada 68000», que va en la misma línea, y en un gráfico
+    // estrecho las dos quedaban ilegibles una encima de la otra. El margen es
+    // el propio cuerpo de letra, así que sigue separado si se agranda.
     shape.labels.push({
-      at: { x: x1 - 6, y: entrada.y - 6 },
+      at: {
+        x: x1 - 6,
+        y: Math.min(entrada.y, stop.y, objetivo.y) - style.fontSize - 8,
+      },
       text: calculo.summary,
       align: "right",
     });

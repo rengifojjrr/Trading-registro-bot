@@ -41,6 +41,22 @@ export const WAVE_DEGREES = {
 
 export type WaveDegree = keyof typeof WAVE_DEGREES;
 
+/**
+ * Las dos zonas de una posición: lo que se arriesga y lo que se puede ganar.
+ *
+ * Rojo y verde pase lo que pase, y no el color de la herramienta: si las dos
+ * zonas comparten color, una posición corta es un rectángulo rojo entero en el
+ * que no se ve dónde acaba el stop y dónde empieza el objetivo -- que es
+ * justamente lo único que la herramienta existe para enseñar.
+ */
+export const RISK_FILL = "#ef4444";
+export const REWARD_FILL = "#22c55e";
+
+/** El mismo color con la opacidad que se le pida, para las zonas. */
+export function zoneFill(hex: string, opacity: number): string {
+  return withOpacity(hex, opacity);
+}
+
 export const WAVE_DEGREE_LABELS: Record<WaveDegree, string> = {
   MINOR: "Menor (1-5)",
   INTERMEDIATE: "Intermedio ((1)-(5))",
@@ -221,9 +237,13 @@ export function hasParam(tool: ToolId, param: ParamId): boolean {
 
 /** El color con la opacidad del relleno aplicada, listo para el canvas. */
 export function fillColor(style: DrawingStyle): string {
-  const alpha = Math.min(100, Math.max(0, style.fillOpacity)) / 100;
-  const hex = style.color.replace("#", "");
-  if (hex.length !== 6) return style.color;
+  return withOpacity(style.color, style.fillOpacity);
+}
+
+function withOpacity(color: string, opacity: number): string {
+  const alpha = Math.min(100, Math.max(0, opacity)) / 100;
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) return color;
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);

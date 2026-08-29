@@ -618,3 +618,39 @@ describe("el rango de precio", () => {
     expect(shape.segments).toHaveLength(5);
   });
 });
+
+describe("las zonas de una posición", () => {
+  const pos = (tool: "LONG_POSITION" | "SHORT_POSITION") =>
+    build(tool, [p(100, 200), p(100, 260), p(100, 120)], {}, [68000, 67900, 68200]);
+
+  it("el riesgo va en rojo y el beneficio en verde, no del color de la herramienta", () => {
+    // Con un color común la figura es un rectángulo liso: no se ve dónde acaba
+    // el stop y empieza el objetivo, que es lo único que la herramienta enseña.
+    for (const tool of ["LONG_POSITION", "SHORT_POSITION"] as const) {
+      const [riesgo, beneficio] = pos(tool).polygons;
+      expect(riesgo.fillColor, tool).toContain("239, 68, 68");
+      expect(beneficio.fillColor, tool).toContain("34, 197, 94");
+    }
+  });
+
+  it("los colores de zona no cambian aunque se cambie el color del dibujo", () => {
+    const shape = build(
+      "LONG_POSITION",
+      [p(100, 200), p(100, 260), p(100, 120)],
+      { color: "#a855f7" },
+      [68000, 67900, 68200],
+    );
+    expect(shape.polygons[0].fillColor).toContain("239, 68, 68");
+  });
+
+  it("la relación beneficio/riesgo no se pisa con la etiqueta de la entrada", () => {
+    // Antes iba en la misma línea que «Entrada 68000» y las dos quedaban
+    // ilegibles una encima de la otra.
+    const shape = pos("LONG_POSITION");
+    const resumen = shape.labels.find((l) => l.text.includes("R:R"));
+    const entrada = shape.labels.find((l) => l.text.startsWith("Entrada"));
+    expect(resumen).toBeDefined();
+    expect(entrada).toBeDefined();
+    expect(resumen!.at.y).toBeLessThan(entrada!.at.y - 4);
+  });
+});

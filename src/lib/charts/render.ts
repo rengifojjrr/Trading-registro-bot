@@ -53,9 +53,15 @@ export function renderShape(
     ctx.moveTo(poly.points[0].x, poly.points[0].y);
     for (const p of poly.points.slice(1)) ctx.lineTo(p.x, p.y);
     ctx.closePath();
-    if (poly.filled) ctx.fill();
+    if (poly.filled) {
+      // Un relleno propio si la figura lo pide -- las zonas de riesgo y
+      // beneficio de una posición -- y el del dibujo en cualquier otro caso.
+      ctx.fillStyle = poly.fillColor ?? fillColor(style);
+      ctx.fill();
+    }
     ctx.stroke();
   }
+  ctx.fillStyle = fillColor(style);
 
   for (const el of shape.ellipses) {
     ctx.beginPath();
@@ -81,6 +87,27 @@ export function renderShape(
     ctx.stroke();
   }
 
+  // Los tiradores antes que el texto, y no después: en las anotaciones el
+  // punto de anclaje *es* el centro del texto, así que un tirador pintado
+  // encima tapa una letra justo cuando el dibujo se acaba de crear y está
+  // seleccionado -- que es cuando más se mira.
+  if (handles && handles.length > 0) {
+    ctx.setLineDash([]);
+    ctx.fillStyle = style.color;
+    ctx.lineWidth = 1.5;
+    for (const h of handles) {
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      // El anillo separa el tirador de la vela que tenga debajo; sin fondo
+      // conocido se queda sólo el punto, que se ve igual, sólo que peor.
+      if (haloColor) {
+        ctx.strokeStyle = haloColor;
+        ctx.stroke();
+      }
+    }
+  }
+
   if (shape.labels.length > 0) {
     ctx.setLineDash([]);
     ctx.font = `${style.fontSize}px ui-monospace, monospace`;
@@ -98,23 +125,6 @@ export function renderShape(
         ctx.restore();
       }
       ctx.fillText(label.text, label.at.x, label.at.y);
-    }
-  }
-
-  if (handles && handles.length > 0) {
-    ctx.setLineDash([]);
-    ctx.fillStyle = style.color;
-    ctx.lineWidth = 1.5;
-    for (const h of handles) {
-      ctx.beginPath();
-      ctx.arc(h.x, h.y, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-      // El anillo separa el tirador de la vela que tenga debajo; sin fondo
-      // conocido se queda sólo el punto, que se ve igual, sólo que peor.
-      if (haloColor) {
-        ctx.strokeStyle = haloColor;
-        ctx.stroke();
-      }
     }
   }
 

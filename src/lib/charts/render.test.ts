@@ -159,3 +159,63 @@ describe("el contorno de las etiquetas", () => {
     expect(new Set(trazos)).toEqual(new Set([style.color]));
   });
 });
+
+describe("el orden de pintado", () => {
+  it("el texto se pinta después de los tiradores", () => {
+    // En una anotación el punto de anclaje *es* el centro del texto: un
+    // tirador pintado encima tapa una letra justo cuando el dibujo se acaba de
+    // crear y está seleccionado, que es cuando más se mira.
+    const orden: string[] = [];
+    const ctx = {
+      save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+      ellipse() {}, quadraticCurveTo() {}, setLineDash() {}, stroke() {}, strokeText() {},
+      arc() { orden.push("tirador"); },
+      fill() {},
+      fillText() { orden.push("texto"); },
+      strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
+      font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D;
+
+    const style = defaultStyle("NOTE");
+    const shape = buildShape({
+      tool: "NOTE",
+      points: [{ x: 200, y: 200 }],
+      style: { ...style, textLabel: "hola" },
+      width: 800,
+      height: 400,
+    });
+    renderShape(ctx, shape, style, { handles: [{ x: 200, y: 200 }] });
+
+    expect(orden).toEqual(["tirador", "texto"]);
+  });
+
+  it("una zona con relleno propio no se pinta del color del dibujo", () => {
+    const pintados: string[] = [];
+    const ctx = {
+      save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+      arc() {}, ellipse() {}, quadraticCurveTo() {}, setLineDash() {}, stroke() {},
+      strokeText() {}, fillText() {},
+      fill() { pintados.push(String(ctx.fillStyle)); },
+      strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
+      font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D & { fillStyle: string };
+
+    const style = defaultStyle("LONG_POSITION");
+    const shape = buildShape({
+      tool: "LONG_POSITION",
+      points: [
+        { x: 100, y: 200 },
+        { x: 100, y: 260 },
+        { x: 100, y: 120 },
+      ],
+      style,
+      width: 800,
+      height: 400,
+      prices: [68000, 67900, 68200],
+    });
+    renderShape(ctx, shape, style);
+
+    expect(pintados[0]).toContain("239, 68, 68");
+    expect(pintados[1]).toContain("34, 197, 94");
+  });
+});
