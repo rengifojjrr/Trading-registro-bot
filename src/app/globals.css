@@ -388,3 +388,70 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ------------------------------------------------------------- impresión
+ *
+ * No había ni una regla de impresión. La revisión semanal y el reporte
+ * mensual son justo lo que uno querría en papel o en PDF, y salían con la
+ * barra lateral, la de abajo, los botones y los avisos incluidos --media hoja
+ * de interfaz alrededor de las cifras--.
+ *
+ * Se imprime lo que se lee y nada más. Los colores del tema se fuerzan a
+ * blanco y negro: un fondo oscuro impreso es una hoja negra, y en pantalla se
+ * ve bien justamente porque no es papel.
+ */
+@media print {
+  /* Fuera todo lo que sirve para navegar o actuar: en papel no se pulsa. */
+  nav,
+  header.sticky,
+  [data-print="hide"],
+  button,
+  [role="dialog"],
+  [role="alert"] {
+    display: none !important;
+  }
+
+  :root {
+    --background: #ffffff;
+    --foreground: #111111;
+    --card: #ffffff;
+    --card-foreground: #111111;
+    --muted-foreground: #444444;
+    --border: #cccccc;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  /* Sin sombras ni fondos de color: en una impresora cuestan tinta y no
+     aportan nada, y en blanco y negro se convierten en manchas grises. */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Una tarjeta partida entre dos hojas obliga a pasar página a mitad de una
+     cifra y su etiqueta. */
+  section,
+  article,
+  table,
+  [data-print="keep"] {
+    break-inside: avoid;
+  }
+
+  /* Las tablas anchas se desplazaban de lado en pantalla; en papel eso
+     esconde columnas para siempre. */
+  [class*="overflow-x-auto"] {
+    overflow: visible !important;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}

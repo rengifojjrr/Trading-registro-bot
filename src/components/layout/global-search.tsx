@@ -6,7 +6,9 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { SEARCH_EVENT } from "@/components/layout/search-event";
 
+import { interpret } from "@/lib/search/interpret";
 import { KIND_LABELS, type RankedResult } from "@/lib/search/rank";
+import { pushRecent, readRecents, type RecentEntry } from "@/lib/search/recents";
 import { searchEverything } from "@/lib/search/query";
 
 /**
@@ -26,6 +28,16 @@ export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<RankedResult[]>([]);
+  /**
+   * Lo último que se abrió, para no enseñar un campo vacío.
+   *
+   * Se lee en el inicializador y no en un efecto: leer del navegador durante
+   * el primer render del cliente es correcto y evita el parpadeo de pintar la
+   * lista vacía antes de la de verdad.
+   */
+  const [recientes, setRecientes] = useState<RecentEntry[]>(() =>
+    typeof window === "undefined" ? [] : readRecents(window.localStorage),
+  );
   const [active, setActive] = useState(0);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,9 +90,26 @@ export function GlobalSearch() {
   }, [query, open]);
 
   function go(result: RankedResult) {
+    // Se apunta antes de navegar, no después: al navegar este componente se
+    // desmonta y lo de después no llegaría a correr.
+    if (result.kind !== "action" && result.kind !== "page") {
+      setRecientes(pushRecent(window.localStorage, result));
+    }
     close();
     router.push(result.href);
   }
+
+  /**
+   * La interpretación de lo escrito: una fecha, una cifra, o texto.
+   *
+   * Derivada en el render y no en estado: depende sólo de lo escrito, y
+   * guardarla en estado sería mantener dos copias de lo mismo que se pueden
+   * desincronizar entre teclas.
+   */
+  const interpretacion = interpret(query, new Date().toISOString().slice(0, 10));
+
+  /** Lo que ofrecer cuando el campo está vacío: lo último que se abrió. */
+  const mostrarRecientes = query.trim() === "" && recientes.length > 0;
 
   if (!open) {
     return (
@@ -140,6 +169,58 @@ export function GlobalSearch() {
             }}
           />
         </div>
+
+        {/* Una fecha o una cifra escritas se ofrecen como un salto directo,
+            además de buscarse como texto. «12 de agosto» no es una palabra que
+            aparezca en ninguna nota, y sin esto no encontraba nada. */}
+        {interpretacion.kind !== "TEXTO" ? (
+          <button
+            type="button"
+            onClick={() => {
+              close();
+              router.push(
+                interpretacion.kind === "FECHA"
+                  ? `/dia/${interpretacion.date}`
+                  : `/trades?pnlMin=${interpretacion.amount}&pnlMax=${interpretacion.amount}`,
+              );
+            }}
+            className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left text-sm hover:bg-muted"
+          >
+            <span className="w-20 shrink-0 text-xs uppercase tracking-wide text-primary">
+              {interpretacion.kind === "FECHA" ? "Ir al día" : "Importe"}
+            </span>
+            <span className="min-w-0 flex-1 truncate">
+              {interpretacion.kind === "FECHA"
+                ? `Ver todo lo del ${interpretacion.label}`
+                : `Buscar ${interpretacion.label} en las operaciones`}
+            </span>
+          </button>
+        ) : null}
+
+        {mostrarRecientes ? (
+          <ul className="max-h-[50vh] overflow-y-auto py-1">
+            <li className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Lo último que abriste
+            </li>
+            {recientes.map((reciente) => (
+              <li key={`${reciente.kind}-${reciente.id}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    close();
+                    router.push(reciente.href);
+                  }}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                >
+                  <span className="w-20 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
+                    {KIND_LABELS[reciente.kind]}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{reciente.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         {query.trim().length >= 2 && results.length === 0 && !isPending ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">

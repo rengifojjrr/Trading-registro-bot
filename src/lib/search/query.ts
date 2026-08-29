@@ -3,7 +3,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
-import { pageResults, rankResults, type RankedResult, type SearchResult } from "./rank";
+import { actionResults, pageResults, rankResults, type RankedResult, type SearchResult } from "./rank";
 
 /**
  * Lo que hay en toda la aplicación que encaje con lo escrito.
@@ -31,7 +31,24 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
   // lecturas y contenido no se encontraban de ninguna forma. «Buscar en todo»
   // que solo busca en un cuarto de la aplicación es peor que no tenerlo,
   // porque enseña que lo que no aparece no está.
-  const [trades, journals, strategies, tags, tasks, meals, readings, contents, habits] =
+  // Faltaban las noches, las sesiones de lectura y los comentarios de una
+  // operación. Los dos últimos son donde vive la mitad de lo que uno escribe
+  // -- el resumen de un libro, la discusión sobre una operación -- y no se
+  // encontraban de ninguna forma.
+  const [
+    trades,
+    journals,
+    strategies,
+    tags,
+    tasks,
+    meals,
+    readings,
+    contents,
+    habits,
+    sleeps,
+    sessions,
+    comments,
+  ] =
     await Promise.all([
     supabase
       .from("trades")
@@ -89,9 +106,30 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       .is("archived_at", null)
       .ilike("name", patron)
       .limit(10),
+    supabase
+      .from("sleep_entries")
+      .select("id, sleep_date, notes, duration_minutes")
+      .eq("user_id", user.id)
+      .ilike("notes", patron)
+      .order("sleep_date", { ascending: false })
+      .limit(10),
+    supabase
+      .from("reading_sessions")
+      .select("id, session_date, summary, minutes")
+      .eq("user_id", user.id)
+      .ilike("summary", patron)
+      .order("session_date", { ascending: false })
+      .limit(10),
+    supabase
+      .from("trade_comments")
+      .select("id, trade_id, body, created_at")
+      .eq("user_id", user.id)
+      .ilike("body", patron)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
-  const candidatos: SearchResult[] = [...pageResults()];
+  const candidatos: SearchResult[] = [...pageResults(), ...actionResults()];
 
   for (const t of trades.data ?? []) {
     candidatos.push({
@@ -197,6 +235,44 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       subtitle: "Hábito",
       href: `/habitos/${h.id}`,
       haystack: h.name,
+    });
+  }
+
+  for (const noche of sleeps.data ?? []) {
+    const horas = noche.duration_minutes === null ? null : (noche.duration_minutes / 60).toFixed(1);
+    candidatos.push({
+      kind: "sleep",
+      id: noche.id,
+      title: horas ? `Noche del ${noche.sleep_date} · ${horas} h` : `Noche del ${noche.sleep_date}`,
+      subtitle: noche.notes ? firstLine(noche.notes) : undefined,
+      href: `/sueno/historial/${noche.id}`,
+      haystack: `${noche.sleep_date} ${noche.notes ?? ""}`,
+    });
+  }
+
+  for (const sesion of sessions.data ?? []) {
+    candidatos.push({
+      kind: "reading",
+      id: sesion.id,
+      title: sesion.minutes
+        ? `Lectura del ${sesion.session_date} · ${sesion.minutes} min`
+        : `Lectura del ${sesion.session_date}`,
+      subtitle: sesion.summary ? firstLine(sesion.summary) : undefined,
+      href: `/lecturas/${sesion.id}`,
+      haystack: `${sesion.session_date} ${sesion.summary ?? ""}`,
+    });
+  }
+
+  for (const comentario of comments.data ?? []) {
+    candidatos.push({
+      kind: "journal",
+      id: comentario.id,
+      // Se enseña como lo que es -- un comentario -- pero lleva a la
+      // operación: un comentario suelto, fuera de ella, no dice nada.
+      title: "Comentario en una operación",
+      subtitle: firstLine(comentario.body),
+      href: `/trades/${comentario.trade_id}`,
+      haystack: comentario.body,
     });
   }
 

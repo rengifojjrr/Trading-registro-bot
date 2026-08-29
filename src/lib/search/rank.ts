@@ -21,7 +21,10 @@ export type ResultKind =
   | "meal"
   | "reading"
   | "content"
-  | "habit";
+  | "habit"
+  // La paleta deja de sólo navegar: «apuntar una tarea» o «sincronizar ahora»
+  // son el camino más corto para la mitad de lo que se hace a diario.
+  | "action";
 
 export interface SearchResult {
   kind: ResultKind;
@@ -131,6 +134,56 @@ export function pageResults(): SearchResult[] {
   }));
 }
 
+/**
+ * Las acciones que la paleta puede ejecutar, no sólo llevar.
+ *
+ * Deliberadamente cortas: cuatro cosas que se hacen a diario y que ahora
+ * cuestan tres clics. Una lista larga de acciones convierte el buscador en un
+ * menú, que es exactamente lo que la paleta viene a sustituir.
+ *
+ * `href` lleva a la pantalla con el trabajo ya empezado --un parámetro que
+ * abre el formulario-- en vez de ejecutar algo desde el buscador. Es lo que
+ * permite que la acción sea reversible: llegas al sitio, ves lo que va a
+ * pasar, y decides.
+ */
+export const ACTIONS: { id: string; title: string; href: string; keywords: string }[] = [
+  {
+    id: "nueva-tarea",
+    title: "Apuntar una tarea",
+    href: "/tareas?nueva=1",
+    keywords: "tarea nueva apuntar todo pendiente crear añadir",
+  },
+  {
+    id: "marcar-habitos",
+    title: "Marcar los hábitos de hoy",
+    href: "/habitos",
+    keywords: "habito habitos marcar hoy racha",
+  },
+  {
+    id: "sincronizar",
+    title: "Sincronizar con Coinbase ahora",
+    href: "/settings?sincronizar=1",
+    keywords: "sincronizar sync coinbase actualizar traer operaciones",
+  },
+  {
+    id: "apuntar-operaciones",
+    title: "Apuntar las operaciones sin diario",
+    href: "/journal",
+    keywords: "diario apuntar operaciones bandeja pendientes journal",
+  },
+];
+
+export function actionResults(): SearchResult[] {
+  return ACTIONS.map((a) => ({
+    kind: "action" as const,
+    id: a.id,
+    title: a.title,
+    href: a.href,
+    haystack: `${a.title} ${a.keywords}`,
+    subtitle: "Hacerlo",
+  }));
+}
+
 export const KIND_LABELS: Record<ResultKind, string> = {
   trade: "Operación",
   journal: "Diario",
@@ -143,4 +196,5 @@ export const KIND_LABELS: Record<ResultKind, string> = {
   reading: "Lectura",
   content: "Contenido",
   habit: "Hábito",
+  action: "Acción",
 };

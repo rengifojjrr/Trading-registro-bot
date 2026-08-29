@@ -12,6 +12,8 @@ import { longDateLabel, todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { gatherPending } from "@/lib/pending/gather";
+import { readSystemHealth } from "@/lib/pending/setup";
+import { SetupPanel } from "@/components/vida/setup-panel";
 
 import { quickLogReading, quickLogSleep } from "./quick-log-actions";
 
@@ -50,7 +52,7 @@ export default async function TodayPage({
   // días de relleno del mes anterior y el siguiente: si no, esos días
   // saldrían siempre vacíos aunque tuvieran cosas.
   const grid = monthGrid(month).flat();
-  const [metrics, markers, pending] = await Promise.all([
+  const [metrics, markers, pending, health] = await Promise.all([
     readDayMetrics(today),
     grid.length > 0
       ? fetchMarkers(grid[0].date, grid[grid.length - 1].date)
@@ -59,6 +61,9 @@ export default async function TodayPage({
     // Panel: cada sitio contestaba su parte y ninguno contestaba «¿qué me
     // falta?», que es la pregunta que se hace al abrir la aplicación.
     gatherPending(),
+    // Lo que falta por configurar el primer día, y si sigue funcionando
+    // cualquier otro. Es la misma lista mirada en dos momentos.
+    readSystemHealth(),
   ]);
 
   const firstName = (user.email ?? "").split("@")[0];
@@ -80,6 +85,8 @@ export default async function TodayPage({
             siguen llevando a su pantalla, que es donde tienen sentido. */}
         <QuickLogSheet acciones={{ sueno: quickLogSleep, lectura: quickLogReading }} />
       </section>
+
+      <SetupPanel health={health} />
 
       {pending.length > 0 ? (
         <section className="flex flex-col gap-3">

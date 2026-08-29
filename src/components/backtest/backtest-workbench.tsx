@@ -353,6 +353,7 @@ function Results({
           value={formatMoney(esperanza)}
           tone={esperanza >= 0 ? "positive" : "negative"}
           sub="lo que se espera ganar cada vez"
+          description="Aciertos × ganadora media − fallos × perdedora media. Es la cifra que de verdad decide si una estrategia sirve: un 30% de aciertos con un ratio de 4 gana más que un 70% con un ratio de 0,3. Positiva significa que repetirla muchas veces da dinero; negativa, que lo quita, por muy alto que sea el porcentaje de aciertos."
         />
         <StatTile
           size="lg"
@@ -366,6 +367,7 @@ function Results({
           value={formatMoney(-Number(metrics.drawdown))}
           tone="negative"
           sub="desde un máximo de la curva"
+          description="Cuánto se perdió entre el mejor momento de la curva y el peor que vino después. No es la peor operación: lo que duele no es una mala, son seis seguidas. Es lo que habría que aguantar sin abandonar la estrategia."
         />
       </div>
 
