@@ -21,11 +21,20 @@ export function CalendarHeatmap({
   month,
   daily,
   buildMonthHref,
+  buildDayHref,
 }: {
   /** "YYYY-MM", already in the account's configured timezone. */
   month: string;
   daily: DailyPnl[];
   buildMonthHref: (month: string) => string;
+  /**
+   * A dónde lleva pulsar un día. Lo decide quien usa el calendario y no el
+   * calendario: éste es el de trading y tiene que llevar a la ficha de
+   * trading del día, no a la de la vida entera -- que es donde llevaba antes,
+   * y que reparte las operaciones por otra fecha y contestaba que ese día no
+   * había nada.
+   */
+  buildDayHref: (date: string) => string;
 }) {
   const byDate = new Map(daily.map((d) => [d.date, d]));
   const monthStart = DateTime.fromISO(`${month}-01`);
@@ -88,23 +97,18 @@ export function CalendarHeatmap({
           const inMonth = day.month === monthStart.month;
           const pnl = entry ? Number(entry.netPnl) : null;
 
-          return (
-            // La celda entera es el enlace: aquí no hay nada dentro que se
-            // pueda pulsar por separado, a diferencia del calendario de los
-            // módulos de vida.
-            <Link
-              key={iso}
-              href={`/dia/${iso}` as Route}
-              aria-label={`Ver el día ${iso}`}
-              className={cn(
-                "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1 py-1 text-[10px] transition-colors hover:border-foreground/40 sm:px-1.5 sm:text-[11px]",
-                !inMonth && "border-transparent opacity-25",
-                inMonth && pnl === null && "border-border/60",
-                inMonth && pnl !== null && pnl > 0 && "border-positive/30 bg-positive/10",
-                inMonth && pnl !== null && pnl < 0 && "border-negative/30 bg-negative/10",
-                inMonth && pnl === 0 && "border-border bg-muted/40",
-              )}
-            >
+          const className = cn(
+            "flex aspect-square flex-col justify-between overflow-hidden rounded-md border px-1 py-1 text-[10px] transition-colors sm:px-1.5 sm:text-[11px]",
+            !inMonth && "border-transparent opacity-25",
+            inMonth && "hover:border-foreground/40",
+            inMonth && pnl === null && "border-border/60",
+            inMonth && pnl !== null && pnl > 0 && "border-positive/30 bg-positive/10",
+            inMonth && pnl !== null && pnl < 0 && "border-negative/30 bg-negative/10",
+            inMonth && pnl === 0 && "border-border bg-muted/40",
+          );
+
+          const contenido = (
+            <>
               <span className="text-muted-foreground">{day.day}</span>
               {entry ? (
                 <>
@@ -118,6 +122,35 @@ export function CalendarHeatmap({
                   <span className="hidden text-muted-foreground sm:block">{entry.tradesCount} op.</span>
                 </>
               ) : null}
+            </>
+          );
+
+          // Los días del mes de al lado no son enlaces: están al 25% de opacidad
+          // porque no son de este mes, y un enlace que parece apagado es una
+          // trampa. Para llegar a ellos está la flecha de cambiar de mes.
+          if (!inMonth) {
+            return (
+              <div key={iso} className={className} aria-hidden>
+                {contenido}
+              </div>
+            );
+          }
+
+          return (
+            // La celda entera es el enlace: aquí no hay nada dentro que se
+            // pueda pulsar por separado, a diferencia del calendario de los
+            // módulos de vida.
+            <Link
+              key={iso}
+              href={buildDayHref(iso) as Route}
+              aria-label={
+                entry
+                  ? `Ver las ${entry.tradesCount} operaciones del ${iso}`
+                  : `Ver el día ${iso}`
+              }
+              className={className}
+            >
+              {contenido}
             </Link>
           );
         })}

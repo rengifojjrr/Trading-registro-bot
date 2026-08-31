@@ -177,6 +177,38 @@ export async function fetchTradesForTable(filters: TradeFilters = {}): Promise<T
   return (data ?? []) as unknown as TradeTableRow[];
 }
 
+/**
+ * Todo lo que tocó un día: lo que abrió y lo que cerró dentro de la ventana.
+ *
+ * Dos consultas y no un `or(...)` de PostgREST a propósito. Las fechas llevan
+ * `:` y `.`, que dentro de un `or` hay que entrecomillar, y una comilla mal
+ * puesta no da error: filtra otra cosa y devuelve una lista plausible. Dos
+ * `select` que se leen solos y se unen aquí valen el viaje de más.
+ *
+ * `applyFilters` con filtros vacíos no es decorativo: es lo que hereda la
+ * exclusión de las operaciones huérfanas, que ninguna vista debe enseñar.
+ */
+export async function fetchTradesForDay(from: string, to: string): Promise<TradeTableRow[]> {
+  const supabase = await createClient();
+  const base = () => applyFilters(supabase.from("trades").select(TABLE_COLUMNS), {});
+
+  const [abiertas, cerradas] = await Promise.all([
+    base().gte("opened_at", from).lte("opened_at", to),
+    base().gte("closed_at", from).lte("closed_at", to),
+  ]);
+
+  if (abiertas.error) throw new Error(`fetchTradesForDay: ${abiertas.error.message}`);
+  if (cerradas.error) throw new Error(`fetchTradesForDay: ${cerradas.error.message}`);
+
+  // Una operación abierta y cerrada el mismo día sale en las dos consultas.
+  const porId = new Map<string, TradeTableRow>();
+  for (const row of [...(abiertas.data ?? []), ...(cerradas.data ?? [])] as unknown as TradeTableRow[]) {
+    porId.set(row.id, row);
+  }
+
+  return [...porId.values()];
+}
+
 export type { TradePageParams, TradeSortKey };
 
 export interface TradePage {

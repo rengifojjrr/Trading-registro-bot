@@ -1,10 +1,14 @@
 import "server-only";
 
+import { DateTime } from "luxon";
+
+import { splitTradingDay, tradingDayWindow } from "@/lib/analytics/trading-day";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, ProjectColor } from "@/types/database";
 
 import { pieceTouches, taskDays, taskTouches } from "./day-rules";
+import { userTimezone } from "./user-settings";
 
 /**
  * Todo lo que pasó un día, de todos los módulos.
@@ -91,6 +95,15 @@ export interface DayTrade {
   netPnl: number | null;
   openedAt: string;
   closedAt: string | null;
+  /**
+   * Si cerró este día.
+   *
+   * Es lo que decide si su P&L cuenta en el total del día: una operación deja
+   * dinero el día que se cierra. Sin esto, una operación abierta el lunes y
+   * cerrada el jueves sumaría su resultado al lunes, y la ficha del día
+   * contradiría al calendario de trading.
+   */
+  closedThisDay: boolean;
 }
 
 export interface DaySummary {
@@ -121,13 +134,31 @@ export async function fetchDay(date: string): Promise<DaySummary> {
   const user = await requireUser();
   const supabase = await createClient();
 
-  // El día en zona horaria: los instantes de trading se comparan contra un
-  // rango y no contra una fecha, porque `opened_at` lleva hora.
-  const from = `${date}T00:00:00`;
-  const to = `${date}T23:59:59.999`;
+  /**
+   * El día del usuario, en instantes UTC.
+   *
+   * Antes se comparaba `opened_at` -- que es `timestamptz` -- contra
+   * `"2026-08-25T00:00:00"` a secas, o sea contra la medianoche del servidor.
+   * En cualquier zona que no sea UTC eso corre el día unas horas y las
+   * operaciones del principio o del final caían en el día de al lado.
+   */
+  const timezone = await userTimezone();
+  const window = tradingDayWindow(date, timezone);
 
-  const [sleep, habits, marks, tasks, projects, meals, ingredients, reading, books, content, trades] =
-    await Promise.all([
+  const [
+    sleep,
+    habits,
+    marks,
+    tasks,
+    projects,
+    meals,
+    ingredients,
+    reading,
+    books,
+    content,
+    tradesAbiertas,
+    tradesCerradas,
+  ] = await Promise.all([
       supabase
         .from("sleep_entries")
         .select(
@@ -178,14 +209,25 @@ export async function fetchDay(date: string): Promise<DaySummary> {
         .select("id, title, status, icon, planned_date, published_at")
         .eq("user_id", user.id),
 
+      // Dos consultas, porque un día lo tocan dos cosas distintas: lo que se
+      // abrió y lo que se cerró. Buscar sólo por apertura escondía del jueves
+      // la operación que ese día se cerró -- justo la que puso la cifra en la
+      // celda del calendario de trading que te trajo aquí.
       supabase
         .from("trades")
-        .select("id, product_id, direction, status, net_pnl, opened_at, closed_at")
+        .select(TRADE_COLUMNS)
         .eq("user_id", user.id)
         .is("orphaned_at", null)
-        .gte("opened_at", from)
-        .lte("opened_at", to)
-        .order("opened_at", { ascending: true }),
+        .gte("opened_at", window.from)
+        .lte("opened_at", window.to),
+
+      supabase
+        .from("trades")
+        .select(TRADE_COLUMNS)
+        .eq("user_id", user.id)
+        .is("orphaned_at", null)
+        .gte("closed_at", window.from)
+        .lte("closed_at", window.to),
     ]);
 
   const doneHabits = new Set((marks.data ?? []).map((m) => m.habit_id));
@@ -274,16 +316,44 @@ export async function fetchDay(date: string): Promise<DaySummary> {
       })
       .filter((c): c is DayContent => c !== null),
 
-    trades: (trades.data ?? []).map((t) => ({
-      id: t.id,
-      productId: t.product_id,
-      direction: t.direction,
-      status: t.status,
-      netPnl: t.net_pnl === null ? null : Number(t.net_pnl),
-      openedAt: t.opened_at,
-      closedAt: t.closed_at,
-    })),
+    trades: dayTrades(
+      [...(tradesAbiertas.data ?? []), ...(tradesCerradas.data ?? [])],
+      window,
+    ),
   };
+}
+
+const TRADE_COLUMNS = "id, product_id, direction, status, net_pnl, opened_at, closed_at";
+
+type TradeRow = Pick<
+  Database["public"]["Tables"]["trades"]["Row"],
+  "id" | "product_id" | "direction" | "status" | "net_pnl" | "opened_at" | "closed_at"
+>;
+
+/**
+ * Las operaciones del día, sin repetir y sabiendo cuáles lo cierran.
+ *
+ * Una operación abierta y cerrada el mismo día viene en las dos consultas, así
+ * que primero se quitan las repetidas por id -- si no, la ficha del día
+ * enseñaría dos veces la misma y su P&L contaría doble.
+ */
+function dayTrades(rows: TradeRow[], window: { from: string; to: string }): DayTrade[] {
+  const porId = new Map<string, TradeRow>();
+  for (const row of rows) porId.set(row.id, row);
+
+  const { closed, opened } = splitTradingDay([...porId.values()], window);
+  const cerradaHoy = new Set(closed.map((t) => t.id));
+
+  return [...closed, ...opened].map((t) => ({
+    id: t.id,
+    productId: t.product_id,
+    direction: t.direction,
+    status: t.status,
+    netPnl: t.net_pnl === null ? null : Number(t.net_pnl),
+    openedAt: t.opened_at,
+    closedAt: t.closed_at,
+    closedThisDay: cerradaHoy.has(t.id),
+  }));
 }
 
 /**
@@ -297,6 +367,14 @@ export type DayMarkers = Map<string, Set<string>>;
 export async function fetchMarkers(fromDate: string, toDate: string): Promise<DayMarkers> {
   const user = await requireUser();
   const supabase = await createClient();
+  const timezone = await userTimezone();
+
+  // El rango entero en instantes UTC, por lo mismo que en `fetchDay`: los
+  // instantes de trading no se pueden comparar contra fechas a secas.
+  const rango = {
+    from: tradingDayWindow(fromDate, timezone).from,
+    to: tradingDayWindow(toDate, timezone).to,
+  };
 
   const markers: DayMarkers = new Map();
   const mark = (date: string | null | undefined, module: string) => {
@@ -308,7 +386,21 @@ export async function fetchMarkers(fromDate: string, toDate: string): Promise<Da
     markers.set(day, set);
   };
 
-  const [sleep, habits, tasks, meals, reading, content, trades] = await Promise.all([
+  /**
+   * Igual, pero para una marca de tiempo con hora.
+   *
+   * Cortar los diez primeros caracteres de `2026-08-26T01:00:00+00:00` da el
+   * día en UTC, no el del usuario: en Bogotá eso es todavía la noche del 25, y
+   * el punto de trading salía en el día de al lado.
+   */
+  const markInstant = (instant: string | null | undefined, module: string) => {
+    if (!instant) return;
+    const dt = DateTime.fromISO(instant, { zone: "utc" }).setZone(timezone);
+    if (dt.isValid) mark(dt.toISODate(), module);
+  };
+
+  const [sleep, habits, tasks, meals, reading, content, tradesAbiertas, tradesCerradas] =
+    await Promise.all([
     supabase
       .from("sleep_entries")
       .select("sleep_date")
@@ -345,20 +437,31 @@ export async function fetchMarkers(fromDate: string, toDate: string): Promise<Da
 
     supabase.from("content_pieces").select("planned_date, published_at").eq("user_id", user.id),
 
+    // Abiertas y cerradas por separado: el punto de trading tiene que salir
+    // también el día en que se cerró algo, que es el día que dejó dinero.
     supabase
       .from("trades")
       .select("opened_at")
       .eq("user_id", user.id)
       .is("orphaned_at", null)
-      .gte("opened_at", `${fromDate}T00:00:00`)
-      .lte("opened_at", `${toDate}T23:59:59.999`),
+      .gte("opened_at", rango.from)
+      .lte("opened_at", rango.to),
+
+    supabase
+      .from("trades")
+      .select("closed_at")
+      .eq("user_id", user.id)
+      .is("orphaned_at", null)
+      .gte("closed_at", rango.from)
+      .lte("closed_at", rango.to),
   ]);
 
   for (const row of sleep.data ?? []) mark(row.sleep_date, "sleep");
   for (const row of habits.data ?? []) mark(row.entry_date, "habits");
   for (const row of meals.data ?? []) mark(row.meal_date, "meals");
   for (const row of reading.data ?? []) mark(row.session_date, "reading");
-  for (const row of trades.data ?? []) mark(row.opened_at, "trading");
+  for (const row of tradesAbiertas.data ?? []) markInstant(row.opened_at, "trading");
+  for (const row of tradesCerradas.data ?? []) markInstant(row.closed_at, "trading");
 
   for (const row of content.data ?? []) {
     mark(row.planned_date, "content");

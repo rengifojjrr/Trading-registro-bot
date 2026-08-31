@@ -115,11 +115,14 @@ function Section({
   title,
   colorToken,
   href,
+  linkLabel = "Ver el módulo",
   children,
 }: {
   title: string;
   colorToken: string;
   href: Route;
+  /** Para cuando el enlace no lleva al módulo entero sino a algo más concreto. */
+  linkLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -132,7 +135,7 @@ function Section({
           href={href}
           className="text-xs text-muted-foreground underline-offset-2 hover:underline"
         >
-          Ver el módulo
+          {linkLabel}
         </Link>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">{children}</CardContent>
@@ -363,18 +366,30 @@ function ContentSection({ day }: { day: DaySummary }) {
 function TradesSection({ day }: { day: DaySummary }) {
   if (day.trades.length === 0) return null;
 
-  const total = day.trades.reduce((sum, trade) => sum + (trade.netPnl ?? 0), 0);
+  // Sólo las que cerraron este día: son las que dejaron dinero este día. Sumar
+  // también las que sólo se abrieron daría un total que no coincide con el
+  // calendario de trading, y entre dos cifras distintas para lo mismo no hay
+  // forma de saber cuál creerse.
+  const cerradas = day.trades.filter((t) => t.closedThisDay);
+  const total = cerradas.reduce((sum, trade) => sum + (trade.netPnl ?? 0), 0);
 
   return (
-    <Section title="Operaciones" colorToken="--mod-trading" href="/trades">
-      <p className="text-sm">
-        {day.trades.length} {day.trades.length === 1 ? "operación" : "operaciones"} ·{" "}
-        <span
-          className={cn("font-medium tabular-nums", total < 0 ? "text-negative" : "text-positive")}
-        >
-          {formatMoney(total)}
-        </span>
-      </p>
+    <Section
+      title="Operaciones"
+      colorToken="--mod-trading"
+      href={`/trading/dia/${day.date}` as Route}
+      linkLabel="Ver el día de trading"
+    >
+      {cerradas.length > 0 ? (
+        <p className="text-sm">
+          {cerradas.length} {cerradas.length === 1 ? "cerrada" : "cerradas"} ·{" "}
+          <span
+            className={cn("font-medium tabular-nums", total < 0 ? "text-negative" : "text-positive")}
+          >
+            {formatMoney(total)}
+          </span>
+        </p>
+      ) : null}
 
       {day.trades.map((trade) => (
         <Link
@@ -386,14 +401,20 @@ function TradesSection({ day }: { day: DaySummary }) {
           <span className="text-sm">{trade.productId}</span>
           {trade.status === "OPEN" ? (
             <span className="text-xs text-muted-foreground">abierta</span>
+          ) : !trade.closedThisDay ? (
+            <span className="text-xs text-muted-foreground">cerró otro día</span>
           ) : null}
           <span
             className={cn(
               "ml-auto text-sm tabular-nums",
-              (trade.netPnl ?? 0) < 0 ? "text-negative" : "text-positive",
+              trade.closedThisDay
+                ? (trade.netPnl ?? 0) < 0
+                  ? "text-negative"
+                  : "text-positive"
+                : "text-muted-foreground",
             )}
           >
-            {trade.netPnl === null ? "--" : formatMoney(trade.netPnl)}
+            {trade.netPnl === null || !trade.closedThisDay ? "--" : formatMoney(trade.netPnl)}
           </span>
         </Link>
       ))}

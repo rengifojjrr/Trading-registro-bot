@@ -94,6 +94,25 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
   };
 
   /**
+   * Pulsar un día lleva a la ficha de trading de ese día, no a la de la vida
+   * entera: este calendario es sólo de operaciones, y la otra ficha las busca
+   * por hora de apertura mientras que aquí se reparten por hora de cierre.
+   *
+   * Se arrastran los filtros y el mes para que la vuelta devuelva el panel tal
+   * y como estaba, en vez de recién puesto a cero.
+   */
+  const buildDayHref = (date: string) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (typeof value !== "string" || value.length === 0) continue;
+      params.set(key, value);
+    }
+    params.set("month", month);
+    const query = params.toString();
+    return query ? `/trading/dia/${date}?${query}` : `/trading/dia/${date}`;
+  };
+
+  /**
    * The same filters that produced these figures, pointed at the trades
    * list. A KPI you can open and count yourself is a very different thing
    * from one you have to take on faith -- which matters more here than in
@@ -288,7 +307,12 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
                 <CardTitle>Calendario de P&L diario</CardTitle>
               </CardHeader>
               <CardContent>
-                <CalendarHeatmap month={month} daily={dailyPnl} buildMonthHref={buildMonthHref} />
+                <CalendarHeatmap
+                  month={month}
+                  daily={dailyPnl}
+                  buildMonthHref={buildMonthHref}
+                  buildDayHref={buildDayHref}
+                />
               </CardContent>
             </Card>
           </div>
