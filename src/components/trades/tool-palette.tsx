@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ToolIcon } from "@/components/trades/tool-icon";
@@ -8,17 +9,20 @@ import { GROUP_LABELS, toolsByGroup, TOOL_BY_ID, type ToolGroup, type ToolId } f
 import { cn } from "@/lib/utils";
 
 /**
- * La barra de herramientas, por familias y con iconos.
+ * La barra de herramientas, al lado del gráfico.
  *
- * Antes eran cuarenta y seis líneas de texto en un desplegable. Elegir un
- * retroceso de Fibonacci era abrir, leer una lista y acertar con el nombre;
- * ahora es reconocer un dibujo. Las familias se pliegan porque cuarenta y seis
- * iconos a la vez tampoco se leen: se abre la que estás usando y el resto se
- * queda a un clic.
+ * Como en TradingView: una columna estrecha pegada a las velas, con un botón
+ * por familia. El botón enseña la última herramienta que usaste de esa familia
+ * y la vuelve a poner de un clic; la flechita abre la lista entera, con el
+ * dibujo de cada una al lado de su nombre.
  *
- * Al pasar por encima sale la miniatura en grande con el nombre y qué hace,
- * que es lo que convierte «Horquilla de Andrews» en algo que se entiende sin
- * haberla usado nunca.
+ * Antes eran dos filas encima del gráfico -- pestañas de familia y una rejilla
+ * de iconos -- que se comían el alto justo donde hace falta y, con siete
+ * familias, se salían del ancho de la tarjeta. Puesta de canto no compite con
+ * las velas por el sitio: al lado hay hueco de sobra y arriba no.
+ *
+ * En pantallas estrechas se tumba y vuelve a ser una fila: en un móvil, una
+ * columna de cuarenta píxeles es una décima parte del ancho del gráfico.
  */
 export function ToolPalette({
   active,
@@ -29,88 +33,179 @@ export function ToolPalette({
 }) {
   const grupos = toolsByGroup();
 
-  // La familia abierta es la de la herramienta activa, o líneas -- que es el
-  // 80% del uso -- cuando no hay ninguna.
-  const [abierta, setAbierta] = useState<ToolGroup>(
-    active ? TOOL_BY_ID[active].group : "LINEAS",
+  /**
+   * La herramienta que recuerda cada familia.
+   *
+   * Es lo que hace que el botón de la familia sirva de algo: se dibujan seis
+   * retrocesos de Fibonacci seguidos, y tener que abrir la lista cada vez para
+   * elegir el mismo de siempre convierte un clic en tres.
+   */
+  const [recordada, setRecordada] = useState<Partial<Record<ToolGroup, ToolId>>>(() =>
+    active ? { [TOOL_BY_ID[active].group]: active } : {},
   );
-  const [encima, setEncima] = useState<ToolId | null>(null);
+  const [abierta, setAbierta] = useState<ToolGroup | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
-  const visible = grupos.find((g) => g.group === abierta) ?? grupos[0];
+  // Cerrar la lista al pulsar fuera o con Escape: un panel flotante que sólo
+  // se cierra pulsando el mismo botón se queda abierto tapando el gráfico.
+  useEffect(() => {
+    if (abierta === null) return;
+
+    const fuera = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setAbierta(null);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAbierta(null);
+    };
+
+    document.addEventListener("pointerdown", fuera);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", fuera);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [abierta]);
+
+  const abiertaVisible = grupos.find((g) => g.group === abierta) ?? null;
+
+  function elegir(tool: ToolId) {
+    setRecordada((r) => ({ ...r, [TOOL_BY_ID[tool].group]: tool }));
+    setAbierta(null);
+    onSelect(tool);
+  }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Familias de herramientas">
-        {grupos.map((grupo) => {
-          const seleccionada = grupo.group === abierta;
-          // Un punto en la pestaña de la familia que tiene la herramienta
-          // activa: si está plegada, sin esto no hay forma de saber dónde
-          // está lo que tienes puesto.
-          const contieneActiva = active !== null && TOOL_BY_ID[active].group === grupo.group;
+    <div
+      ref={ref}
+      // Sin borde ni fondo propios: el carril entero es una sola caja, y esta
+      // es una de sus tres secciones. Dos recuadros pegados uno debajo de otro
+      // se leen como dos barras distintas.
+      className="relative flex flex-row flex-wrap gap-0.5 sm:flex-col sm:flex-nowrap"
+      role="group"
+      aria-label="Herramientas de dibujo"
+    >
+      {grupos.map((grupo) => {
+        const porDefecto = recordada[grupo.group] ?? grupo.tools[0].id;
+        const contieneActiva = active !== null && TOOL_BY_ID[active].group === grupo.group;
+        // La activa manda sobre la recordada: si vienes de una vista guardada
+        // con una herramienta puesta, el botón tiene que enseñar ésa.
+        const mostrada = contieneActiva ? active : porDefecto;
 
-          return (
+        return (
+          <div key={grupo.group} className="relative">
             <button
-              key={grupo.group}
               type="button"
-              role="tab"
-              aria-selected={seleccionada}
-              onClick={() => setAbierta(grupo.group)}
+              aria-label={`${GROUP_LABELS[grupo.group]}: ${TOOL_BY_ID[mostrada].label}`}
+              aria-pressed={contieneActiva}
+              title={`${TOOL_BY_ID[mostrada].label} — ${TOOL_BY_ID[mostrada].hint}`}
+              onClick={() => elegir(mostrada)}
               className={cn(
-                "relative rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                seleccionada
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                "flex size-8 items-center justify-center rounded transition-colors",
+                contieneActiva
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
-              {GROUP_LABELS[grupo.group]}
-              {contieneActiva && !seleccionada ? (
-                <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary" />
-              ) : null}
+              <ToolIcon tool={mostrada} size={20} />
             </button>
-          );
-        })}
-      </div>
 
-      <div
-        className="flex flex-wrap gap-0.5 rounded-md border border-border bg-secondary/40 p-1"
-        role="group"
-        aria-label={`Herramientas de ${GROUP_LABELS[visible.group].toLowerCase()}`}
-      >
-        {visible.tools.map((tool) => (
-          <button
-            key={tool.id}
-            type="button"
-            aria-label={tool.label}
-            aria-pressed={active === tool.id}
-            title={`${tool.label} — ${tool.hint}`}
-            onClick={() => onSelect(tool.id)}
-            onPointerEnter={() => setEncima(tool.id)}
-            onPointerLeave={() => setEncima((t) => (t === tool.id ? null : t))}
-            onFocus={() => setEncima(tool.id)}
-            onBlur={() => setEncima((t) => (t === tool.id ? null : t))}
-            className={cn(
-              "rounded p-1.5 transition-colors",
-              active === tool.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            <ToolIcon tool={tool.id} size={20} />
-          </button>
-        ))}
-      </div>
+            {/* Hermano y no hijo: un botón dentro de otro botón no es HTML
+                válido, y el navegador lo desmonta por su cuenta de formas que
+                no se pueden predecir. */}
+            <button
+              type="button"
+              aria-label={`Ver las herramientas de ${GROUP_LABELS[grupo.group].toLowerCase()}`}
+              aria-expanded={abierta === grupo.group}
+              onClick={() => setAbierta((g) => (g === grupo.group ? null : grupo.group))}
+              className={cn(
+                "absolute bottom-0 right-0 flex size-3 items-center justify-center rounded-sm transition-colors",
+                contieneActiva
+                  ? "text-primary-foreground/70 hover:text-primary-foreground"
+                  : "text-muted-foreground/50 hover:text-foreground",
+              )}
+            >
+              <ChevronRight className="size-3 rotate-45" aria-hidden />
+            </button>
+          </div>
+        );
+      })}
 
-      {encima ? <ToolPreviewCard tool={encima} /> : null}
+      {/* La lista cuelga de la barra entera y no del botón que la abre.
+          Colgada del botón, en el móvil -- donde la barra se tumba -- la de la
+          última familia empezaba a 390 píxeles y se salía por la derecha de una
+          pantalla de 420. Desde la barra, el borde de partida es siempre el
+          mismo y siempre está dentro. */}
+      {abiertaVisible ? (
+        <ListaDeFamilia
+          grupo={abiertaVisible.group}
+          tools={abiertaVisible.tools}
+          active={active}
+          onPick={elegir}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** La miniatura en grande, con el nombre y para qué sirve. */
-function ToolPreviewCard({ tool }: { tool: ToolId }) {
+/**
+ * La lista de una familia, con el dibujo de cada herramienta al lado del
+ * nombre.
+ *
+ * Con nombre y no sólo el icono: «horquilla de Andrews» y «canal paralelo» se
+ * distinguen mal en veinte píxeles, y la miniatura sola obliga a adivinar.
+ */
+function ListaDeFamilia({
+  grupo,
+  tools,
+  active,
+  onPick,
+}: {
+  grupo: ToolGroup;
+  tools: { id: ToolId; label: string; hint: string }[];
+  active: ToolId | null;
+  onPick: (tool: ToolId) => void;
+}) {
+  return (
+    <div
+      role="menu"
+      aria-label={GROUP_LABELS[grupo]}
+      // Encima de los lienzos de la librería, que se ponen z-index 1 y 2.
+      // Debajo de la barra cuando está tumbada y al lado cuando está de canto:
+      // la barra vive pegada a un borde, y hacia ese lado no cabe.
+      className="absolute left-0 top-full z-30 mt-1 flex max-h-80 w-full flex-col gap-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg sm:left-full sm:top-0 sm:ml-1 sm:mt-0 sm:w-64"
+    >
+      <span className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {GROUP_LABELS[grupo]}
+      </span>
+      {tools.map((tool) => (
+        <button
+          key={tool.id}
+          type="button"
+          role="menuitem"
+          onClick={() => onPick(tool.id)}
+          className={cn(
+            "flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
+            active === tool.id ? "bg-accent" : "hover:bg-accent/60",
+          )}
+        >
+          <Miniatura tool={tool.id} />
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-xs font-medium">{tool.label}</span>
+            <span className="truncate text-[10px] leading-tight text-muted-foreground">
+              {tool.hint}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** El dibujo de la herramienta, hecho con el mismo motor que la pinta de verdad. */
+function Miniatura({ tool }: { tool: ToolId }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const meta = TOOL_BY_ID[tool];
-  const W = 96;
-  const H = 64;
+  const W = 36;
+  const H = 24;
 
   useEffect(() => {
     const canvas = ref.current;
@@ -126,17 +221,11 @@ function ToolPreviewCard({ tool }: { tool: ToolId }) {
   }, [tool]);
 
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border bg-card p-2">
-      <canvas
-        ref={ref}
-        style={{ width: W, height: H }}
-        className="shrink-0 rounded bg-secondary/40"
-        aria-hidden
-      />
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-xs font-medium">{meta.label}</span>
-        <span className="text-[11px] leading-snug text-muted-foreground">{meta.hint}</span>
-      </div>
-    </div>
+    <canvas
+      ref={ref}
+      style={{ width: W, height: H }}
+      className="shrink-0 rounded bg-secondary/60"
+      aria-hidden
+    />
   );
 }

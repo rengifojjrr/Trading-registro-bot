@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildShape } from "./geometry";
-import { distanceToSegment, distanceToShape, renderShape } from "./render";
+import { clampLabel, distanceToSegment, distanceToShape, labelTopLeft, renderShape } from "./render";
 import { defaultStyle } from "./style";
 
 describe("distancia a un segmento", () => {
@@ -109,6 +109,9 @@ describe("el contorno de las etiquetas", () => {
       setLineDash() {},
       fill() {},
       fillText() {},
+      // Un ancho por carácter que basta: lo que se comprueba aquí no es la
+      // tipografía, sino que la etiqueta acaba dentro del lienzo.
+      measureText(t: string) { return { width: t.length * 6 }; },
       strokeText() {
         trazos.push(String(ctx.strokeStyle));
       },
@@ -172,6 +175,7 @@ describe("el orden de pintado", () => {
       arc() { orden.push("tirador"); },
       fill() {},
       fillText() { orden.push("texto"); },
+      measureText(t: string) { return { width: t.length * 6 }; },
       strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
       font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
     } as unknown as CanvasRenderingContext2D;
@@ -195,6 +199,7 @@ describe("el orden de pintado", () => {
       save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
       arc() {}, ellipse() {}, quadraticCurveTo() {}, setLineDash() {}, stroke() {},
       strokeText() {}, fillText() {},
+      measureText(t: string) { return { width: t.length * 6 }; },
       fill() { pintados.push(String(ctx.fillStyle)); },
       strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
       font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
@@ -217,5 +222,68 @@ describe("el orden de pintado", () => {
 
     expect(pintados[0]).toContain("239, 68, 68");
     expect(pintados[1]).toContain("34, 197, 94");
+  });
+});
+
+describe("las etiquetas se quedan dentro del lienzo", () => {
+  it("una etiqueta que cabe no se mueve", () => {
+    const caja = { x: 100, y: 100, width: 80, height: 12 };
+    expect(clampLabel(caja, { width: 800, height: 400 })).toEqual({ x: 100, y: 100 });
+  });
+
+  it("la que se sale por arriba baja hasta el borde", () => {
+    // Es el caso real: el objetivo de un plan que cae en lo más alto de la
+    // vista pintaba «objetivo $71.500,00» cortado por la mitad de arriba.
+    const caja = { x: 100, y: -9, width: 120, height: 12 };
+    expect(clampLabel(caja, { width: 800, height: 400 })).toEqual({ x: 100, y: 2 });
+  });
+
+  it("la que se sale por la derecha entra hasta el borde", () => {
+    const caja = { x: 760, y: 100, width: 120, height: 12 };
+    expect(clampLabel(caja, { width: 800, height: 400 })).toEqual({ x: 678, y: 100 });
+  });
+
+  it("una etiqueta más ancha que el gráfico enseña el principio", () => {
+    // Recortada por la derecha se lee «objetivo $71.5»; recortada por la
+    // izquierda, «00,00», que no dice de qué es.
+    const caja = { x: -50, y: 100, width: 900, height: 12 };
+    expect(clampLabel(caja, { width: 800, height: 400 }).x).toBe(2);
+  });
+
+  it("el anclaje se convierte a la esquina según su alineación", () => {
+    expect(labelTopLeft({ x: 100, y: 50 }, 40, 10, "center", "middle")).toEqual({ x: 80, y: 45 });
+    expect(labelTopLeft({ x: 100, y: 50 }, 40, 10, "right", "bottom")).toEqual({ x: 60, y: 40 });
+    expect(labelTopLeft({ x: 100, y: 50 }, 40, 10, "left", "top")).toEqual({ x: 100, y: 50 });
+  });
+
+  it("con el lienzo pintan dentro; sin él, donde diga la geometría", () => {
+    function espia(bounds?: { width: number; height: number }) {
+      const puestas: { x: number; y: number }[] = [];
+      const ctx = {
+        save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+        arc() {}, ellipse() {}, quadraticCurveTo() {}, setLineDash() {}, stroke() {},
+        strokeText() {}, fill() {},
+        measureText(t: string) { return { width: t.length * 6 }; },
+        fillText(_t: string, x: number, y: number) { puestas.push({ x, y }); },
+        strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
+        font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
+      } as unknown as CanvasRenderingContext2D;
+
+      const style = defaultStyle("TEXT");
+      const shape = buildShape({
+        tool: "TEXT",
+        // Pegado al techo: la etiqueta se ancla en el punto y su mitad de
+        // arriba queda fuera.
+        points: [{ x: 400, y: 0 }],
+        style,
+        width: 800,
+        height: 400,
+      });
+      renderShape(ctx, shape, style, bounds ? { bounds } : {});
+      return puestas;
+    }
+
+    expect(espia({ width: 800, height: 400 })[0].y).toBeGreaterThanOrEqual(0);
+    expect(espia()[0].y).toBeLessThan(0);
   });
 });

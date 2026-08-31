@@ -1280,9 +1280,15 @@ function notaEnmarcada({ tool, points, style, prices, formatPrice }: BuildParams
   const [a] = points;
   const shape = vacio();
 
+  // `showPrice` también aquí, como en todas las demás.
+  //
+  // Era la única figura que escribía el precio pasara lo que pasara, y en su
+  // miniatura eso salía como «68000  $» dentro de un icono de veinte píxeles.
+  // La herramienta no expone el interruptor, así que en el gráfico no cambia
+  // nada: lo apaga quien pinta iconos, que es el único que lo apaga.
   const contenido =
     tool === "PRICE_LABEL"
-      ? [prices && formatPrice ? formatPrice(prices[0]) : null, style.textLabel]
+      ? [style.showPrice && prices && formatPrice ? formatPrice(prices[0]) : null, style.textLabel]
           .filter(Boolean)
           .join("  ")
       : style.textLabel || "Nota…";

@@ -153,6 +153,19 @@ const PUNTOS: Partial<Record<ToolId, PreviewPoint[]>> = {
   FLAG: [{ x: 0.34, y: 0.85 }],
 };
 
+/**
+ * La letra que representa a cada herramienta de anotación en su miniatura.
+ *
+ * Sólo las que se dibujan escribiendo: el resto tiene forma y no necesita
+ * ninguna letra encima.
+ */
+const INICIAL: Partial<Record<ToolId, string>> = {
+  TEXT: "T",
+  NOTE: "N",
+  CALLOUT: "!",
+  PRICE_LABEL: "$",
+};
+
 /** Un zigzag repartido, para una herramienta que no declare los suyos. */
 function porDefecto(n: number): PreviewPoint[] {
   if (n === 1) return [{ x: 0.5, y: 0.5 }];
@@ -207,8 +220,15 @@ export function renderPreview(
     showLabels: false,
     showPrice: false,
     riskReward: false,
-    textLabel: "",
-    fontSize: 8,
+    // Una letra y no una palabra.
+    //
+    // Las herramientas de anotación no tienen forma propia: lo que se dibuja
+    // es su texto. Con la etiqueta vacía, la geometría pone el suyo de relleno
+    // -- «Texto…», «Nota…» -- y en un icono de veinte píxeles eso salía como
+    // «exto», que no es ni un dibujo ni una palabra. Una inicial sí cabe
+    // entera y se reconoce.
+    textLabel: INICIAL[tool] ?? "",
+    fontSize: Math.max(7, Math.min(12, Math.round(height * 0.42))),
     lineWidth: Math.max(1, base.lineWidth - 1),
   };
 
@@ -249,6 +269,9 @@ export function renderPreview(
   renderShape(ctx, shape, style, {
     labelColor: options.labelColor,
     haloColor: options.haloColor,
+    // Aunque haya recorte: recortar esconde la mitad de la letra, y meterla
+    // dentro la enseña entera.
+    bounds: { width, height },
   });
 
   ctx.restore();

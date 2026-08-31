@@ -1589,6 +1589,9 @@ export function TradeChart({
           // El contorno del texto y el anillo de los tiradores salen del fondo
           // del gráfico, así que siguen al tema en vez de ser negro fijo.
           haloColor: withAlpha(THEME.background, 0.75),
+          // Para que ninguna etiqueta se pinte fuera: el objetivo de un plan
+          // que cae en lo más alto de la vista se quedaba cortado por arriba.
+          bounds: { width, height },
         });
       };
 
@@ -1889,7 +1892,12 @@ export function TradeChart({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        {/* `flex-wrap` también aquí dentro.
+            Lo tenía el contenedor de fuera pero no éste, y como éste es un
+            único hijo suyo, envolver por fuera no partía nada: los ocho
+            controles se quedaban en una sola línea de 834 píxeles que se salía
+            de la tarjeta en cuanto la ventana bajaba de eso. */}
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={granularity} onValueChange={handleGranularityChange}>
             <SelectTrigger className="h-8 w-24 text-xs" aria-label="Temporalidad">
               <SelectValue />
@@ -1908,12 +1916,20 @@ export function TradeChart({
               «logarítmica y porcentaje a la vez», que no significa nada. */}
           <Select value={scaleMode} onValueChange={(v) => setScaleMode(v as ScaleMode)}>
             <SelectTrigger className="h-8 w-32 text-xs" aria-label="Escala de precios">
-              <SelectValue />
+              {/* El nombre y nada más.
+                  `SelectValue` sin hijos copia dentro del botón *todo* lo que
+                  hay en la opción elegida, y cada opción son dos líneas: el
+                  nombre y para qué sirve. Las dos líneas dentro de un botón de
+                  32 píxeles de alto se salían por arriba y por los lados, y en
+                  el gráfico se leía «Lineal» flotando encima de la caja con la
+                  explicación desbordada debajo. La explicación es para el menú,
+                  no para el botón. */}
+              <SelectValue>{SCALE_LABELS[scaleMode]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {SCALE_MODES.map((m) => (
                 <SelectItem key={m} value={m}>
-                  <span className="flex flex-col gap-0.5">
+                  <span className="flex max-w-56 flex-col gap-0.5">
                     <span>{SCALE_LABELS[m]}</span>
                     <span className="text-[10px] leading-tight text-muted-foreground">
                       {SCALE_HINTS[m]}
@@ -1928,57 +1944,9 @@ export function TradeChart({
               de las veces se quiere EMA 9 *y* EMA 21, no una u otra. */}
           <IndicatorMenu active={indicators} onToggle={toggleIndicator} />
 
-          {/* Cursor, medir y los dos interruptores de modo: lo que se alterna
-              constantemente mientras se dibuja. Las herramientas en sí están
-              en su propia paleta, debajo. */}
-          <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
-            <button
-              type="button"
-              title="Cursor"
-              aria-label="Cursor"
-              aria-pressed={activeTool === "CURSOR"}
-              onClick={() => selectTool("CURSOR")}
-              className={cn(
-                "rounded p-1.5 transition-colors",
-                activeTool === "CURSOR"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <MousePointer2 className="size-4" aria-hidden />
-            </button>
-
-            <button
-              type="button"
-              title="Medir movimiento (no se guarda)"
-              aria-label="Medir movimiento"
-              aria-pressed={activeTool === "MEASURE"}
-              onClick={() => selectTool("MEASURE")}
-              className={cn(
-                "rounded p-1.5 transition-colors",
-                activeTool === "MEASURE"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Ruler className="size-4" aria-hidden />
-            </button>
-
-            {/* Los dos interruptores de la barra de TradingView que cambian
-                cómo se dibuja, no qué se dibuja. */}
-            <ToggleButton
-              label="Imán: pegar a máximos y mínimos"
-              Icon={Magnet}
-              pressed={magnet}
-              onClick={() => setMagnet((v) => !v)}
-            />
-            <ToggleButton
-              label="Seguir dibujando con la misma herramienta"
-              Icon={Repeat}
-              pressed={stayInDrawing}
-              onClick={() => setStayInDrawing((v) => !v)}
-            />
-          </div>
+          {/* El cursor, la regla y los dos interruptores de modo se han ido al
+              carril lateral, con las herramientas: son de dibujar, y estaban
+              aquí arriba sólo porque la paleta no tenía dónde. */}
           <div className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 p-1">
             <ToggleButton
               label="Volumen"
@@ -2061,11 +2029,6 @@ export function TradeChart({
         {isLoading ? <span className="text-xs text-muted-foreground">Cargando…</span> : null}
       </div>
 
-      <ToolPalette
-        active={activeTool === "CURSOR" || activeTool === "MEASURE" ? null : activeTool}
-        onSelect={(t) => selectTool(t)}
-      />
-
       {replaying ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
           <button
@@ -2146,36 +2109,106 @@ export function TradeChart({
           })()}
         </p>
       ) : null}
-      {/* La barra de datos, fija y siempre visible.
-          Antes vivía flotando sobre las velas y sólo se rellenaba al mover el
-          cursor. En el móvil no hay cursor, así que ahí no aparecía nunca: la
-          lectura OHLC no existía en el sitio donde más falta hace, porque las
-          velas se ven peor. Ahora es una barra de verdad, con la última vela
-          puesta de salida y la señalada mientras se señala. */}
-      <div
-        ref={legendRef}
-        className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md border border-border bg-secondary/40 px-2 py-1.5 font-mono text-[11px] tabular-nums"
-      />
-      <div className="relative">
-        <div ref={containerRef} className="w-full" />
-        {/* z-10: lightweight-charts' own internal canvases set explicit
-            z-index (1/2) on themselves; since their non-positioned parent
-            (containerRef's div) doesn't isolate a stacking context, those
-            positive z-indexes compete directly with this canvas's siblings
-            here -- z-index: auto always loses to an explicit positive value
-            regardless of DOM order, so without this the overlay silently
-            painted underneath the chart's own canvases. */}
-        <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
+      {/* El gráfico y su carril de herramientas, uno al lado del otro.
+          De canto y no encima: arriba cada fila de botones se come alto del
+          gráfico, que es justo lo que hay que mirar; al lado sobra ancho.
+          En pantalla estrecha se tumba, porque ahí el ancho es lo escaso. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+        <div className="flex shrink-0 flex-row flex-wrap items-start gap-1 self-start rounded-md border border-border bg-secondary/40 p-1 sm:flex-col sm:flex-nowrap">
+          <button
+            type="button"
+            title="Cursor"
+            aria-label="Cursor"
+            aria-pressed={activeTool === "CURSOR"}
+            onClick={() => selectTool("CURSOR")}
+            className={cn(
+              "flex size-8 items-center justify-center rounded transition-colors",
+              activeTool === "CURSOR"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <MousePointer2 className="size-4" aria-hidden />
+          </button>
 
-        {/* Lo que hay bajo el cursor.
-            z-20 para quedar por encima de los lienzos de la librería, que se
-            ponen z-index 1 y 2 a sí mismos. Sin eventos de puntero: si los
-            capturara, moverse hacia el aviso lo haría desaparecer. */}
-        <div
-          ref={tooltipRef}
-          hidden
-          className="pointer-events-none absolute z-20 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] tabular-nums shadow-lg"
-        />
+          <button
+            type="button"
+            title="Medir movimiento (no se guarda)"
+            aria-label="Medir movimiento"
+            aria-pressed={activeTool === "MEASURE"}
+            onClick={() => selectTool("MEASURE")}
+            className={cn(
+              "flex size-8 items-center justify-center rounded transition-colors",
+              activeTool === "MEASURE"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Ruler className="size-4" aria-hidden />
+          </button>
+
+          <Separador />
+
+          <ToolPalette
+            active={activeTool === "CURSOR" || activeTool === "MEASURE" ? null : activeTool}
+            onSelect={(t) => selectTool(t)}
+          />
+
+          <Separador />
+
+          {/* Los dos interruptores de la barra de TradingView que cambian
+              cómo se dibuja, no qué se dibuja. */}
+          <ToggleButton
+            label="Imán: pegar a máximos y mínimos"
+            Icon={Magnet}
+            pressed={magnet}
+            onClick={() => setMagnet((v) => !v)}
+          />
+          <ToggleButton
+            label="Seguir dibujando con la misma herramienta"
+            Icon={Repeat}
+            pressed={stayInDrawing}
+            onClick={() => setStayInDrawing((v) => !v)}
+          />
+        </div>
+
+        {/* `min-w-0`: sin esto un hijo de flex no baja de su ancho de
+            contenido, y el lienzo de la librería -- que mide en píxeles fijos
+            -- impediría que la columna encogiera nunca. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {/* La barra de datos, fija y siempre visible.
+              Antes vivía flotando sobre las velas y sólo se rellenaba al mover
+              el cursor. En el móvil no hay cursor, así que ahí no aparecía
+              nunca: la lectura OHLC no existía en el sitio donde más falta
+              hace, porque las velas se ven peor. Ahora es una barra de verdad,
+              con la última vela puesta de salida y la señalada mientras se
+              señala. */}
+          <div
+            ref={legendRef}
+            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md border border-border bg-secondary/40 px-2 py-1.5 font-mono text-[11px] tabular-nums"
+          />
+          <div className="relative">
+            <div ref={containerRef} className="w-full" />
+            {/* z-10: lightweight-charts' own internal canvases set explicit
+                z-index (1/2) on themselves; since their non-positioned parent
+                (containerRef's div) doesn't isolate a stacking context, those
+                positive z-indexes compete directly with this canvas's siblings
+                here -- z-index: auto always loses to an explicit positive value
+                regardless of DOM order, so without this the overlay silently
+                painted underneath the chart's own canvases. */}
+            <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
+
+            {/* Lo que hay bajo el cursor.
+                z-20 para quedar por encima de los lienzos de la librería, que se
+                ponen z-index 1 y 2 a sí mismos. Sin eventos de puntero: si los
+                capturara, moverse hacia el aviso lo haría desaparecer. */}
+            <div
+              ref={tooltipRef}
+              hidden
+              className="pointer-events-none absolute z-20 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] tabular-nums shadow-lg"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Los indicadores que no caben en el eje del precio: RSI de 0 a 100 y
@@ -2283,6 +2316,16 @@ export function TradeChart({
       ) : null}
     </div>
   );
+}
+
+/**
+ * La rayita que separa las tres secciones del carril.
+ *
+ * Cambia de eje con el carril: en vertical es una línea horizontal de lado a
+ * lado, y en horizontal una vertical. Una sola clase no vale para las dos.
+ */
+function Separador() {
+  return <div className="h-7 w-px shrink-0 bg-border sm:h-px sm:w-full" aria-hidden />;
 }
 
 function ToggleButton({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { previewPoints } from "./preview";
+import { previewPoints, renderPreview } from "./preview";
 import { TOOL_BY_ID, TOOLS } from "./tools";
 
 describe("los puntos de la miniatura", () => {
@@ -33,5 +33,50 @@ describe("los puntos de la miniatura", () => {
       const distintos = new Set(puntos.map((p) => `${p.x},${p.y}`));
       expect(distintos.size, tool.id).toBe(puntos.length);
     }
+  });
+});
+
+describe("las miniaturas de las anotaciones", () => {
+  /**
+   * Un lienzo de mentira que apunta el texto que se le pide pintar.
+   *
+   * Las anotaciones no tienen forma propia: lo que se dibuja es su texto. Sin
+   * decirle cuál, la geometría pone el suyo de relleno -- «Texto…», «Nota…» --
+   * y en un icono de veinte píxeles eso salía como «exto».
+   */
+  function lienzoDeTexto() {
+    const textos: string[] = [];
+    const ctx = {
+      save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+      arc() {}, ellipse() {}, quadraticCurveTo() {}, setLineDash() {}, stroke() {},
+      rect() {}, clip() {}, fill() {}, setTransform() {}, clearRect() {},
+      measureText(t: string) { return { width: t.length * 6 }; },
+      strokeText() {},
+      fillText(t: string) { textos.push(t); },
+      strokeStyle: "", fillStyle: "", lineWidth: 0, lineJoin: "", lineCap: "",
+      font: "", textAlign: "", textBaseline: "", globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, textos };
+  }
+
+  it("una sola letra, nunca una palabra de relleno", () => {
+    for (const tool of ["TEXT", "NOTE", "CALLOUT", "PRICE_LABEL"] as const) {
+      const { ctx, textos } = lienzoDeTexto();
+      renderPreview(ctx, tool, 20, 20);
+
+      expect(textos, tool).not.toHaveLength(0);
+      for (const t of textos) {
+        expect(t.length, `${tool}: "${t}"`).toBeLessThanOrEqual(2);
+        expect(t, tool).not.toMatch(/…/);
+      }
+    }
+  });
+
+  it("la letra cabe entera dentro del icono", () => {
+    // Seis píxeles por carácter contra un icono de veinte: si la esquina
+    // saliera negativa, el navegador recortaría media letra.
+    const { ctx, textos } = lienzoDeTexto();
+    renderPreview(ctx, "TEXT", 20, 20);
+    expect(textos).toEqual(["T"]);
   });
 });

@@ -25,6 +25,58 @@ export interface RenderOptions {
    * un color que no pega con el fondo real.
    */
   haloColor?: string;
+  /**
+   * El tamaño del lienzo, en píxeles lógicos, para que ninguna etiqueta se
+   * salga.
+   *
+   * Sin esto, la etiqueta de una figura que toca el borde se pinta fuera y el
+   * navegador la recorta: el objetivo de un plan que cae en lo más alto de la
+   * vista enseñaba «objetivo $71.500,00» cortado por la mitad de arriba. La
+   * figura sí puede salirse -- una línea que se prolonga es así --, pero su
+   * etiqueta no: una etiqueta a medias no informa de nada.
+   *
+   * Opcional: sin él se pinta donde diga la geometría, como antes.
+   */
+  bounds?: { width: number; height: number };
+}
+
+/**
+ * La esquina de arriba a la izquierda de una etiqueta, a partir de su anclaje.
+ *
+ * Puro y aparte porque es la mitad del cálculo que evita que un texto se pinte
+ * fuera del lienzo, y `measureText` sólo existe con un lienzo delante.
+ */
+export function labelTopLeft(
+  at: { x: number; y: number },
+  textWidth: number,
+  fontSize: number,
+  align: CanvasTextAlign,
+  baseline: CanvasTextBaseline,
+): { x: number; y: number } {
+  const x = align === "center" ? at.x - textWidth / 2 : align === "right" ? at.x - textWidth : at.x;
+  const y =
+    baseline === "bottom" ? at.y - fontSize : baseline === "middle" ? at.y - fontSize / 2 : at.y;
+  return { x, y };
+}
+
+/**
+ * Mete una etiqueta dentro del lienzo, sin cambiarla de sitio si ya cabe.
+ *
+ * Cuando no cabe ni empujándola -- una etiqueta más ancha que el propio
+ * gráfico -- gana el borde de arriba a la izquierda: se lee el principio del
+ * texto, que es lo que la identifica, en vez de el final.
+ */
+export function clampLabel(
+  box: { x: number; y: number; width: number; height: number },
+  bounds: { width: number; height: number },
+  pad = 2,
+): { x: number; y: number } {
+  const maxX = Math.max(pad, bounds.width - box.width - pad);
+  const maxY = Math.max(pad, bounds.height - box.height - pad);
+  return {
+    x: Math.min(Math.max(box.x, pad), maxX),
+    y: Math.min(Math.max(box.y, pad), maxY),
+  };
 }
 
 export function renderShape(
@@ -33,7 +85,7 @@ export function renderShape(
   style: DrawingStyle,
   options: RenderOptions = {},
 ): void {
-  const { ghost = false, handles, labelColor, haloColor } = options;
+  const { ghost = false, handles, labelColor, haloColor, bounds } = options;
 
   ctx.save();
   // La vista previa a media tinta: se distingue de lo ya guardado sin cambiar
@@ -112,19 +164,37 @@ export function renderShape(
     ctx.setLineDash([]);
     ctx.font = `${style.fontSize}px ui-monospace, monospace`;
     ctx.fillStyle = labelColor ?? style.color;
+    // Todas por la esquina de arriba a la izquierda: es lo que permite medir
+    // la caja de cada una y meterla en el lienzo si se sale. La alineación que
+    // pide la geometría se aplica al convertir, así que nada se mueve de sitio
+    // salvo lo que se saldría.
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
     for (const label of shape.labels) {
-      ctx.textAlign = label.align ?? "left";
-      ctx.textBaseline = label.baseline ?? "bottom";
+      const ancho = ctx.measureText(label.text).width;
+      const caja = {
+        ...labelTopLeft(
+          label.at,
+          ancho,
+          style.fontSize,
+          label.align ?? "left",
+          label.baseline ?? "bottom",
+        ),
+        width: ancho,
+        height: style.fontSize,
+      };
+      const { x, y } = bounds ? clampLabel(caja, bounds) : caja;
+
       // Un contorno del color del fondo detrás del texto: sobre una vela verde
       // clara, el texto del mismo color del dibujo se pierde entero.
       if (haloColor) {
         ctx.save();
         ctx.lineWidth = 3;
         ctx.strokeStyle = haloColor;
-        ctx.strokeText(label.text, label.at.x, label.at.y);
+        ctx.strokeText(label.text, x, y);
         ctx.restore();
       }
-      ctx.fillText(label.text, label.at.x, label.at.y);
+      ctx.fillText(label.text, x, y);
     }
   }
 
