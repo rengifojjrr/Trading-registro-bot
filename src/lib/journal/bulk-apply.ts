@@ -1,4 +1,13 @@
 import type { MistakeCode } from "./mistakes";
+import type { SetupGrade } from "./setup-grade";
+
+/**
+ * «Sin definir» se guarda como `NONE` y no como null, que es como lo dejó la
+ * ficha de la operación. Aquí sólo se ofrecen las dos direcciones: elegir
+ * «sin definir» para doce operaciones a la vez sería borrar, y este cuadro no
+ * borra nada.
+ */
+export type PlannedDirection = "LONG" | "SHORT" | "NONE";
 
 /**
  * Apuntar varias operaciones de una vez.
@@ -26,9 +35,17 @@ import type { MistakeCode } from "./mistakes";
  * en R: son números de cada operación concreta, y ponerle el mismo stop a doce
  * entradas distintas no es cómodo, es falso. Lo que se comparte en un episodio
  * es el criterio y el estado de ánimo, no los precios.
+ *
+ * Sí están, en cambio, el resto de las preguntas del diario -- la nota del
+ * setup, el sesgo de temporalidad alta, dónde estaba el precio y qué dirección
+ * llevabas pensada. Son la lectura del mercado de ese rato, no una cifra de una
+ * operación: doce entradas seguidas se tomaron con el mismo sesgo, y tener que
+ * apuntarlo doce veces es exactamente por lo que no se apunta.
  */
 export type BulkField =
   | "strategy_id"
+  | "setup_grade"
+  | "planned_direction"
   | "emotional_state"
   | "mistake_tag"
   | "mistakes"
@@ -41,6 +58,8 @@ export type BulkField =
 
 export const BULK_FIELD_LABELS: Record<BulkField, string> = {
   strategy_id: "Estrategia",
+  setup_grade: "Setup",
+  planned_direction: "Dirección planeada",
   emotional_state: "Emociones",
   mistake_tag: "Errores (texto libre)",
   mistakes: "Errores",
@@ -55,6 +74,8 @@ export const BULK_FIELD_LABELS: Record<BulkField, string> = {
 /** Qué se quiere poner. Un campo ausente es un campo que no se toca. */
 export interface BulkValues {
   strategy_id?: string | null;
+  setup_grade?: SetupGrade;
+  planned_direction?: PlannedDirection;
   emotional_state?: string[];
   mistake_tag?: string[];
   mistakes?: MistakeCode[];
@@ -70,6 +91,9 @@ export interface BulkValues {
 export interface ExistingJournal {
   tradeId: string;
   strategy_id: string | null;
+  /** Vive como etiqueta («Setup: A+») y no como columna; ver setup-tags.ts. */
+  setup_grade: SetupGrade | null;
+  planned_direction: PlannedDirection | null;
   emotional_state: string | null;
   mistake_tag: string | null;
   lesson_learned: string | null;
@@ -183,6 +207,15 @@ function isChosen(values: BulkValues, field: BulkField): boolean {
 
 function hasValue(row: ExistingJournal, field: BulkField): boolean {
   if (field === "mistakes") return row.mistakes.length > 0;
+
+  // `NONE` es «sin definir», no una dirección elegida: la ficha de la
+  // operación lo guarda así en vez de null. Contarlo como valor haría que
+  // «rellenar solo lo vacío» se saltara justo las que están sin definir, que
+  // son las únicas que había que rellenar.
+  if (field === "planned_direction") {
+    return row.planned_direction !== null && row.planned_direction !== "NONE";
+  }
+
   const actual = row[field as Exclude<BulkField, "mistakes">];
   if (actual === null) return false;
   if (typeof actual === "string") return actual.trim() !== "";

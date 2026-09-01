@@ -15,6 +15,8 @@ import {
 } from "@/lib/journal/bulk-apply";
 import { burstContaining, DEFAULT_GAP_MINUTES } from "@/lib/journal/bursts";
 import { MISTAKE_CODES, type MistakeCode } from "@/lib/journal/mistakes";
+import { SETUP_GRADES } from "@/lib/journal/setup-grade";
+import { applySetupGrade, readSetupGrades } from "@/lib/journal/setup-tags";
 import { createClient } from "@/lib/supabase/server";
 
 /** Un tope para que un clic no dispare una escritura de miles de filas. */
@@ -22,6 +24,10 @@ const MAX_TRADES = 100;
 
 const valuesSchema = z.object({
   strategy_id: z.uuid().nullish(),
+  setup_grade: z.enum(SETUP_GRADES).optional(),
+  // Sin `NONE`: elegirlo para doce operaciones sería borrar la dirección que
+  // ya tuvieran, y este cuadro no borra nada.
+  planned_direction: z.enum(["LONG", "SHORT"]).optional(),
   emotional_state: z.array(z.string().max(200)).max(20).optional(),
   mistake_tag: z.array(z.string().max(200)).max(20).optional(),
   mistakes: z.array(z.enum(MISTAKE_CODES)).max(MISTAKE_CODES.length).optional(),
@@ -193,11 +199,11 @@ export async function findBurstFor(
 async function readExisting(tradeIds: string[], userId: string): Promise<ExistingJournal[]> {
   const supabase = await createClient();
 
-  const [{ data: journals }, { data: mistakes }] = await Promise.all([
+  const [{ data: journals }, { data: mistakes }, setupGrades] = await Promise.all([
     supabase
       .from("journal_entries")
       .select(
-        "trade_id, strategy_id, emotional_state, mistake_tag, lesson_learned, notes, plan_adherence, entry_quality, htf_bias, sr_proximity",
+        "trade_id, strategy_id, planned_direction, emotional_state, mistake_tag, lesson_learned, notes, plan_adherence, entry_quality, htf_bias, sr_proximity",
       )
       .eq("user_id", userId)
       .in("trade_id", tradeIds),
@@ -206,6 +212,9 @@ async function readExisting(tradeIds: string[], userId: string): Promise<Existin
       .select("trade_id, mistake_code")
       .eq("user_id", userId)
       .in("trade_id", tradeIds),
+    // La nota del setup no es una columna: vive como etiqueta, igual que la
+    // dejó la importación de Notion.
+    readSetupGrades(userId, tradeIds),
   ]);
 
   const porOperacion = new Map((journals ?? []).map((j) => [j.trade_id, j]));
@@ -221,6 +230,8 @@ async function readExisting(tradeIds: string[], userId: string): Promise<Existin
     return {
       tradeId,
       strategy_id: j?.strategy_id ?? null,
+      setup_grade: setupGrades.get(tradeId) ?? null,
+      planned_direction: j?.planned_direction ?? null,
       emotional_state: j?.emotional_state ?? null,
       mistake_tag: j?.mistake_tag ?? null,
       lesson_learned: j?.lesson_learned ?? null,
@@ -264,6 +275,14 @@ async function write(params: {
       user_id: userId,
       trade_id: row.tradeId,
       strategy_id: conservar(row.strategy_id, values.strategy_id, row.strategy_id !== null),
+      // `NONE` es «sin definir» y no cuenta como que ya tuviera dirección: si
+      // contara, «rellenar solo lo vacío» se saltaría justo las que hay que
+      // rellenar.
+      planned_direction: conservar(
+        row.planned_direction,
+        values.planned_direction,
+        row.planned_direction !== null && row.planned_direction !== "NONE",
+      ),
       emotional_state: conservar(
         row.emotional_state,
         emociones && emociones.length > 0 ? emociones.join(", ") : undefined,
@@ -321,6 +340,30 @@ async function write(params: {
       if (errorErrores) {
         return { error: `No se pudieron guardar los errores: ${errorErrores.message}` };
       }
+    }
+  }
+
+  /**
+   * La nota del setup, al final y de una vez.
+   *
+   * Va fuera del bucle porque escribirla es reemplazar una etiqueta, no
+   * actualizar una fila: hacerlo operación por operación serían tres consultas
+   * por cada una para acabar poniendo la misma etiqueta. Aquí se hace una vez
+   * para todas las que la reciben.
+   */
+  if (values.setup_grade !== undefined) {
+    const destinatarias = existing
+      .filter((row) => !(mode === "FILL_EMPTY" && row.setup_grade !== null))
+      .filter((row) => row.setup_grade !== values.setup_grade)
+      .map((row) => row.tradeId);
+
+    if (destinatarias.length > 0) {
+      const { error } = await applySetupGrade({
+        userId,
+        tradeIds: destinatarias,
+        grade: values.setup_grade,
+      });
+      if (error) return { error };
     }
   }
 

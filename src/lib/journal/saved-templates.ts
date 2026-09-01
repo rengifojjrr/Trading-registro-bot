@@ -2,6 +2,7 @@ import type { Json } from "@/types/database";
 
 import type { BulkValues } from "./bulk-apply";
 import { MISTAKE_CODES, type MistakeCode } from "./mistakes";
+import { isSetupGrade } from "./setup-grade";
 
 /**
  * Leer una plantilla guardada sin fiarse de lo que hay en la columna.
@@ -53,6 +54,14 @@ export function parseTemplateValues(raw: Json | Record<string, unknown>): BulkVa
   const leccion = text(obj.lesson_learned, 2000);
   if (leccion) salida.lesson_learned = leccion;
 
+  if (isSetupGrade(obj.setup_grade)) salida.setup_grade = obj.setup_grade;
+
+  // Sin `NONE`: una plantilla que ponga «sin definir» borraría la dirección
+  // que ya tuvieran las operaciones, y aplicar una plantilla no borra nada.
+  if (obj.planned_direction === "LONG" || obj.planned_direction === "SHORT") {
+    salida.planned_direction = obj.planned_direction;
+  }
+
   const htf = text(obj.htf_bias, 200);
   if (htf) salida.htf_bias = htf;
 
@@ -75,7 +84,12 @@ export function describeTemplate(values: BulkValues): string {
   if (values.mistakes?.length) partes.push(`${values.mistakes.length} error(es)`);
   if (values.emotional_state?.length) partes.push(`${values.emotional_state.length} emoción(es)`);
   if (values.strategy_id) partes.push("estrategia");
+  if (values.setup_grade) partes.push(`setup ${values.setup_grade}`);
+  if (values.planned_direction) partes.push("dirección");
+  if (values.htf_bias) partes.push("sesgo");
+  if (values.sr_proximity) partes.push("soporte/resistencia");
   if (values.plan_adherence !== undefined) partes.push("adherencia");
+  if (values.entry_quality !== undefined) partes.push("calidad de entrada");
   if (values.notes) partes.push("notas");
   if (values.lesson_learned) partes.push("lección");
 

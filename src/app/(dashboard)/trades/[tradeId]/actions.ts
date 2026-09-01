@@ -6,6 +6,8 @@ import { z } from "zod";
 import { moveToTrash } from "@/core/trash";
 import { recordAudit } from "@/lib/audit/log";
 import { requireUser } from "@/lib/auth/require-user";
+import { SETUP_GRADES } from "@/lib/journal/setup-grade";
+import { applySetupGrade } from "@/lib/journal/setup-tags";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,8 +25,6 @@ const optionalRating = () =>
 // Notion import used (see docs/NOTION_IMPORT.md), so both sources read back
 // identically.
 const checkboxList = (maxLen: number) => z.array(z.string().max(maxLen)).max(20);
-
-const SETUP_GRADES = ["A+", "A", "B", "C"] as const;
 
 const schema = z.object({
   tradeId: z.string().uuid(),
@@ -126,52 +126,11 @@ export async function saveJournalEntry(
     return { error: "No se pudo guardar el diario.", success: false };
   }
 
-  await syncSetupTag(supabase, user.id, tradeId, fields.setup_grade ?? null);
+  await applySetupGrade({ userId: user.id, tradeIds: [tradeId], grade: fields.setup_grade ?? null });
   await enqueueNotionSync(user.id, tradeId);
 
   revalidatePath(`/trades/${tradeId}`);
   return { error: null, success: true };
-}
-
-const SETUP_TAG_PREFIX = "Setup: ";
-
-/**
- * Setup grade is stored as a tag ("Setup: A+", ...) rather than a column --
- * it reuses the same tags/trade_tags mechanism the Notion import already
- * populated (see docs/NOTION_IMPORT.md), so a trade never ends up with two
- * different homes for the same concept depending on where it came from.
- * Replaces whichever "Setup: X" tag this trade currently has, if any.
- */
-async function syncSetupTag(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  tradeId: string,
-  grade: (typeof SETUP_GRADES)[number] | null,
-): Promise<void> {
-  const { data: existingSetupTags } = await supabase
-    .from("tags")
-    .select("id")
-    .eq("user_id", userId)
-    .like("name", `${SETUP_TAG_PREFIX}%`);
-
-  const existingIds = (existingSetupTags ?? []).map((t) => t.id);
-  if (existingIds.length > 0) {
-    await supabase.from("trade_tags").delete().eq("trade_id", tradeId).in("tag_id", existingIds);
-  }
-
-  if (!grade) return;
-
-  const { data: tag } = await supabase
-    .from("tags")
-    .upsert({ user_id: userId, name: `${SETUP_TAG_PREFIX}${grade}` }, { onConflict: "user_id,name" })
-    .select("id")
-    .single();
-  if (!tag) return;
-
-  await supabase.from("trade_tags").upsert(
-    { user_id: userId, trade_id: tradeId, tag_id: tag.id },
-    { onConflict: "trade_id,tag_id" },
-  );
 }
 
 const commentSchema = z.object({

@@ -62,3 +62,36 @@ describe("describir una plantilla en una línea", () => {
     expect(describeTemplate({})).toBe("Vacía");
   });
 });
+
+describe("las plantillas guardan también las preguntas del plan", () => {
+  it("se lee la nota del setup", () => {
+    expect(parseTemplateValues({ setup_grade: "A+" }).setup_grade).toBe("A+");
+  });
+
+  it("una nota que no existe se descarta en vez de escribirse", () => {
+    expect(parseTemplateValues({ setup_grade: "D" }).setup_grade).toBeUndefined();
+    expect(parseTemplateValues({ setup_grade: 4 }).setup_grade).toBeUndefined();
+  });
+
+  it("se lee la dirección planeada, pero nunca «sin definir»", () => {
+    // Una plantilla que ponga `NONE` borraría la dirección que ya tuvieran, y
+    // aplicar una plantilla no borra nada.
+    expect(parseTemplateValues({ planned_direction: "LONG" }).planned_direction).toBe("LONG");
+    expect(parseTemplateValues({ planned_direction: "NONE" }).planned_direction).toBeUndefined();
+  });
+
+  it("el resumen nombra lo que trae", () => {
+    const texto = describeTemplate({
+      setup_grade: "B",
+      planned_direction: "SHORT",
+      htf_bias: "Bajista",
+      sr_proximity: "En resistencia",
+      entry_quality: 4,
+    });
+
+    expect(texto).toContain("setup B");
+    expect(texto).toContain("dirección");
+    expect(texto).toContain("sesgo");
+    expect(texto).toContain("calidad de entrada");
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { applyJournalToTrades } from "@/app/(dashboard)/trades/bulk-journal-actions";
@@ -13,9 +13,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { BulkMode, BulkPlan, BulkValues } from "@/lib/journal/bulk-apply";
+import type {
+  BulkMode,
+  BulkPlan,
+  BulkValues,
+  PlannedDirection,
+} from "@/lib/journal/bulk-apply";
+import { HTF_BIAS_OPTIONS, RATING_OPTIONS, SR_PROXIMITY_OPTIONS } from "@/lib/journal/options";
 import { describeTemplate, type JournalTemplateRow } from "@/lib/journal/saved-templates";
 import { MISTAKE_CODES, MISTAKE_META, type MistakeCode } from "@/lib/journal/mistakes";
+import { SETUP_GRADES, type SetupGrade } from "@/lib/journal/setup-grade";
 
 const EMOTION_OPTIONS = ["Calma", "Ansiedad", "Confianza", "Miedo", "Euforia", "Frustración", "FOMO"];
 const RATINGS = [1, 2, 3, 4, 5];
@@ -27,6 +34,12 @@ const RATINGS = [1, 2, 3, 4, 5];
  * no «vacíalo». Y antes de guardar se enseña qué se va a cambiar y cuánto se va
  * a pisar, porque «se van a reemplazar 3 notas» es una frase que hace cambiar
  * de opinión y «¿seguro?» no.
+ *
+ * Están las mismas preguntas que la ficha de una operación y en el mismo orden
+ * -- el plan, cómo salió y qué te llevas -- porque son el mismo diario. Faltaban
+ * la nota del setup, el sesgo, dónde estaba el precio, la dirección planeada y
+ * la calidad de entrada: eran preguntas que sólo se podían contestar de una en
+ * una, así que en una ráfaga de doce entradas se quedaban sin contestar.
  *
  * No están el riesgo, el stop, el objetivo ni el resultado en R a propósito:
  * son números de cada operación concreta, y ponerle el mismo stop a doce
@@ -46,7 +59,12 @@ export function BulkJournalDialog({
   const [mistakes, setMistakes] = useState<MistakeCode[]>([]);
   const [emotions, setEmotions] = useState<string[]>([]);
   const [strategyId, setStrategyId] = useState<string>("");
+  const [setupGrade, setSetupGrade] = useState<SetupGrade | null>(null);
+  const [plannedDirection, setPlannedDirection] = useState<PlannedDirection | null>(null);
+  const [htfBias, setHtfBias] = useState<string>("");
+  const [srProximity, setSrProximity] = useState<string>("");
   const [planAdherence, setPlanAdherence] = useState<number | null>(null);
+  const [entryQuality, setEntryQuality] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [lesson, setLesson] = useState("");
   const [mode, setMode] = useState<BulkMode>("FILL_EMPTY");
@@ -66,7 +84,12 @@ export function BulkJournalDialog({
     setMistakes(v.mistakes ?? []);
     setEmotions(v.emotional_state ?? []);
     setStrategyId(v.strategy_id ?? "");
+    setSetupGrade(v.setup_grade ?? null);
+    setPlannedDirection(v.planned_direction ?? null);
+    setHtfBias(v.htf_bias ?? "");
+    setSrProximity(v.sr_proximity ?? "");
     setPlanAdherence(v.plan_adherence ?? null);
+    setEntryQuality(v.entry_quality ?? null);
     setNotes(v.notes ?? "");
     setLesson(v.lesson_learned ?? "");
     startTransition(() => markTemplateUsed(template.id));
@@ -93,7 +116,12 @@ export function BulkJournalDialog({
     ...(mistakes.length > 0 ? { mistakes } : {}),
     ...(emotions.length > 0 ? { emotional_state: emotions } : {}),
     ...(strategyId !== "" ? { strategy_id: strategyId } : {}),
+    ...(setupGrade !== null ? { setup_grade: setupGrade } : {}),
+    ...(plannedDirection !== null ? { planned_direction: plannedDirection } : {}),
+    ...(htfBias !== "" ? { htf_bias: htfBias } : {}),
+    ...(srProximity !== "" ? { sr_proximity: srProximity } : {}),
     ...(planAdherence !== null ? { plan_adherence: planAdherence } : {}),
+    ...(entryQuality !== null ? { entry_quality: entryQuality } : {}),
     ...(notes.trim() !== "" ? { notes } : {}),
     ...(lesson.trim() !== "" ? { lesson_learned: lesson } : {}),
   };
@@ -185,95 +213,154 @@ export function BulkJournalDialog({
           </div>
         ) : null}
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Errores</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {MISTAKE_CODES.map((code) => (
-              <Chip
-                key={code}
-                label={MISTAKE_META[code].label}
-                title={MISTAKE_META[code].description}
-                active={mistakes.includes(code)}
-                onToggle={() =>
-                  setMistakes((c) => (c.includes(code) ? c.filter((x) => x !== code) : [...c, code]))
-                }
+        {/* El mismo orden que la ficha de una operación: lo que pensabas
+            antes, cómo lo ejecutaste, y qué te llevas. Es el mismo diario, así
+            que preguntarlo en otro orden obligaría a aprendérselo dos veces. */}
+        <Grupo titulo="El plan" subtitulo="Lo que tenías pensado antes de entrar">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-strategy">Estrategia</Label>
+              <Desplegable
+                id="bulk-strategy"
+                value={strategyId}
+                onChange={setStrategyId}
+                options={strategies.map((s) => ({ value: s.id, label: s.name }))}
               />
-            ))}
-          </div>
-        </fieldset>
+            </div>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Emociones</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {EMOTION_OPTIONS.map((emotion) => (
-              <Chip
-                key={emotion}
-                label={emotion}
-                active={emotions.includes(emotion)}
-                onToggle={() =>
-                  setEmotions((c) =>
-                    c.includes(emotion) ? c.filter((x) => x !== emotion) : [...c, emotion],
-                  )
-                }
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-sm font-medium">Setup</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {SETUP_GRADES.map((grade) => (
+                  <Chip
+                    key={grade}
+                    label={grade}
+                    title={`Marcar estas operaciones como setup ${grade}`}
+                    active={setupGrade === grade}
+                    onToggle={() => setSetupGrade(setupGrade === grade ? null : grade)}
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-sm font-medium">Dirección planeada</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ["LONG", "Long"],
+                    ["SHORT", "Short"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Chip
+                    key={value}
+                    label={label}
+                    active={plannedDirection === value}
+                    onToggle={() =>
+                      setPlannedDirection(plannedDirection === value ? null : value)
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-htf">Sesgo de temporalidad alta</Label>
+              <Desplegable
+                id="bulk-htf"
+                value={htfBias}
+                onChange={setHtfBias}
+                options={HTF_BIAS_OPTIONS.map((o) => ({ value: o, label: o }))}
               />
-            ))}
-          </div>
-        </fieldset>
+            </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bulk-strategy">Estrategia</Label>
-            <select
-              id="bulk-strategy"
-              value={strategyId}
-              onChange={(e) => setStrategyId(e.target.value)}
-              className="h-9 rounded-md border border-border bg-transparent px-2 text-sm"
-            >
-              <option value="">Sin cambiar</option>
-              {strategies.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="bulk-sr">Proximidad a soporte/resistencia</Label>
+              <Desplegable
+                id="bulk-sr"
+                value={srProximity}
+                onChange={setSrProximity}
+                options={SR_PROXIMITY_OPTIONS.map((o) => ({ value: o, label: o }))}
+              />
+            </div>
           </div>
+        </Grupo>
 
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="text-sm font-medium">Adherencia al plan</legend>
-            <div className="flex gap-1.5">
-              {RATINGS.map((n) => (
+        <Grupo titulo="Cómo salió" subtitulo="Qué tan bien ejecutaste lo que habías planeado">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Puntuacion
+              titulo="Adherencia al plan"
+              value={planAdherence}
+              onChange={setPlanAdherence}
+            />
+            <Puntuacion
+              titulo="Calidad de entrada"
+              value={entryQuality}
+              onChange={setEntryQuality}
+            />
+          </div>
+        </Grupo>
+
+        <Grupo titulo="Qué te llevas" subtitulo="Lo que quieres recordar la próxima vez">
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">Errores</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {MISTAKE_CODES.map((code) => (
                 <Chip
-                  key={n}
-                  label={String(n)}
-                  active={planAdherence === n}
-                  onToggle={() => setPlanAdherence(planAdherence === n ? null : n)}
+                  key={code}
+                  label={MISTAKE_META[code].label}
+                  title={MISTAKE_META[code].description}
+                  active={mistakes.includes(code)}
+                  onToggle={() =>
+                    setMistakes((c) =>
+                      c.includes(code) ? c.filter((x) => x !== code) : [...c, code],
+                    )
+                  }
                 />
               ))}
             </div>
           </fieldset>
-        </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bulk-lesson">Lección aprendida</Label>
-          <Textarea
-            id="bulk-lesson"
-            rows={2}
-            value={lesson}
-            onChange={(e) => setLesson(e.target.value)}
-            placeholder="Lo mismo para todas. En blanco, no se toca."
-          />
-        </div>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">Emociones</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {EMOTION_OPTIONS.map((emotion) => (
+                <Chip
+                  key={emotion}
+                  label={emotion}
+                  active={emotions.includes(emotion)}
+                  onToggle={() =>
+                    setEmotions((c) =>
+                      c.includes(emotion) ? c.filter((x) => x !== emotion) : [...c, emotion],
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </fieldset>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bulk-notes">Notas</Label>
-          <Textarea
-            id="bulk-notes"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Ej.: ráfaga de FOMO después de la pérdida de la mañana."
-          />
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bulk-lesson">Lección aprendida</Label>
+            <Textarea
+              id="bulk-lesson"
+              rows={2}
+              value={lesson}
+              onChange={(e) => setLesson(e.target.value)}
+              placeholder="Lo mismo para todas. En blanco, no se toca."
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bulk-notes">Notas</Label>
+            <Textarea
+              id="bulk-notes"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej.: ráfaga de FOMO después de la pérdida de la mañana."
+            />
+          </div>
+        </Grupo>
 
         <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">Si ya había algo escrito</legend>
@@ -360,6 +447,95 @@ function PlanPreview({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/** Un bloque de preguntas con su título, igual que en la ficha de una operación. */
+function Grupo({
+  titulo,
+  subtitulo,
+  children,
+}: {
+  titulo: string;
+  subtitulo: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-sm font-medium text-foreground">{titulo}</h3>
+        <p className="text-xs text-muted-foreground">{subtitulo}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Un desplegable cuya primera opción es «sin cambiar».
+ *
+ * Ese primer valor es lo que hace que este cuadro no borre nada: dejarlo
+ * puesto significa «no toques este campo», no «pon vacío».
+ */
+function Desplegable({
+  id,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-9 rounded-md border border-border bg-transparent px-2 text-sm"
+    >
+      <option value="">Sin cambiar</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Del 1 al 5, con la palabra en el título del botón.
+ *
+ * El número solo invita a que el criterio se mueva; la palabra hace que el 4
+ * de hoy signifique lo mismo que el de hace un mes -- igual que en la ficha de
+ * una operación, donde el desplegable lleva las palabras escritas.
+ */
+function Puntuacion({
+  titulo,
+  value,
+  onChange,
+}: {
+  titulo: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-1.5">
+      <legend className="text-sm font-medium">{titulo}</legend>
+      <div className="flex gap-1.5">
+        {RATINGS.map((n) => (
+          <Chip
+            key={n}
+            label={String(n)}
+            title={RATING_OPTIONS.find((o) => o.value === n)?.label}
+            active={value === n}
+            onToggle={() => onChange(value === n ? null : n)}
+          />
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
