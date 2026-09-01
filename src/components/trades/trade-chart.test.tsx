@@ -18,18 +18,50 @@ const timeScale = {
   subscribeVisibleTimeRangeChange: vi.fn(),
   unsubscribeVisibleTimeRangeChange: vi.fn(),
 };
-const series = {
-  setData: vi.fn(),
-  createPriceLine: vi.fn(() => ({})),
-  removePriceLine: vi.fn(),
-  priceToCoordinate: vi.fn(() => 0),
-  coordinateToPrice: vi.fn(() => 0),
-};
 
-vi.mock("lightweight-charts", () => ({
-  createChart: () => ({
-    addSeries: () => series,
-    removeSeries: vi.fn(),
+function nuevaSerie() {
+  return {
+    setData: vi.fn(),
+    createPriceLine: vi.fn(() => ({})),
+    removePriceLine: vi.fn(),
+    priceToCoordinate: vi.fn(() => 0),
+    coordinateToPrice: vi.fn(() => 0),
+  };
+}
+
+/** La última serie de velas creada, que es la que miran varias pruebas. */
+let series = nuevaSerie();
+
+/** Cuántos gráficos se han creado: reconstruirlo tira el zoom del usuario. */
+let graficosCreados = 0;
+
+/**
+ * Un gráfico con su propio registro de series, como el de verdad.
+ *
+ * `removeSeries` de la librería empieza por buscar la serie en el mapa de
+ * *ese* gráfico y revienta si no está («Value is undefined»). Un doble que
+ * acepta cualquier cosa esconde justo el fallo que trae aquí: quitar de un
+ * gráfico nuevo una serie que pertenecía a uno ya destruido.
+ */
+function crearGrafico() {
+  const propias = new Set<object>();
+  let viva = true;
+  graficosCreados += 1;
+
+  return {
+    addSeries: (definicion: unknown) => {
+      const nueva = nuevaSerie();
+      // La de velas es la primera y la que se guarda para las aserciones.
+      if (propias.size === 0) series = nueva;
+      propias.add(nueva);
+      void definicion;
+      return nueva;
+    },
+    removeSeries: (serie: object) => {
+      if (!viva) throw new Error("Chart is disposed");
+      if (!propias.has(serie)) throw new Error("Value is undefined");
+      propias.delete(serie);
+    },
     priceScale: () => priceScale,
     timeScale: () => timeScale,
     subscribeClick: vi.fn(),
@@ -37,8 +69,15 @@ vi.mock("lightweight-charts", () => ({
     subscribeCrosshairMove: vi.fn(),
     unsubscribeCrosshairMove: vi.fn(),
     resize: vi.fn(),
-    remove: vi.fn(),
-  }),
+    remove: () => {
+      viva = false;
+      propias.clear();
+    },
+  };
+}
+
+vi.mock("lightweight-charts", () => ({
+  createChart: () => crearGrafico(),
   createSeriesMarkers: vi.fn(),
   CandlestickSeries: {},
   HistogramSeries: {},
@@ -68,7 +107,10 @@ vi.mock("next/navigation", () => ({
  * la prueba de la reproducción, que de pronto medía la serie del indicador
  * en vez de la de las velas.
  */
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  window.localStorage.clear();
+  graficosCreados = 0;
+});
 
 import { SCALE_LABELS, SCALE_MODES } from "@/lib/charts/scale";
 import { GROUP_LABELS, TOOLS } from "@/lib/charts/tools";
@@ -325,6 +367,68 @@ describe("TradeChart tools", () => {
       "aria-checked",
       "true",
     );
+  });
+
+  it("encender varios indicadores seguidos no tumba el gráfico", async () => {
+    // El fallo: al encender el segundo, el gráfico se quedaba en «No se pudo
+    // cargar esta sección». Encender uno reconstruía el gráfico entero, pero
+    // las series del anterior sobrevivían al que las tenía, y el efecto de los
+    // datos las intentaba quitar del gráfico nuevo -- donde no estaban.
+    // `removeSeries` de la librería revienta con «Value is undefined».
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("button", { name: "Indicadores" }));
+    for (const nombre of [/EMA 9/, /EMA 21/, /EMA 50/, /SMA 200/, /VWAP/, /RSI 14/, /ATR 14/]) {
+      await user.click(await screen.findByRole("checkbox", { name: nombre }));
+    }
+
+    // Y apagarlos otra vez, que es el mismo camino al revés.
+    for (const nombre of [/EMA 9/, /EMA 50/]) {
+      await user.click(screen.getByRole("checkbox", { name: nombre }));
+    }
+
+    expect(screen.getByRole("checkbox", { name: /EMA 21/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("checkbox", { name: /EMA 9/ })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
+
+  it("poner un indicador no reconstruye el gráfico", async () => {
+    // Reconstruirlo tira el zoom y el desplazamiento: acercarse a una zona y
+    // encender una media para mirarla de cerca devolvía la vista al principio,
+    // que es justo lo contrario de lo que se pedía.
+    const user = userEvent.setup();
+    renderChart();
+
+    const alPrincipio = graficosCreados;
+
+    await user.click(screen.getByRole("button", { name: "Indicadores" }));
+    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
+    await user.click(screen.getByRole("checkbox", { name: /EMA 21/ }));
+
+    expect(graficosCreados).toBe(alPrincipio);
+  });
+
+  it("con indicadores puestos, cambiar la escala tampoco lo tumba", async () => {
+    // La escala sí reconstruye el gráfico, y ahí es donde las series viejas
+    // tenían que quedarse atrás: es el mismo fallo por otra puerta.
+    const user = userEvent.setup();
+    renderChart();
+
+    await user.click(screen.getByRole("button", { name: "Indicadores" }));
+    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("combobox", { name: "Escala de precios" }));
+    await user.click(await screen.findByRole("option", { name: /Logarítmica/ }));
+
+    expect(graficosCreados).toBeGreaterThan(1);
+    expect(screen.getByRole("combobox", { name: "Escala de precios" })).toBeTruthy();
   });
 
   it("disables undo and hide until there is something drawn", () => {

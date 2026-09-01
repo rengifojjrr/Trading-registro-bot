@@ -1333,6 +1333,15 @@ export function TradeChart({
       seriesRef.current = null;
       volumeSeriesRef.current = null;
       drawingPriceLinesRef.current = [];
+      // Las series de los indicadores se van con el gráfico que las tenía.
+      //
+      // Sin esto sobrevivían a su gráfico, y el efecto de los datos las
+      // intentaba quitar del gráfico **nuevo**: `removeSeries` de la librería
+      // busca la serie en el registro de ese gráfico y revienta si no está,
+      // así que el gráfico entero se caía y salía «No se pudo cargar esta
+      // sección». Bastaba con encender un indicador y luego tocar cualquier
+      // cosa que reconstruya el gráfico.
+      indicatorSeriesRef.current = [];
     };
     // entry/exit are compared by their primitive fields, not object identity --
     // page.tsx builds a new {time, price} literal on every server render, and
@@ -1355,7 +1364,13 @@ export function TradeChart({
     showVolume,
     scaleMode,
     autoScale,
-    indicators,
+    // `indicators` no está aquí, y es a propósito.
+    //
+    // Estaba, así que encender una media reconstruía el gráfico entero --
+    // tirando el zoom y el desplazamiento por poner una línea encima, que es
+    // exactamente lo que el comentario de arriba explica que no se hace por
+    // los dibujos. Las líneas de los indicadores las pone el efecto de los
+    // datos, que sí depende de `indicators`.
     themeVersion,
     replaying,
   ]);
