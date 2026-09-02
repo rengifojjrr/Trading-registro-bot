@@ -2100,6 +2100,15 @@ export interface Database {
         };
         Returns: Json;
       };
+      /**
+       * Cambia `bot_id` de las operaciones del usuario que llama, y nada
+       * más. `trades` no tiene política de UPDATE para el usuario a
+       * propósito; ver `20260902120000_asignar_operaciones_a_bot.sql`.
+       */
+      assign_trades_to_bot: {
+        Args: { p_trade_ids: string[]; p_bot_id: string | null };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
   };

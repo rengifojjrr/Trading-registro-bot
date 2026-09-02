@@ -351,6 +351,10 @@ export async function deleteBot(botId: string): Promise<ActionResult> {
  * Decir qué bot abrió estas operaciones. Con `botId` a `null`, quitárselo.
  *
  * La asignación vive en la propia fila de `trades` y sobrevive al recálculo.
+ * Va por una función de la base y no por un `update` directo porque `trades`
+ * no tiene política de UPDATE para el usuario, a propósito: la escribe el
+ * motor de reconstrucción, y lo único que el usuario puede tocar es esta
+ * columna.
  */
 export async function assignTradesToBot(input: {
   tradeIds: string[];
@@ -384,15 +388,14 @@ export async function assignTradesToBot(input: {
     botName = bot.name;
   }
 
-  const { data, error } = await supabase
-    .from("trades")
-    .update({ bot_id: input.botId })
-    .eq("user_id", user.id)
-    .in("id", ids.data)
-    .select("id");
+  const { data, error } = await supabase.rpc("assign_trades_to_bot", {
+    p_trade_ids: ids.data,
+    p_bot_id: input.botId,
+  });
   if (error) return { error: "No se pudieron asignar las operaciones.", assigned: 0 };
 
-  const asignadas = (data ?? []).length;
+  const asignadas = data ?? 0;
+  if (asignadas === 0) return { error: "No se asignó ninguna: esas operaciones no son tuyas.", assigned: 0 };
   await recordAudit({
     userId: user.id,
     action: "BOT_TRADES_ASSIGNED",
