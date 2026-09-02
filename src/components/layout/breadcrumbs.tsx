@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { MODULES, moduleForPath } from "@/core/registry";
+import { moduleForPath, sectionForPath } from "@/core/registry";
 
 /**
  * Dónde estás y cómo volver un paso.
@@ -25,37 +25,40 @@ export function Breadcrumbs() {
 
   // La sección a la que pertenece: la coincidencia más larga, para que
   // /tareas/proyectos/xxx no se resuelva como /tareas.
-  const seccion = modulo.sections
-    .filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  const match = sectionForPath(modulo, pathname);
 
   // En la propia sección no hay nada que decir: el título ya lo dice.
-  if (!seccion || pathname === seccion.href) return null;
+  if (!match || pathname === match.section.href) return null;
 
-  const raiz = MODULES.find((m) => m.id === modulo.id);
+  const { section, parent } = match;
+
+  // El paso atrás y, detrás, de dónde cuelga. Dentro de un submenú el paso
+  // atrás es el submenú (la ficha de un bot vuelve a Bots, no a «Resumen»),
+  // y detrás va el módulo.
+  const pasos = [
+    parent && parent.href === section.href ? parent : section,
+    ...(parent && parent.href !== section.href ? [parent] : []),
+    modulo,
+  ];
 
   return (
     <nav aria-label="Ruta" className="flex items-center gap-1 text-xs text-muted-foreground">
-      <Link
-        href={seccion.href}
-        className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <ChevronLeft className="size-3.5" aria-hidden />
-        {seccion.label}
-      </Link>
-      {raiz ? (
-        <>
-          <span aria-hidden className="opacity-50">
-            ·
-          </span>
+      {pasos.map((paso, i) => (
+        <span key={paso.href} className="flex items-center gap-1">
+          {i > 0 ? (
+            <span aria-hidden className="opacity-50">
+              ·
+            </span>
+          ) : null}
           <Link
-            href={raiz.href}
-            className="rounded px-1 py-0.5 transition-colors hover:bg-accent hover:text-foreground"
+            href={paso.href}
+            className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-accent hover:text-foreground"
           >
-            {raiz.label}
+            {i === 0 ? <ChevronLeft className="size-3.5" aria-hidden /> : null}
+            {paso.label}
           </Link>
-        </>
-      ) : null}
+        </span>
+      ))}
     </nav>
   );
 }

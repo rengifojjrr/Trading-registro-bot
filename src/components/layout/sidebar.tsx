@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowLeft,
   BookOpen,
+  ChevronRight,
   CircleCheck,
   Clapperboard,
   Home,
@@ -22,6 +23,7 @@ import {
   CADENCE_LABELS,
   MODULES,
   moduleForPath,
+  sectionForPath,
   type ModuleManifest,
   type ModuleSection,
   type SectionCadence,
@@ -39,23 +41,30 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 /**
- * Navegación en dos estados.
+ * Navegación en tres estados.
  *
  * Fuera de un módulo se ven los siete módulos. Dentro de uno se ve sólo ese
- * módulo con sus secciones, y una flecha para volver.
+ * módulo con sus secciones, y una flecha para volver. Y dentro de una sección
+ * con submenú -- Bots -- se ve sólo ese submenú, con una flecha para volver
+ * al módulo.
  *
  * La razón es aritmética: con todas las secciones de todos los módulos a la
  * vez la barra tenía veintiún enlaces, y trading -- que tiene once -- ahogaba
  * a los demás. Así cada módulo puede crecer sin costarle nada al resto, que
- * es lo mismo que persigue la separación en el código.
+ * es lo mismo que persigue la separación en el código. El tercer estado es la
+ * misma regla un nivel más abajo: los bots tienen seis pantallas y no son de
+ * trading a secas.
  */
 export function Sidebar() {
   const pathname = usePathname();
   const activeModule = moduleForPath(pathname);
+  const match = activeModule ? sectionForPath(activeModule, pathname) : null;
 
   return (
     <nav className="flex h-full w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-card px-3 py-4">
-      {activeModule ? (
+      {activeModule && match?.parent ? (
+        <SubmenuMenu module={activeModule} parent={match.parent} pathname={pathname} />
+      ) : activeModule ? (
         <ModuleMenu module={activeModule} pathname={pathname} />
       ) : (
         <RootMenu pathname={pathname} />
@@ -139,28 +148,93 @@ function ModuleMenu({ module, pathname }: { module: ModuleManifest; pathname: st
             </span>
           ) : null}
           {sections.map((section) => (
-            <Link
+            <SectionLink
               key={section.href}
-              href={section.href}
-              aria-current={section.href === activeHref ? "page" : undefined}
-              className={cn(
-                "rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                section.href === activeHref
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              )}
-              style={
-                section.href === activeHref
-                  ? { boxShadow: `inset 2px 0 0 var(${module.colorToken})` }
-                  : undefined
-              }
-            >
-              {section.label}
-            </Link>
+              section={section}
+              active={section.href === activeHref}
+              colorToken={module.colorToken}
+            />
           ))}
         </div>
       ))}
     </>
+  );
+}
+
+/**
+ * El tercer estado: dentro de un submenú.
+ *
+ * La flecha vuelve al módulo y no a la raíz: desde Riesgo de bots, un paso
+ * atrás es Trading. Igual que desde una sección de trading un paso atrás son
+ * todos los módulos.
+ */
+function SubmenuMenu({
+  module,
+  parent,
+  pathname,
+}: {
+  module: ModuleManifest;
+  parent: ModuleSection;
+  pathname: string;
+}) {
+  const Icon = ICONS[module.icon] ?? CircleCheck;
+  const children = parent.children ?? [];
+
+  const activeHref = children
+    .filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
+  return (
+    <>
+      <Link
+        href={module.href}
+        className="mb-3 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      >
+        <ArrowLeft className="size-3.5" aria-hidden />
+        {module.label}
+      </Link>
+
+      <div className="mb-3 flex items-center gap-2 px-2">
+        <Icon className="size-5 shrink-0" style={{ color: `var(${module.colorToken})` }} aria-hidden />
+        <span className="text-base font-semibold tracking-tight text-foreground">{parent.label}</span>
+      </div>
+
+      {children.map((section) => (
+        <SectionLink
+          key={section.href}
+          section={section}
+          active={section.href === activeHref}
+          colorToken={module.colorToken}
+        />
+      ))}
+    </>
+  );
+}
+
+function SectionLink({
+  section,
+  active,
+  colorToken,
+}: {
+  section: ModuleSection;
+  active: boolean;
+  colorToken: string;
+}) {
+  return (
+    <Link
+      href={section.href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center justify-between gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+        active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+      )}
+      style={active ? { boxShadow: `inset 2px 0 0 var(${colorToken})` } : undefined}
+    >
+      {section.label}
+      {/* La flecha dice que dentro hay otro menú, para que pulsar «Bots» y
+          ver cambiar la barra entera no sea una sorpresa. */}
+      {section.children ? <ChevronRight className="size-3.5 shrink-0 opacity-60" aria-hidden /> : null}
+    </Link>
   );
 }
 

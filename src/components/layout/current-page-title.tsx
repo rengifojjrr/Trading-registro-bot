@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 
-import { moduleForPath } from "@/core/registry";
+import { moduleForPath, sectionForPath } from "@/core/registry";
 
 const SYSTEM_TITLES: Record<string, string> = {
   "/": "Hoy",
@@ -19,24 +19,33 @@ const SYSTEM_TITLES: Record<string, string> = {
  *
  * Muestra «Módulo · Sección» porque ahora una sección puede llamarse igual
  * en dos módulos -- «Análisis» existe en sueño, lecturas, tareas y
- * contenido -- y la sección sola no diría dónde estás.
+ * contenido -- y la sección sola no diría dónde estás. Dentro de un submenú
+ * es «Submenú · Sección»: «Bots · Riesgo» y no «Trading · Riesgo», que es
+ * otra pantalla.
  */
 export function CurrentPageTitle() {
   const pathname = usePathname();
 
   const active = moduleForPath(pathname);
   if (active) {
-    const section = active.sections
-      .filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`))
-      .sort((a, b) => b.href.length - a.href.length)[0];
-
-    const label =
-      section && section.href !== active.href ? `${active.label} · ${section.label}` : active.label;
-    return <span className="text-sm font-medium text-foreground md:hidden">{label}</span>;
+    return <span className="text-sm font-medium text-foreground md:hidden">{titulo(active, pathname)}</span>;
   }
 
   const system = SYSTEM_TITLES[pathname] ?? (pathname.startsWith("/settings") ? "Configuración" : null);
   if (!system) return null;
 
   return <span className="text-sm font-medium text-foreground md:hidden">{system}</span>;
+}
+
+function titulo(active: NonNullable<ReturnType<typeof moduleForPath>>, pathname: string): string {
+  const match = sectionForPath(active, pathname);
+  if (!match || match.section.href === active.href) return active.label;
+
+  const { section, parent } = match;
+  if (parent) {
+    return section.href === parent.href
+      ? `${active.label} · ${parent.label}`
+      : `${parent.label} · ${section.label}`;
+  }
+  return `${active.label} · ${section.label}`;
 }

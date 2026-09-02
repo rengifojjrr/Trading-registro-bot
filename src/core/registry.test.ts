@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MODULES, moduleForPath } from "./registry";
+import { MODULES, allSections, moduleById, moduleForPath, sectionForPath } from "./registry";
 
 describe("moduleForPath", () => {
   it("reconoce la raíz de un módulo", () => {
@@ -38,5 +38,55 @@ describe("moduleForPath", () => {
       expect(mod.sections.length).toBeGreaterThan(0);
       expect(mod.sections[0].href).toBe(mod.href);
     }
+  });
+
+  it("las pantallas de bots son de trading", () => {
+    expect(moduleForPath("/bots")?.id).toBe("trading");
+    expect(moduleForPath("/bots/riesgo")?.id).toBe("trading");
+    expect(moduleForPath("/bots/abc-123")?.id).toBe("trading");
+  });
+});
+
+describe("sectionForPath", () => {
+  const trading = moduleById("trading");
+
+  it("una sección sin submenú no tiene padre", () => {
+    const match = sectionForPath(trading, "/trades/abc");
+    expect(match?.section.label).toBe("Operaciones");
+    expect(match?.parent).toBeNull();
+  });
+
+  it("dentro de un submenú devuelve la hija y quién la abre", () => {
+    const match = sectionForPath(trading, "/bots/equipo");
+    expect(match?.section.label).toBe("Equipo");
+    expect(match?.parent?.label).toBe("Bots");
+  });
+
+  it("en la portada del submenú gana la hija, no la sección que lo abre", () => {
+    const match = sectionForPath(trading, "/bots");
+    expect(match?.section.label).toBe("Resumen");
+    expect(match?.parent?.label).toBe("Bots");
+  });
+
+  it("la ficha de un bot cuelga de la portada del submenú", () => {
+    const match = sectionForPath(trading, "/bots/9f3c");
+    expect(match?.section.href).toBe("/bots");
+    expect(match?.parent?.label).toBe("Bots");
+  });
+
+  it("fuera del módulo no hay sección", () => {
+    expect(sectionForPath(trading, "/sueno")).toBeNull();
+  });
+
+  it("cada submenú empieza por su propia portada", () => {
+    for (const mod of MODULES) {
+      for (const section of mod.sections) {
+        if (section.children) expect(section.children[0].href).toBe(section.href);
+      }
+    }
+  });
+
+  it("allSections incluye las hijas", () => {
+    expect(allSections(trading).map((s) => s.href)).toContain("/bots/cantera");
   });
 });

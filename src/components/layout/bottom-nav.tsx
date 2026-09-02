@@ -50,7 +50,7 @@ const DESTINOS: Destino[] = [
     href: "/trading",
     label: "Trading",
     icon: TrendingUp,
-    prefijos: ["/trades", "/journal", "/analytics", "/risk", "/backtest", "/behaviour", "/review"],
+    prefijos: ["/trades", "/journal", "/analytics", "/risk", "/bots", "/backtest", "/behaviour", "/review"],
   },
   { href: "/tareas", label: "Tareas", icon: ListChecks },
   { href: "/comidas", label: "Comidas", icon: UtensilsCrossed },

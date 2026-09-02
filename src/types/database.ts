@@ -1017,6 +1017,8 @@ export interface Database {
           session_override: SessionLabel | null;
           session_effective: SessionLabel | null;
           source: TradeSource;
+          /** El bot que la abrió, si la abrió un bot. Sobrevive al recálculo. */
+          bot_id: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -1050,6 +1052,7 @@ export interface Database {
           session_computed?: SessionLabel | null;
           session_override?: SessionLabel | null;
           source?: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
+          bot_id?: string | null;
         }
       >;
 
@@ -1333,6 +1336,160 @@ export interface Database {
           updated_at?: string;
         }
       >;
+
+      // ------------------------------------------------------------- Bots
+      // Ver supabase/migrations/20260902100000_bots.sql y lib/bots/types.ts.
+
+      bots: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          market: string;
+          timeframe: string;
+          style: string;
+          block: string;
+          phase: string;
+          sizing_pct: string;
+          risk_per_trade_pct: string;
+          magic_number: string | null;
+          hypothesis: string | null;
+          baseline: Json;
+          drawdown_contract_pct: string | null;
+          contract_signed_at: string | null;
+          backtest_strategy_id: string | null;
+          strategy_id: string | null;
+          notes: string | null;
+          retired_at: string | null;
+          retirement_reason: string | null;
+          retirement_note: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          market: string;
+          timeframe: string;
+          style: string;
+          block: string;
+          phase?: string;
+          sizing_pct?: string | number;
+          risk_per_trade_pct?: string | number;
+          magic_number?: string | null;
+          hypothesis?: string | null;
+          baseline?: Json;
+          drawdown_contract_pct?: string | number | null;
+          contract_signed_at?: string | null;
+          backtest_strategy_id?: string | null;
+          strategy_id?: string | null;
+          notes?: string | null;
+          retired_at?: string | null;
+          retirement_reason?: string | null;
+          retirement_note?: string | null;
+        },
+        {
+          name?: string;
+          market?: string;
+          timeframe?: string;
+          style?: string;
+          block?: string;
+          phase?: string;
+          sizing_pct?: string | number;
+          risk_per_trade_pct?: string | number;
+          magic_number?: string | null;
+          hypothesis?: string | null;
+          baseline?: Json;
+          drawdown_contract_pct?: string | number | null;
+          contract_signed_at?: string | null;
+          backtest_strategy_id?: string | null;
+          strategy_id?: string | null;
+          notes?: string | null;
+          retired_at?: string | null;
+          retirement_reason?: string | null;
+          retirement_note?: string | null;
+          updated_at?: string;
+        }
+      >;
+
+      bot_phase_history: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string;
+          from_phase: string | null;
+          to_phase: string;
+          reason: string | null;
+          metrics: Json;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id: string;
+          from_phase?: string | null;
+          to_phase: string;
+          reason?: string | null;
+          metrics?: Json;
+        }
+      >;
+
+      bot_impulses: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string | null;
+          action: string;
+          note: string | null;
+          executed: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id?: string | null;
+          action: string;
+          note?: string | null;
+          executed?: boolean;
+        }
+      >;
+
+      bot_portfolio_settings: Table<
+        {
+          user_id: string;
+          target_convexo: string;
+          target_concavo: string;
+          target_hibrido: string;
+          ks_alert_pct: string;
+          ks_reduce_pct: string;
+          ks_close_pct: string;
+          ks_off_pct: string;
+          gate_profit_factor: string;
+          gate_expectancy_r: string;
+          gate_sharpe: string;
+          gate_max_drawdown_pct: string;
+          gate_min_trades: number;
+          updated_at: string;
+        },
+        {
+          user_id: string;
+          target_convexo?: string | number;
+          target_concavo?: string | number;
+          target_hibrido?: string | number;
+          ks_alert_pct?: string | number;
+          ks_reduce_pct?: string | number;
+          ks_close_pct?: string | number;
+          ks_off_pct?: string | number;
+          gate_profit_factor?: string | number;
+          gate_expectancy_r?: string | number;
+          gate_sharpe?: string | number;
+          gate_max_drawdown_pct?: string | number;
+          gate_min_trades?: number;
+          updated_at?: string;
+        }
+      >;
+
       strategies: Table<
         {
           id: string;

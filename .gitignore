@@ -53,3 +53,6 @@ next-env.d.ts
 *.keystore
 *.jks
 android-firma.*
+
+# Salida de `next start` de sesiones anteriores. No es del proyecto.
+*.log

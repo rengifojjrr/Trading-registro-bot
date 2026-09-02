@@ -38,6 +38,15 @@ export const AUDIT_ACTIONS = [
   "COINBASE_KEY_ROTATED",
   "BACKFILL_REQUESTED",
   "TRADE_DELETED",
+  "BOT_CREATED",
+  "BOT_UPDATED",
+  "BOT_DELETED",
+  "BOT_PHASE_CHANGED",
+  "BOT_RETIRED",
+  "BOT_TRADES_ASSIGNED",
+  "BOT_IMPULSE_LOGGED",
+  "BOT_CONTRACT_SIGNED",
+  "BOT_PORTFOLIO_SETTINGS_UPDATED",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -68,4 +77,13 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   BACKUP_VERIFIED: "Respaldo comprobado",
   VERIFIED_FIGURES_CHANGED: "Cambiaron cifras ya verificadas",
   RISK_LIMITS_UPDATED: "Límites de riesgo actualizados",
+  BOT_CREATED: "Bot creado",
+  BOT_UPDATED: "Bot editado",
+  BOT_DELETED: "Bot borrado",
+  BOT_PHASE_CHANGED: "Bot cambiado de fase",
+  BOT_RETIRED: "Bot retirado",
+  BOT_TRADES_ASSIGNED: "Operaciones asignadas a un bot",
+  BOT_IMPULSE_LOGGED: "Impulso apuntado",
+  BOT_CONTRACT_SIGNED: "Contrato de drawdown firmado",
+  BOT_PORTFOLIO_SETTINGS_UPDATED: "Umbrales del portfolio de bots cambiados",
 };

@@ -44,6 +44,18 @@ export interface ModuleSection {
   label: string;
   /** Sin declarar, se trata como diaria: un módulo pequeño no necesita grupos. */
   cadence?: SectionCadence;
+  /**
+   * Un submenú dentro de la sección: el tercer estado de la navegación.
+   *
+   * Al entrar en una sección con hijos, la barra lateral se cambia por esta
+   * lista con una flecha para volver al módulo, igual que al entrar en un
+   * módulo se cambia por sus secciones. Existe para Bots, que es un módulo
+   * dentro de trading: seis pantallas propias que, puestas en la lista de
+   * trading, la habrían dejado en diecinueve enlaces.
+   *
+   * La primera hija es la portada de la sección (mismo `href`).
+   */
+  children?: ModuleSection[];
 }
 
 export interface ModuleManifest {
@@ -82,6 +94,20 @@ export const MODULES: ModuleManifest[] = [
       { href: "/trades", label: "Operaciones", cadence: "DIARIO" },
       { href: "/journal", label: "Diario", cadence: "DIARIO" },
       { href: "/risk", label: "Riesgo", cadence: "DIARIO" },
+      // Los bots: un módulo dentro del módulo, con su propio menú.
+      {
+        href: "/bots",
+        label: "Bots",
+        cadence: "DIARIO",
+        children: [
+          { href: "/bots", label: "Resumen" },
+          { href: "/bots/equipo", label: "Equipo" },
+          { href: "/bots/cantera", label: "Cantera" },
+          { href: "/bots/riesgo", label: "Riesgo" },
+          { href: "/bots/impulsos", label: "Impulsos" },
+          { href: "/bots/calendario", label: "Calendario" },
+        ],
+      },
       // Lo que se mira el domingo, no el martes por la tarde.
       { href: "/analytics", label: "Análisis", cadence: "REPASO" },
       { href: "/backtest", label: "Backtest", cadence: "REPASO" },
@@ -197,7 +223,7 @@ export function moduleForPath(pathname: string): ModuleManifest | null {
   let best: { module: ModuleManifest; length: number } | null = null;
 
   for (const mod of MODULES) {
-    for (const section of mod.sections) {
+    for (const section of allSections(mod)) {
       const matches = pathname === section.href || pathname.startsWith(`${section.href}/`);
       if (matches && (best === null || section.href.length > best.length)) {
         best = { module: mod, length: section.href.length };
@@ -205,4 +231,40 @@ export function moduleForPath(pathname: string): ModuleManifest | null {
     }
   }
   return best?.module ?? null;
+}
+
+/** Todas las secciones de un módulo, con las de los submenús incluidas. */
+export function allSections(module: ModuleManifest): ModuleSection[] {
+  return module.sections.flatMap((s) => [s, ...(s.children ?? [])]);
+}
+
+export interface SectionMatch {
+  section: ModuleSection;
+  /** La sección con submenú de la que cuelga, si está dentro de uno. */
+  parent: ModuleSection | null;
+}
+
+/**
+ * La sección de un módulo a la que pertenece una ruta.
+ *
+ * Gana la coincidencia más larga, para que /bots/equipo no se resuelva como
+ * /bots. En empate gana la hija: la portada de un submenú y la sección que lo
+ * abre comparten `href`, y dentro del submenú es donde hay que estar.
+ */
+export function sectionForPath(module: ModuleManifest, pathname: string): SectionMatch | null {
+  let best: SectionMatch | null = null;
+
+  const considerar = (section: ModuleSection, parent: ModuleSection | null) => {
+    const matches = pathname === section.href || pathname.startsWith(`${section.href}/`);
+    if (matches && (best === null || section.href.length >= best.section.href.length)) {
+      best = { section, parent };
+    }
+  };
+
+  for (const section of module.sections) {
+    considerar(section, null);
+    for (const child of section.children ?? []) considerar(child, section);
+  }
+
+  return best;
 }
