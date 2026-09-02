@@ -38,6 +38,10 @@ export interface BotForDecisions {
   health: Pick<HealthReading, "state" | "reasons">;
   gate: Pick<GateResult, "verdict" | "summary">;
   contractBreached: boolean;
+  /** Operaciones abiertas o cerradas en los últimos 30 días. Para el watchdog. */
+  tradesLast30Days: number;
+  /** Cuántas al mes debería hacer, según su línea base o su histórico. */
+  expectedTradesPerMonth: number | null;
 }
 
 export interface PortfolioForDecisions {
@@ -48,6 +52,11 @@ export interface PortfolioForDecisions {
   redundantPairs: { a: string; b: string; rho: number }[];
   impulsesToEvaluate: number;
 }
+
+/** Con menos operaciones esperadas al mes, el watchdog no tiene ritmo que vigilar. */
+export const WATCHDOG_MIN_EXPECTED = 2;
+/** Por debajo de esta fracción de lo esperado, el bot no late. */
+export const WATCHDOG_RATIO = 0.25;
 
 export function pendingDecisions(p: PortfolioForDecisions): PendingItem[] {
   const items: PendingItem[] = [];
@@ -100,6 +109,28 @@ export function pendingDecisions(p: PortfolioForDecisions): PendingItem[] {
         actionLabel: "Reducir al 50%",
         severity: "AVISO",
         weight: 70,
+      });
+    }
+
+    // El watchdog: un pulsómetro. No dice si el bot va a ganar, dice si el
+    // corazón late a su ritmo. Un bot en producción que espera ocho
+    // operaciones al mes y lleva cero en treinta días no está perdiendo:
+    // está apagado, desconectado o roto, y eso se mira antes que nada.
+    const esperadas = bot.expectedTradesPerMonth;
+    if (
+      isProduction(bot.phase) &&
+      esperadas !== null &&
+      esperadas >= WATCHDOG_MIN_EXPECTED &&
+      bot.tradesLast30Days < esperadas * WATCHDOG_RATIO
+    ) {
+      items.push({
+        id: `bot-${bot.id}-watchdog`,
+        title: `${bot.name} opera menos de lo que debería`,
+        detail: `${bot.tradesLast30Days} operaci${bot.tradesLast30Days === 1 ? "ón" : "ones"} en treinta días cuando espera unas ${Math.round(esperadas)} al mes. Comprueba que corre, que está conectado y que sus operaciones están asignadas.`,
+        href: `/bots/${bot.id}`,
+        actionLabel: "Ver el bot",
+        severity: "AVISO",
+        weight: 60,
       });
     }
 

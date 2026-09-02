@@ -59,12 +59,14 @@ src/
       page.tsx            # dashboard principal (estado vacío hasta la Fase 4)
       trades/[tradeId]/
       journal/ strategies/ reports/ import/ activity/ settings/
-  components/{ui,shared,layout,settings}/
+      bots/               # el submenú de bots: resumen, equipo, cantera, [botId], riesgo, impulsos, calendario -- ver docs/BOTS.md
+  components/{ui,shared,layout,settings,bots}/
   lib/
     supabase/{client,server,admin}.ts
     auth/{require-user,actions}.ts
     coinbase/  (ver arriba)
     sessions/{config,classify}.ts + test
+    bots/      # puro: métricas, puertas, semáforo, kill-switch, bloques, correlación, Monte Carlo, impulsos, decisiones, calendario; queries.ts es lo único con IO
     env.ts
     utils.ts
 supabase/migrations/       # 12 archivos, ver docs/DATABASE.md

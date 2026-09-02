@@ -95,7 +95,7 @@ export function ImpulseList({
           <p className="text-sm text-foreground">{e.verdict}</p>
           {e.status !== "PENDIENTE" ? (
             <p className="text-xs text-muted-foreground">
-              El bot cerró {e.tradesAfter} operación{e.tradesAfter === 1 ? "" : "es"} esa semana, con un neto de{" "}
+              El bot cerró {e.tradesAfter} operaci{e.tradesAfter === 1 ? "ón" : "ones"} esa semana, con un neto de{" "}
               {formatSignedMoney(e.netAfter, { currency })}.
             </p>
           ) : null}

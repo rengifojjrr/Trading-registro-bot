@@ -14,6 +14,8 @@ function bot(
     health: { state: health ?? "VERDE", reasons: ["motivo"] },
     gate: { verdict: "RETENIDO", summary: "Retenido" },
     contractBreached: false,
+    tradesLast30Days: 5,
+    expectedTradesPerMonth: null,
     ...resto,
   };
 }
@@ -89,6 +91,22 @@ describe("pendingDecisions", () => {
       portfolio({ bots: [bot({ phase: "RETIRADO", health: "NARANJA", contractBreached: true })] }),
     );
     expect(r).toEqual([]);
+  });
+
+  it("el watchdog avisa cuando un bot en producción deja de latir", () => {
+    const parado = pendingDecisions(
+      portfolio({ bots: [bot({ phase: "F7", tradesLast30Days: 0, expectedTradesPerMonth: 8 })] }),
+    );
+    expect(parado[0].id).toBe("bot-b1-watchdog");
+    expect(parado[0].severity).toBe("AVISO");
+    expect(parado[0].detail).toContain("0 operaciones en treinta días");
+
+    // Con un cuarto de lo esperado ya late; en la cantera no se vigila; sin
+    // expectativa no hay ritmo que comparar.
+    expect(pendingDecisions(portfolio({ bots: [bot({ phase: "F7", tradesLast30Days: 2, expectedTradesPerMonth: 8 })] }))).toEqual([]);
+    expect(pendingDecisions(portfolio({ bots: [bot({ phase: "F4", tradesLast30Days: 0, expectedTradesPerMonth: 8 })] }))).toEqual([]);
+    expect(pendingDecisions(portfolio({ bots: [bot({ phase: "F7", tradesLast30Days: 0, expectedTradesPerMonth: null })] }))).toEqual([]);
+    expect(pendingDecisions(portfolio({ bots: [bot({ phase: "F7", tradesLast30Days: 0, expectedTradesPerMonth: 1 })] }))).toEqual([]);
   });
 
   it("los bloques, las correlaciones y los impulsos, por orden de peso", () => {

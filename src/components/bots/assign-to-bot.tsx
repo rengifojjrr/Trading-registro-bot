@@ -47,10 +47,11 @@ export function AssignToBot({
         toast.error(r.error);
         return;
       }
+      const cuantas = `${r.assigned} operaci${r.assigned === 1 ? "ón" : "ones"}`;
       toast.success(
         target
-          ? `${r.assigned} operación${r.assigned === 1 ? "" : "es"} asignada${r.assigned === 1 ? "" : "s"} a ${bots.find((b) => b.id === target)?.name ?? "su bot"}.`
-          : `${r.assigned} operación${r.assigned === 1 ? "" : "es"} sin bot.`,
+          ? `${cuantas} asignada${r.assigned === 1 ? "" : "s"} a ${bots.find((b) => b.id === target)?.name ?? "su bot"}.`
+          : `${cuantas} sin bot.`,
       );
       onDone();
       router.refresh();

@@ -161,6 +161,19 @@ function cerradas<T extends BotTrade>(trades: T[]): (T & { closedAt: string; net
     .sort((a, b) => Date.parse(a.closedAt) - Date.parse(b.closedAt));
 }
 
+/**
+ * Operaciones abiertas o cerradas en la ventana, para el watchdog.
+ *
+ * Abiertas también: un swing con una posición de tres semanas no ha cerrado
+ * nada, pero está vivo.
+ */
+function actividadReciente(trades: BotTrade[], now: Date): number {
+  const desde = now.getTime() - ROLLING_WINDOW_DAYS * 86_400_000;
+  return trades.filter(
+    (t) => Date.parse(t.openedAt) >= desde || (t.closedAt !== null && Date.parse(t.closedAt) >= desde),
+  ).length;
+}
+
 export function buildBotView(bot: BotRecord, trades: BotTrade[], ctx: BotContext, now: Date): BotView {
   const metrics = computeBotMetrics(trades, ctx.accountSize);
 
@@ -287,6 +300,12 @@ export async function buildPortfolio(now: Date = new Date()): Promise<PortfolioV
       health: v.health,
       gate: v.gate,
       contractBreached: v.contractBreached,
+      tradesLast30Days: actividadReciente(tradesByBot.get(v.bot.id) ?? [], now),
+      // Lo que prometió o, si no prometió nada, su propio ritmo -- sólo con
+      // dos meses de histórico: dos operaciones en su primer día no son
+      // «sesenta al mes».
+      expectedTradesPerMonth:
+        v.bot.baseline.tradesPerMonth ?? (v.metrics.spanDays >= 60 ? v.metrics.tradesPerMonth : null),
     })),
     killSwitch,
     allocation,
