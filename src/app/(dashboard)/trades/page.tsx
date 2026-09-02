@@ -9,6 +9,7 @@ import { parseTradeFilters, parseTradePageParams } from "@/lib/analytics/filter-
 import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchTradesPage } from "@/lib/analytics/queries";
 import { fetchSavedViews } from "@/lib/analytics/saved-views";
 import { requireUser } from "@/lib/auth/require-user";
+import { fetchBotChoices } from "@/lib/bots/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function TradesPage(props: PageProps<"/trades">) {
@@ -17,8 +18,9 @@ export default async function TradesPage(props: PageProps<"/trades">) {
   const searchParams = await props.searchParams;
 
   // Las estrategias hacen falta para poder asignar una al apuntar varias
-  // operaciones de golpe, desde la propia tabla.
-  const [{ count: totalTradeCount }, { data: settings }, { data: strategyRows }, accounts, products, filterOptions] = await Promise.all([
+  // operaciones de golpe, desde la propia tabla. Los bots, para decir cuál
+  // las abrió.
+  const [{ count: totalTradeCount }, { data: settings }, { data: strategyRows }, accounts, products, filterOptions, bots] = await Promise.all([
     supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("orphaned_at", null),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
     supabase
@@ -30,6 +32,7 @@ export default async function TradesPage(props: PageProps<"/trades">) {
     fetchAccounts(),
     fetchDistinctProductIds(),
     fetchFilterOptions(),
+    fetchBotChoices(),
   ]);
 
   const strategies = strategyRows ?? [];
@@ -88,6 +91,7 @@ export default async function TradesPage(props: PageProps<"/trades">) {
           accountsById={accountsById}
           timezone={timezone}
           strategies={strategies}
+          bots={bots}
         />
       )}
     </>

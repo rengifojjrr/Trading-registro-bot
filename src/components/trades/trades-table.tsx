@@ -50,6 +50,7 @@ export function TradesTable({
   accountsById,
   timezone,
   strategies,
+  bots = [],
 }: {
   rows: TradeTableRow[];
   total: number;
@@ -62,6 +63,8 @@ export function TradesTable({
   timezone: string;
   /** Para poder asignar estrategia al apuntar varias de una vez. */
   strategies: { id: string; name: string }[];
+  /** Para decir qué bot abrió las operaciones marcadas. */
+  bots?: { id: string; name: string }[];
   /** Exports every matching row, not just this page -- see the trades page. */
 }) {
   const router = useRouter();
@@ -210,6 +213,7 @@ export function TradesTable({
         <SelectionBar
           selected={selected}
           strategies={strategies}
+          bots={bots}
           onSelectionChange={setSelected}
           onClear={() => setSelected([])}
         />

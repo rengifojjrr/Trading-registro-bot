@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { buildPortfolio } from "@/lib/bots/queries";
 import { fetchJournalInbox } from "@/lib/journal/inbox";
 import { createClient } from "@/lib/supabase/server";
 import { readSyncStatus } from "@/lib/sync/read-status";
@@ -28,7 +29,7 @@ export type { PendingItem, PendingSeverity } from "./types";
  */
 
 export async function gatherPending(): Promise<PendingItem[]> {
-  const [sync, journal, discrepancies, notifications, life] = await Promise.all([
+  const [sync, journal, discrepancies, notifications, life, bots] = await Promise.all([
     safe(() => readSyncStatusSafe(), null),
     safe(() => fetchJournalInbox(), { groups: [], total: 0, days: 0 }),
     safe(() => countOpenDiscrepancies(), 0),
@@ -37,6 +38,9 @@ export async function gatherPending(): Promise<PendingItem[]> {
     // ni una línea que lo dijera. Aportan aquí en vez de tener su propio
     // sistema, para que «qué me falta» siga teniendo una sola respuesta.
     safe(() => gatherLifePending(), [] as PendingItem[]),
+    // Y los bots: un semáforo en naranja o un escalón de la escalera son
+    // decisiones que esperan, y esperan aquí como todo lo demás.
+    safe(async () => (await buildPortfolio()).decisions, [] as PendingItem[]),
   ]);
 
   const items: PendingItem[] = [];
@@ -109,7 +113,7 @@ export async function gatherPending(): Promise<PendingItem[]> {
     });
   }
 
-  items.push(...life);
+  items.push(...life, ...bots);
 
   return items.sort((a, b) => b.weight - a.weight);
 }

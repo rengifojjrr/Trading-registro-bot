@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { findBurstFor } from "@/app/(dashboard)/trades/bulk-journal-actions";
+import { AssignToBot } from "@/components/bots/assign-to-bot";
 import { BulkJournalDialog } from "@/components/trades/bulk-journal-dialog";
 import { Button } from "@/components/ui/button";
 
@@ -25,11 +26,14 @@ import { Button } from "@/components/ui/button";
 export function SelectionBar({
   selected,
   strategies,
+  bots = [],
   onSelectionChange,
   onClear,
 }: {
   selected: string[];
   strategies: { id: string; name: string }[];
+  /** Para decir qué bot abrió las operaciones marcadas. */
+  bots?: { id: string; name: string }[];
   onSelectionChange: (ids: string[]) => void;
   onClear: () => void;
 }) {
@@ -94,6 +98,10 @@ export function SelectionBar({
             </Link>
           </Button>
         ) : null}
+
+        {/* Asignarlas a su bot: el punto tres de la revisión técnica del
+            domingo, y lo que hace que las cifras de cada bot existan. */}
+        <AssignToBot tradeIds={selected} bots={bots} onDone={onClear} />
 
         <Button size="sm" variant="ghost" onClick={onClear}>
           Quitar selección
