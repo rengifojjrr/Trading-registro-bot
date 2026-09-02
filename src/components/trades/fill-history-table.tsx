@@ -18,6 +18,8 @@ export interface FillHistoryRow {
     size: string;
     trade_type: "FILL" | "REVERSAL" | "CORRECTION" | "SYNTHETIC";
     liquidity_indicator: "MAKER" | "TAKER" | "UNKNOWN_LIQUIDITY_INDICATOR" | null;
+    /** La orden de este fill la puso Coinbase, no tú: una liquidación de margen. */
+    liquidation: boolean;
   } | null;
 }
 
@@ -98,7 +100,17 @@ export function FillHistoryTable({
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatMoney(f.allocated_commission)}</td>
                       <td className="px-3 py-2">
-                        {f.rawFill && f.rawFill.trade_type !== "FILL" ? (
+                        {/* Una liquidación es un FILL normal por dentro; lo que la
+                            distingue es la orden, y eso es lo que hay que ver aquí:
+                            es la fila que explica por qué la posición bajó sola. */}
+                        {f.rawFill?.liquidation ? (
+                          <Badge
+                            variant="negative"
+                            title="Coinbase ejecutó este cierre por su cuenta (orden de tipo LIQUIDATION)."
+                          >
+                            Liquidación de Coinbase
+                          </Badge>
+                        ) : f.rawFill && f.rawFill.trade_type !== "FILL" ? (
                           <Badge variant="warning">{f.rawFill.trade_type}</Badge>
                         ) : (
                           <span className="text-muted-foreground">FILL</span>

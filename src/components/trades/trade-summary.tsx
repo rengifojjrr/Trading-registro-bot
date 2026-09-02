@@ -41,6 +41,7 @@ export type TradeDetail = Pick<
   | "is_manually_adjusted"
   | "session_effective"
   | "source"
+  | "liquidated_qty"
 >;
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -76,6 +77,11 @@ export function TradeSummary({
   // tener la posición, que en una que se escaló y se cerró a trozos no es ni
   // lo que entró ni lo que queda.
   const openQty = Number(trade.total_entry_qty) - Number(trade.total_exit_qty);
+  // Contratos que cerró Coinbase por su cuenta, no tú. Se dice aparte del
+  // estado porque son cosas distintas: una operación liquidada a medias
+  // sigue abierta, y una cerrada del todo por Coinbase está cerrada igual.
+  const liquidatedQty = Number(trade.liquidated_qty);
+  const liquidated = Number.isFinite(liquidatedQty) && liquidatedQty > 0;
 
   return (
     <Card>
@@ -127,11 +133,31 @@ export function TradeSummary({
           <Headline
             label="Estado"
             value={
-              <Badge variant={isOpen ? "warning" : "outline"}>{isOpen ? "Abierta" : "Cerrada"}</Badge>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={isOpen ? "warning" : "outline"}>{isOpen ? "Abierta" : "Cerrada"}</Badge>
+                {liquidated ? <Badge variant="negative">Liquidada por Coinbase</Badge> : null}
+              </span>
             }
             sub={formatSessionLabel(trade.session_effective)}
           />
         </div>
+
+        {liquidated ? (
+          // Lo primero que hay que saber de una operación que Coinbase tocó,
+          // y en la cara: antes esto no salía en ninguna parte y una posición
+          // que pasaba de 78 a 50 contratos parecía un fallo de sincronización.
+          <p className="rounded-md border border-negative/30 bg-negative/5 px-3 py-2 text-sm">
+            <span className="font-medium">
+              Coinbase cerró por su cuenta {formatNumber(trade.liquidated_qty, 4)} de los{" "}
+              {formatNumber(trade.total_entry_qty, 4)} contratos
+            </span>{" "}
+            (liquidación de margen).{" "}
+            {isOpen
+              ? "Son salidas reales a su precio de ejecución y ya están descontadas de lo que queda abierto."
+              : "Son salidas reales a su precio de ejecución y están dentro del P&L."}{" "}
+            En el historial de fills están marcadas una a una.
+          </p>
+        ) : null}
 
         <CollapsibleSection title="Ver todos los datos" className="border-t border-border pt-3">
           <div className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
@@ -146,6 +172,12 @@ export function TradeSummary({
               value={`${formatNumber(trade.total_entry_qty, 4)} / ${formatNumber(trade.total_exit_qty, 4)}`}
             />
             <DetailRow label="Fills entrada / salida" value={`${trade.entries_count} / ${trade.exits_count}`} />
+            {liquidated ? (
+              <DetailRow
+                label="Cerrado por Coinbase"
+                value={`${formatNumber(trade.liquidated_qty, 4)} de ${formatNumber(trade.total_exit_qty, 4)} salidos`}
+              />
+            ) : null}
             <DetailRow label="WAP entrada" value={formatMoney(trade.entry_wap)} />
             <DetailRow label="WAP salida" value={formatMoney(trade.exit_wap)} />
             <DetailRow label="Valor nocional" value={formatMoney(trade.notional_value)} />

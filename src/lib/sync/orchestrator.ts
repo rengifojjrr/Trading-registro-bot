@@ -3,8 +3,9 @@ import "server-only";
 import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
 import { IntxAdapter } from "@/lib/coinbase/venues/intx";
 import type { MarketDataPort } from "@/lib/coinbase/ports";
-import type { CoinbaseFill, CoinbaseProduct } from "@/lib/coinbase/types";
+import type { CoinbaseFill, CoinbaseOrder, CoinbaseProduct } from "@/lib/coinbase/types";
 import { serverEnv } from "@/lib/env";
+import { describeLiquidation, isStoredLiquidationOrder, summariseLiquidations } from "./liquidations";
 import { parseProductIds } from "./product-ids";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
@@ -281,7 +282,7 @@ async function syncOneProduct(params: {
   // pidiendo antes porque son ellas las que traen `filled_size` y
   // `number_of_fills`, que es con lo que se cuadra justo después.
   const orderIds = [...new Set(fills.map((f) => f.order_id))];
-  await upsertRawOrders(adapter, userId, accountId, productId, runId, orderIds);
+  const orders = await upsertRawOrders(adapter, userId, accountId, productId, runId, orderIds);
   const storedFills = await upsertRawFills(userId, accountId, runId, fills);
 
   // Antes de reconstruir, cuadrar. La reconstrucción da por supuesto que
@@ -305,6 +306,20 @@ async function syncOneProduct(params: {
   );
 
   await publishTradingMetrics(userId);
+
+  // Si entre lo nuevo hay cierres que ejecutó Coinbase por su cuenta, decirlo.
+  // Sólo sobre los fills que **acaban de guardarse**: la ventana de solape
+  // vuelve a traer los últimos minutos en cada sincronización, y una
+  // liquidación de ayer no es noticia hoy.
+  await announceLiquidations({
+    userId,
+    productId,
+    fills: [
+      ...fills.filter((f) => storedFills.insertedIds.has(f.entry_id)),
+      ...repaired.recoveredFills,
+    ],
+    orders,
+  });
 
   if (result.unclassifiedFillIds.length > 0) {
     await raiseNotification({
@@ -419,6 +434,8 @@ async function refreshProductSpec(
 interface StoredFillsResult {
   /** Cuántos no estaban y ahora sí. */
   inserted: number;
+  /** Cuáles: los `entry_id` que no estaban y ahora sí. */
+  insertedIds: Set<string>;
   /** Los `entry_id` que están en la base de datos, ya estuvieran o no. */
   stored: Set<string>;
 }
@@ -437,7 +454,7 @@ async function upsertRawFills(
   syncRunId: string,
   fills: CoinbaseFill[],
 ): Promise<StoredFillsResult> {
-  if (fills.length === 0) return { inserted: 0, stored: new Set() };
+  if (fills.length === 0) return { inserted: 0, insertedIds: new Set(), stored: new Set() };
   const supabase = createAdminClient();
 
   const entryIds = fills.map((f) => f.entry_id);
@@ -447,7 +464,7 @@ async function upsertRawFills(
     .in("entry_id", entryIds);
   const existingIds = new Set((existing ?? []).map((r) => r.entry_id));
   const newFills = fills.filter((f) => !existingIds.has(f.entry_id));
-  if (newFills.length === 0) return { inserted: 0, stored: existingIds };
+  if (newFills.length === 0) return { inserted: 0, insertedIds: new Set(), stored: existingIds };
 
   const { error: insertError } = await supabase.from("raw_fills").insert(
     newFills.map((f) => ({
@@ -484,10 +501,10 @@ async function upsertRawFills(
     .select("entry_id")
     .in("entry_id", entryIds);
 
-  return {
-    inserted: newFills.length,
-    stored: new Set((confirmed ?? []).map((r) => r.entry_id)),
-  };
+  const stored = new Set((confirmed ?? []).map((r) => r.entry_id));
+  const insertedIds = new Set(newFills.map((f) => f.entry_id).filter((id) => stored.has(id)));
+
+  return { inserted: insertedIds.size, insertedIds, stored };
 }
 
 
@@ -512,13 +529,14 @@ async function repairFillGaps(params: {
   accountId: string;
   productId: string;
   runId: string;
-}): Promise<{ recovered: number; remaining: FillGap[] }> {
+}): Promise<{ recovered: number; remaining: FillGap[]; recoveredFills: CoinbaseFill[] }> {
   const { adapter, userId, accountId, productId, runId } = params;
 
   const gaps = await findGapsForProduct(userId, accountId, productId);
-  if (gaps.length === 0) return { recovered: 0, remaining: [] };
+  if (gaps.length === 0) return { recovered: 0, remaining: [], recoveredFills: [] };
 
   let recovered = 0;
+  let recoveredFills: CoinbaseFill[] = [];
   try {
     const fills = await adapter.listFills({
       order_ids: gaps.map((g) => g.orderId),
@@ -527,6 +545,7 @@ async function repairFillGaps(params: {
     if (fills.length > 0) {
       const stored = await upsertRawFills(userId, accountId, runId, fills);
       recovered = stored.inserted;
+      recoveredFills = fills.filter((f) => stored.insertedIds.has(f.entry_id));
     }
   } catch (error) {
     console.error("[sync] no se pudieron recuperar los fills que faltaban", error);
@@ -564,9 +583,19 @@ async function repairFillGaps(params: {
     });
   }
 
-  return { recovered, remaining };
+  return { recovered, remaining, recoveredFills };
 }
 
+/**
+ * Guarda las órdenes de los fills de esta tanda y las devuelve.
+ *
+ * Son contexto, no dato: la reconstrucción sólo lee fills, y que esto falle
+ * no puede tumbar la sincronización. Pero es contexto que importa: la orden
+ * es lo único que dice si un cierre lo decidiste tú o lo ejecutó Coinbase
+ * por su cuenta (`order_type = LIQUIDATION`), así que el tipo va en su
+ * columna y no sólo enterrado en el payload -- durante semanas se quedó en
+ * `null` y no había forma de preguntar «¿cuántas liquidaciones ha habido?».
+ */
 async function upsertRawOrders(
   adapter: MarketDataPort,
   userId: string,
@@ -574,18 +603,19 @@ async function upsertRawOrders(
   productId: string,
   syncRunId: string,
   orderIds: string[],
-): Promise<void> {
-  if (orderIds.length === 0) return;
+): Promise<CoinbaseOrder[]> {
+  if (orderIds.length === 0) return [];
   const supabase = createAdminClient();
 
   try {
     const orders = await adapter.listOrders(orderIds);
-    await supabase.from("raw_orders").upsert(
+    const { error } = await supabase.from("raw_orders").upsert(
       orders.map((o) => ({
         order_id: o.order_id,
         user_id: userId,
         account_id: accountId,
         product_id: o.product_id ?? productId,
+        order_type: o.order_type ?? null,
         order_side: o.side,
         status: o.status,
         raw_payload: o as unknown as Json,
@@ -594,11 +624,93 @@ async function upsertRawOrders(
       })),
       { onConflict: "order_id" },
     );
-  } catch {
-    // Order detail is supplementary context, not required for
-    // reconstruction (which only reads fills) -- a failure here must never
-    // fail the whole sync run.
+    if (error) {
+      console.error("[sync] no se pudieron guardar las órdenes de la tanda", error);
+    }
+    return orders;
+  } catch (error) {
+    console.error("[sync] no se pudieron pedir las órdenes de la tanda", error);
+    return [];
   }
+}
+
+/**
+ * Avisa de cada orden de liquidación con fills recién guardados.
+ *
+ * Una liquidación no es un fallo de la aplicación y no hay nada que reparar:
+ * los fills llegan como los de cualquier venta y la reconstrucción los aplica
+ * bien. Lo que hace falta es que se sepa, porque una posición que baja de 78
+ * a 50 contratos sin que nadie la haya tocado parece exactamente un fallo de
+ * sincronización -- y no distinguir las dos cosas es lo que hace que se deje
+ * de creer en las cifras.
+ *
+ * Las órdenes que no vinieron en esta tanda (las de los fills recuperados por
+ * un hueco) se leen de la base de datos, donde ya están.
+ */
+async function announceLiquidations(params: {
+  userId: string;
+  productId: string;
+  fills: CoinbaseFill[];
+  orders: CoinbaseOrder[];
+}): Promise<void> {
+  const { userId, productId, fills } = params;
+  if (fills.length === 0) return;
+
+  try {
+    const conocidas = new Set(params.orders.map((o) => o.order_id));
+    const faltan = [...new Set(fills.map((f) => f.order_id))].filter((id) => !conocidas.has(id));
+    const orders = [...params.orders, ...(await storedOrders(faltan))];
+
+    for (const liquidacion of summariseLiquidations(fills, orders)) {
+      const contratos = `${liquidacion.contracts} contrato${liquidacion.contracts === "1" ? "" : "s"}`;
+      await raiseNotification({
+        userId,
+        type: "LIQUIDATION",
+        severity: "CRITICAL",
+        title: `Coinbase liquidó ${contratos} de ${liquidacion.productId}`,
+        message:
+          `${describeLiquidation(liquidacion)} ` +
+          "Cuentan como cierres reales a su precio de ejecución: la operación afectada ya " +
+          "está recalculada y marcada como liquidada. Si queda posición abierta, revisa el " +
+          "margen antes de que vuelva a pasar.",
+        relatedEntityType: "product",
+        relatedEntityId: productId,
+        // Por orden: aunque la ventana de solape traiga sus fills dos veces,
+        // una liquidación es una noticia, no dos.
+        dedupKey: `liquidation:${liquidacion.orderId}`,
+        // Y al correo: que Coinbase te cierre posición es de las pocas cosas
+        // que hay que saber aunque no abras la aplicación en todo el día.
+        alsoEmail: {
+          subject: `Trading Registro Bot: Coinbase liquidó ${contratos} de ${liquidacion.productId}`,
+          body:
+            `${describeLiquidation(liquidacion)}\n\n` +
+            `Primera ejecución: ${liquidacion.firstAt}\nÚltima ejecución: ${liquidacion.lastAt}\n\n` +
+            "Abre la operación en la aplicación para ver el detalle fill a fill.",
+        },
+      });
+    }
+  } catch (error) {
+    console.error("[sync] no se pudo avisar de la liquidación", error);
+  }
+}
+
+/** Las órdenes que ya están guardadas, con lo justo para saber si son liquidaciones. */
+async function storedOrders(
+  orderIds: string[],
+): Promise<Array<Pick<CoinbaseOrder, "order_id" | "order_type" | "is_liquidation">>> {
+  if (orderIds.length === 0) return [];
+  const supabase = createAdminClient();
+
+  const { data } = await supabase
+    .from("raw_orders")
+    .select("order_id, order_type, raw_payload")
+    .in("order_id", orderIds);
+
+  return (data ?? []).map((row) => ({
+    order_id: row.order_id,
+    order_type: row.order_type ?? undefined,
+    is_liquidation: isStoredLiquidationOrder(row),
+  }));
 }
 
 /**

@@ -13,8 +13,12 @@ export const maxDuration = 60;
  * toca o no vive en el servidor a propósito: si la tomara el navegador, dos
  * pestañas abiertas dispararían dos sincronizaciones, y con el reloj del
  * cliente de por medio ni siquiera coincidirían en qué es «rancio».
+ *
+ * Con `{ force: true }` en el cuerpo se salta el intervalo configurado (no el
+ * margen mínimo): es lo que manda la ficha de una operación cuando ve que los
+ * contratos de Coinbase no son los de aquí.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const user = await requireUser();
   const env = serverEnv();
 
@@ -22,5 +26,13 @@ export async function POST() {
     return NextResponse.json({ ran: false, reason: "sin-credenciales" });
   }
 
-  return NextResponse.json(await syncOnVisitIfStale(user.id));
+  let force = false;
+  try {
+    const body = (await request.json()) as { force?: unknown } | null;
+    force = body?.force === true;
+  } catch {
+    // Sin cuerpo, o sin JSON: la petición de siempre.
+  }
+
+  return NextResponse.json(await syncOnVisitIfStale(user.id, { force }));
 }

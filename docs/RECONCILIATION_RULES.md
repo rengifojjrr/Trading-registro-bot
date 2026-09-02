@@ -57,6 +57,19 @@ El motor de reconstrucción lee las overrides activas de un `(account_id, produc
 
 La clave de idempotencia de un fill es `entry_id` (no `trade_id`, que Coinbase no garantiza único para fills de ajuste). Ejecutar la sincronización varias veces sobre la misma ventana nunca duplica fills (restricción `PRIMARY KEY` en `raw_fills.entry_id`) ni operaciones (`unique(account_id, product_id, opening_fill_id)` en `trades`).
 
+## 8. Liquidaciones de Coinbase (`trades.liquidated_qty`)
+
+Una liquidación de margen **no cambia ninguna regla anterior**: sus fills llegan por el mismo endpoint, con `trade_type = FILL`, y el motor los trata como las salidas que son. Lo único que las distingue es la orden a la que pertenecen, que viene con `order_type = LIQUIDATION` (ver `docs/COINBASE_INTEGRATION.md`).
+
+Lo que sí cambia es lo que la aplicación **dice**. Que una posición baje de 78 a 50 contratos sin que hayas tocado nada parece un fallo de sincronización, y no lo es; y no distinguir los dos casos es lo que hace que un usuario deje de creerse las cifras. Por eso:
+
+- `trades.liquidated_qty` es la suma de `trade_fills.allocated_size` con rol `EXIT` cuya orden (`raw_fills.order_id → raw_orders`) es una liquidación. Es un derivado, como `is_manually_adjusted`: lo recalcula `refresh_trade_liquidations(p_user_id, p_product_id)` al final de cada `persistReconstruction`, salga de donde salga la reconstrucción, y el RPC `persist_reconstruction` no lo toca, así que sobrevive a los recálculos.
+- Un fill dividido por un reversal (regla 3) reparte también su condición de liquidación: cada operación cuenta sólo la porción que le tocó.
+- La ficha de la operación y la lista marcan la operación como liquidada, y el historial de fills señala cada ejecución que fue de Coinbase.
+- Cada orden de liquidación **nueva** (con fills recién guardados) levanta un aviso `LIQUIDATION`, con clave de deduplicación por `order_id`, así que una orden avisa una vez aunque la ventana de solape la traiga varias veces.
+
+No se confirma todavía el cierre por **vencimiento** de un contrato `EXPIRING`; si llega también como orden de liquidación, esta regla lo cubre sin cambios.
+
 ## Casos que la suite de tests de la Fase 3 debe cubrir explícitamente
 
 1. Long simple, entrada y salida únicas, cierre completo.

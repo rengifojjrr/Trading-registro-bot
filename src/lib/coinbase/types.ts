@@ -124,7 +124,15 @@ export interface CoinbaseOrder {
   order_id: string;
   product_id: string;
   side: CoinbaseOrderSide;
+  /**
+   * MARKET, LIMIT, STOP, STOP_LIMIT, BRACKET, TWAP, ROLL_OPEN, ROLL_CLOSE,
+   * LIQUIDATION, SCALED o UNKNOWN_ORDER_TYPE. `LIQUIDATION` es la orden con
+   * la que Coinbase cierra posición por su cuenta cuando el margen no
+   * alcanza; sus fills llegan como los de cualquier otra orden.
+   */
   order_type?: string;
+  /** «True if order is of liquidation type.» Confirmado con datos reales el 2026-09-01. */
+  is_liquidation?: boolean;
   status: CoinbaseOrderStatus;
   created_time?: string;
   retail_portfolio_id?: string;

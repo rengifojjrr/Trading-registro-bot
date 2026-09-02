@@ -4,16 +4,21 @@ import { requireUser } from "@/lib/auth/require-user";
 import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
 import { serverEnv } from "@/lib/env";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { evaluateMissingPosition, evaluateUnrealizedDrift } from "@/lib/risk/drift";
+import { evaluateMissingPosition, evaluateSizeMismatch, evaluateUnrealizedDrift } from "@/lib/risk/drift";
+import { signedVenueSize } from "@/lib/sync/position-check";
 
 /**
- * Compares the unrealised P&L this app computes against the figure
- * Coinbase reports for the same open position.
+ * Compares this app's open position against what Coinbase reports for the
+ * same product: first the contracts, then the unrealised P&L.
  *
  * This is the check the whole project started from: the original complaint
  * was that the profit shown "no es ni cercana" to Coinbase's. Everything
  * since has been about computing it correctly; this is what proves it, by
  * asking Coinbase for its own number and putting them side by side.
+ *
+ * The contracts go first because comparing the P&L of two different sizes
+ * says nothing -- and once said "coincide" over 50 contracts against 22,
+ * after Coinbase had liquidated 28 that this app had not synced yet.
  *
  * Read-only and never throws: an unavailable comparison hides the panel
  * rather than breaking the page.
@@ -35,6 +40,9 @@ export async function GET(request: Request) {
   // The size this app still believes is open. Without it, "Coinbase has no
   // position" cannot be told apart from "we agree there is no position".
   const ourSize = url.searchParams.get("ourSize");
+  // El lado, para poner signo al tamaño: un largo de 22 y un corto de 22 no
+  // son la misma posición.
+  const direction = url.searchParams.get("direction");
   // Contratos × tamaño de contrato × precio. Con él la diferencia se juzga
   // en precio en vez de en P&L, que es lo único que no distorsiona el
   // apalancamiento.
@@ -65,9 +73,31 @@ export async function GET(request: Request) {
     if (!position) {
       const missing = evaluateMissingPosition({ ourSize: ourSize ?? "0" });
       if (missing) {
-        return NextResponse.json({ available: true, theirs: null, ...missing });
+        return NextResponse.json({ available: true, theirs: null, theirSize: "0", ourSize, ...missing });
       }
       return NextResponse.json({ available: false });
+    }
+
+    // Los contratos antes que el P&L. Con signo por los dos lados.
+    const theirSigned = signedVenueSize(position);
+    const ourSigned =
+      ourSize !== null && Number.isFinite(Number(ourSize))
+        ? direction === "SHORT"
+          ? -Math.abs(Number(ourSize))
+          : Math.abs(Number(ourSize))
+        : null;
+
+    if (theirSigned !== null && ourSigned !== null) {
+      const mismatch = evaluateSizeMismatch({ ourSize: ourSigned, theirSize: theirSigned.toString() });
+      if (mismatch) {
+        return NextResponse.json({
+          available: true,
+          theirs: position.unrealized_pnl ?? null,
+          theirSize: theirSigned.toString(),
+          ourSize: String(ourSigned),
+          ...mismatch,
+        });
+      }
     }
 
     // A position that exists but carries no P&L genuinely has nothing to
@@ -81,6 +111,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       available: true,
       theirs: position.unrealized_pnl,
+      theirSize: theirSigned?.toString() ?? null,
+      ourSize: ourSigned === null ? null : String(ourSigned),
       ...drift,
     });
   } catch (error) {

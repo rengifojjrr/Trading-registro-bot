@@ -40,8 +40,10 @@ const TOLERANCE_PRICE_PCT = 0.35;
 /**
  * NO_POSITION is the most serious of these, not the mildest: it means this
  * app is showing an open position that Coinbase says does not exist.
+ * SIZE_MISMATCH is its sibling: Coinbase has a position, but not the one this
+ * app has -- and comparing P&L across two different sizes says nothing.
  */
-export type DriftSeverity = "OK" | "WATCH" | "ALARM" | "NO_POSITION";
+export type DriftSeverity = "OK" | "WATCH" | "ALARM" | "NO_POSITION" | "SIZE_MISMATCH";
 
 export interface DriftResult {
   severity: DriftSeverity;
@@ -177,4 +179,54 @@ export function evaluateMissingPosition(params: {
       "Casi siempre significa que falta algún fill en el histórico y el motor dejó un resto sin cerrar. " +
       "Revisa la conciliación: la aplicación se equivoca, no el exchange.",
   };
+}
+
+/**
+ * La comprobación que va **antes** que la del P&L: ¿son los mismos contratos?
+ *
+ * Comparar el P&L de 50 contratos con el de 22 no dice nada, y peor: puede
+ * decir «coincide». Pasó de verdad: Coinbase había liquidado 28 contratos,
+ * esta aplicación aún tenía los 50, y la diferencia de P&L, convertida a
+ * precio, cabía dentro de la tolerancia. El aviso más importante del producto
+ * daba luz verde a una posición que ya no existía como tal.
+ *
+ * Los tamaños llegan con signo (largo positivo, corto negativo), así que un
+ * largo de 22 contra un corto de 22 también es un descuadre.
+ */
+export function evaluateSizeMismatch(params: {
+  /** Lo que esta aplicación cree abierto, con signo. */
+  ourSize: string | number;
+  /** Lo que reporta Coinbase, con signo. */
+  theirSize: string | number;
+}): DriftResult | null {
+  const ours = new Decimal(params.ourSize);
+  const theirs = new Decimal(params.theirSize);
+  if (ours.equals(theirs)) return null;
+
+  const difference = theirs.minus(ours);
+  const faltan = difference.abs();
+  const unidad = faltan.equals(1) ? "contrato" : "contratos";
+
+  // Coinbase con menos que nosotros es un cierre que no hemos visto; con más,
+  // una apertura. Lo primero es lo habitual, y casi siempre lo hizo Coinbase
+  // solo: una liquidación, un stop o un objetivo.
+  const cierre = theirs.abs().lessThan(ours.abs()) || theirs.isZero();
+
+  return {
+    severity: "SIZE_MISMATCH",
+    difference: difference.toString(),
+    differencePct: null,
+    message:
+      `Coinbase tiene ${describeSigned(theirs)} y aquí hay ${describeSigned(ours)}: faltan ${faltan.toString()} ${unidad} de ${cierre ? "cierre" : "apertura"} por sincronizar. ` +
+      (cierre
+        ? "Cuando Coinbase tiene menos, casi siempre es un cierre que ejecutó solo -- una liquidación, un stop o un objetivo -- y llega con la siguiente sincronización."
+        : "Cuando Coinbase tiene más, hay una entrada que la aplicación todavía no ha traído."),
+  };
+}
+
+function describeSigned(size: Decimal): string {
+  if (size.isZero()) return "ninguna posición";
+  const n = size.abs().toString();
+  const unidad = size.abs().equals(1) ? "contrato" : "contratos";
+  return `${n} ${unidad} ${size.isNegative() ? "cortos" : "largos"}`;
 }

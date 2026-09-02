@@ -99,6 +99,7 @@ export function LiveUnrealizedPnl({
             is right. */}
         <DriftCheck
           productId={productId}
+          direction={direction}
           ours={pnl.grossPnl}
           ourSize={openQty}
           // El nocional es lo que convierte una diferencia de P&L en una

@@ -1019,6 +1019,12 @@ export interface Database {
           source: TradeSource;
           /** El bot que la abrió, si la abrió un bot. Sobrevive al recálculo. */
           bot_id: string | null;
+          /**
+           * Contratos de salida que ejecutó una orden de liquidación de
+           * Coinbase. `0` si Coinbase no intervino. Lo escribe
+           * `refresh_trade_liquidations` después de cada reconstrucción.
+           */
+          liquidated_qty: string;
           created_at: string;
           updated_at: string;
         },
@@ -1053,6 +1059,7 @@ export interface Database {
           session_override?: SessionLabel | null;
           source?: "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
           bot_id?: string | null;
+          liquidated_qty?: string | number;
         }
       >;
 
@@ -1883,7 +1890,10 @@ export interface Database {
             | "RISK_LIMIT"
             // Tampoco es un fallo: los números están bien, lo que falta es lo
             // que solo puedes escribir tú.
-            | "JOURNAL_PENDING";
+            | "JOURNAL_PENDING"
+            // Coinbase cerró posición por su cuenta. Las cifras están bien y
+            // no hay nada que arreglar: es un hecho que hay que saber.
+            | "LIQUIDATION";
           severity: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -1913,7 +1923,8 @@ export interface Database {
             | "RISK_LIMIT"
             // Tampoco es un fallo: los números están bien, lo que falta es lo
             // que solo puedes escribir tú.
-            | "JOURNAL_PENDING";
+            | "JOURNAL_PENDING"
+            | "LIQUIDATION";
           severity?: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -2107,6 +2118,15 @@ export interface Database {
        */
       assign_trades_to_bot: {
         Args: { p_trade_ids: string[]; p_bot_id: string | null };
+        Returns: number;
+      };
+      /**
+       * Recalcula `trades.liquidated_qty` de un producto a partir de los
+       * fills de salida cuya orden es una liquidación de Coinbase. Devuelve
+       * cuántas operaciones cambiaron. Ver `20260902150000_liquidaciones.sql`.
+       */
+      refresh_trade_liquidations: {
+        Args: { p_user_id: string; p_product_id: string };
         Returns: number;
       };
     };

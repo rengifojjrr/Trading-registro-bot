@@ -206,6 +206,12 @@ export async function persistReconstruction(
 
   await flagVerifiedFiguresThatMoved(params.userId, touchedTradeIds);
 
+  // Qué parte de cada operación la cerró Coinbase y no tú. Va aquí y no en
+  // la sincronización porque la reconstrucción se lanza desde cuatro sitios
+  // (sincronización, conciliación nocturna, correcciones manuales e
+  // importación de CSV) y el dato tiene que ser cierto salga de donde salga.
+  await refreshLiquidations(params.userId, params.productId);
+
   return {
     tradesCreated,
     tradesUpdated,
@@ -216,6 +222,33 @@ export async function persistReconstruction(
     orphanedOpeningFillIds,
     touchedTradeIds,
   };
+}
+
+/**
+ * Marca en cada operación cuántos contratos cerró una liquidación de Coinbase.
+ *
+ * `trades.liquidated_qty` se deriva de `trade_fills` + `raw_orders`, así que
+ * tiene que recalcularse cada vez que cambia el reparto de fills -- y el RPC
+ * `persist_reconstruction` sólo escribe las columnas que conoce. Se hace en
+ * la base de datos, en una sola sentencia por producto, porque es un join
+ * de tres tablas que aquí serían tres viajes.
+ *
+ * Nunca lanza: una reconstrucción correcta no puede fallar porque no se haya
+ * podido poner una etiqueta.
+ */
+async function refreshLiquidations(userId: string, productId: string): Promise<void> {
+  try {
+    const supabase = createAdminClient();
+    const { error } = await supabase.rpc("refresh_trade_liquidations", {
+      p_user_id: userId,
+      p_product_id: productId,
+    });
+    if (error) {
+      console.error("[persist] no se pudo marcar qué cerró Coinbase por su cuenta", error);
+    }
+  } catch (error) {
+    console.error("[persist] no se pudo marcar qué cerró Coinbase por su cuenta", error);
+  }
 }
 
 /**

@@ -18,6 +18,7 @@ import { DeleteTrade } from "@/components/trades/delete-trade";
 import { pickChartWindow } from "@/lib/analytics/chart-window";
 import { MAX_FILLS_RENDERED } from "@/lib/fills";
 import { readSyncStatus } from "@/lib/sync/read-status";
+import { isStoredLiquidationOrder } from "@/lib/sync/liquidations";
 import { computeMfeMae } from "@/lib/analytics/mfe-mae";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchTradeCandles } from "@/lib/coinbase/fetch-trade-candles";
@@ -28,7 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 import { JournalForm } from "./journal-form";
 
 const TRADE_COLUMNS =
-  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, contract_multiplier, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source";
+  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, contract_multiplier, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source, liquidated_qty";
 
 export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId]">) {
   const { tradeId } = await props.params;
@@ -178,9 +179,21 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     rawFillIds.length > 0
       ? await supabase
           .from("raw_fills")
-          .select("entry_id, trade_time, side, price, size, trade_type, liquidity_indicator")
+          .select("entry_id, order_id, trade_time, side, price, size, trade_type, liquidity_indicator")
           .in("entry_id", rawFillIds)
       : { data: [] };
+
+  // Qué fills los ejecutó Coinbase por su cuenta. La marca no está en el
+  // fill sino en su orden (`order_type = LIQUIDATION`), así que hay que ir a
+  // buscarla: es lo que explica por qué una posición bajó sin que la tocaras.
+  const orderIds = [...new Set((rawFills ?? []).flatMap((f) => (f.order_id ? [f.order_id] : [])))];
+  const { data: rawOrders } =
+    orderIds.length > 0
+      ? await supabase.from("raw_orders").select("order_id, order_type, raw_payload").in("order_id", orderIds)
+      : { data: [] };
+  const liquidationOrderIds = new Set(
+    (rawOrders ?? []).filter((o) => isStoredLiquidationOrder(o)).map((o) => o.order_id),
+  );
 
   // Active grouping corrections for this product -- shown next to the
   // fill list so a correction and the thing it corrects are in one place.
@@ -197,7 +210,20 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
     note: o.note,
   }));
 
-  const rawFillsById = new Map((rawFills ?? []).map((f) => [f.entry_id, f]));
+  const rawFillsById = new Map<string, FillHistoryRow["rawFill"]>(
+    (rawFills ?? []).map((f) => [
+      f.entry_id,
+      {
+        trade_time: f.trade_time,
+        side: f.side,
+        price: f.price,
+        size: f.size,
+        trade_type: f.trade_type,
+        liquidity_indicator: f.liquidity_indicator,
+        liquidation: f.order_id !== null && liquidationOrderIds.has(f.order_id),
+      },
+    ]),
+  );
   const fillRows: FillHistoryRow[] = (tradeFills ?? []).map((tf) => ({
     id: tf.id,
     raw_fill_id: tf.raw_fill_id,

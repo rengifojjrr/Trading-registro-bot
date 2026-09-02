@@ -40,6 +40,7 @@ const trade: TradeRow = {
   session_effective: "NEW_YORK",
   source: "COINBASE_SYNC",
   bot_id: null,
+  liquidated_qty: "0",
   created_at: "2026-08-01T00:00:00Z",
   updated_at: "2026-08-01T01:00:00Z",
 };

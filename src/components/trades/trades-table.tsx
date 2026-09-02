@@ -31,6 +31,22 @@ function isDensity(value: string): value is Density {
 }
 
 /**
+ * Coinbase cerró parte o toda esta posición por su cuenta.
+ *
+ * Va al lado del estado y no dentro de él porque son dos cosas distintas:
+ * una operación liquidada puede seguir abierta (Coinbase cerró 28 de 78) o
+ * estar cerrada. Lo que la etiqueta dice es que no todas las salidas las
+ * decidiste tú.
+ */
+function LiquidatedBadge() {
+  return (
+    <Badge variant="negative" title="Coinbase cerró parte o toda la posición por su cuenta (liquidación de margen).">
+      Liquidada
+    </Badge>
+  );
+}
+
+/**
  * Sorting, searching and paging all live in the URL and are executed by
  * Postgres -- this component renders exactly the page it was handed.
  *
@@ -263,6 +279,7 @@ export function TradesTable({
                   <Badge variant={row.status === "OPEN" ? "warning" : "outline"}>
                     {row.status === "OPEN" ? "Abierta" : "Cerrada"}
                   </Badge>
+                  {Number(row.liquidated_qty) > 0 ? <LiquidatedBadge /> : null}
                   <span className="tabular-nums">{formatPercent(row.return_pct)}</span>
                   <span className="tabular-nums">{formatDuration(row.duration_seconds)}</span>
                 </div>
@@ -353,9 +370,12 @@ export function TradesTable({
                     <Badge variant="outline">{row.direction === "LONG" ? "Long" : "Short"}</Badge>
                   </td>
                   <td className={cellPadding}>
-                    <Badge variant={row.status === "OPEN" ? "warning" : "outline"}>
-                      {row.status === "OPEN" ? "Abierta" : "Cerrada"}
-                    </Badge>
+                    <span className="flex flex-wrap items-center gap-1">
+                      <Badge variant={row.status === "OPEN" ? "warning" : "outline"}>
+                        {row.status === "OPEN" ? "Abierta" : "Cerrada"}
+                      </Badge>
+                      {Number(row.liquidated_qty) > 0 ? <LiquidatedBadge /> : null}
+                    </span>
                   </td>
                   <td className={cn(cellPadding, "text-right tabular-nums")}>{formatNumber(row.max_size, 4)}</td>
                   <td className={cn(cellPadding, "text-right font-medium tabular-nums", pnlColorClass(row.net_pnl))}>

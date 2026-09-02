@@ -24,6 +24,10 @@ import { runPollSync } from "./orchestrator";
  *    Dos pestañas abiertas a la vez no disparan dos sincronizaciones.
  * 3. **Nunca lanza.** Que no se pueda refrescar es un fastidio; que la página
  *    no cargue por eso, no. El aviso de frescura ya cuenta lo que pasa.
+ *
+ * Con `force`, el intervalo configurado no cuenta y sólo queda el margen
+ * mínimo: es lo que pide la ficha de una operación cuando ve que Coinbase
+ * tiene otros contratos. Ahí no hay que esperar cinco minutos a nada.
  */
 
 /** Margen mínimo entre intentos, pase lo que pase en la configuración. */
@@ -34,7 +38,10 @@ export interface OnVisitResult {
   reason: "fresco" | "sin-cuenta" | "sin-credenciales" | "lanzado" | "fallo";
 }
 
-export async function syncOnVisitIfStale(userId: string): Promise<OnVisitResult> {
+export async function syncOnVisitIfStale(
+  userId: string,
+  options: { force?: boolean } = {},
+): Promise<OnVisitResult> {
   try {
     const supabase = createAdminClient();
 
@@ -44,10 +51,9 @@ export async function syncOnVisitIfStale(userId: string): Promise<OnVisitResult>
       .eq("user_id", userId)
       .maybeSingle();
 
-    const intervalMinutes = Math.max(
-      MIN_MINUTES_BETWEEN_ATTEMPTS,
-      settings?.sync_interval_minutes ?? 5,
-    );
+    const intervalMinutes = options.force
+      ? MIN_MINUTES_BETWEEN_ATTEMPTS
+      : Math.max(MIN_MINUTES_BETWEEN_ATTEMPTS, settings?.sync_interval_minutes ?? 5);
 
     const { data: state } = await supabase
       .from("sync_state")

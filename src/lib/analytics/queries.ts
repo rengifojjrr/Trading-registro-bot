@@ -93,13 +93,14 @@ export type TradeTableRow = Pick<
   | "session_effective"
   | "source"
   | "is_manually_adjusted"
+  | "liquidated_qty"
 >;
 
 const STATS_COLUMNS = "id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions";
 
 /** Exported so the compare page selects exactly what TradeTableRow declares. */
 export const TABLE_COLUMNS_FOR_COMPARE =
-  "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted";
+  "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted, liquidated_qty";
 
 const TABLE_COLUMNS = TABLE_COLUMNS_FOR_COMPARE;
 
