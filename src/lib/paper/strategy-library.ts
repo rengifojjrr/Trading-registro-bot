@@ -540,9 +540,9 @@ export const BIBLIOTECA: EstrategiaDeLaBiblioteca[] = [
     hipotesis:
       "Dentro de una tendencia alcista (precio sobre la SMA 200), un cierre en el mínimo de 7 días es un retroceso temporal que suele revertir; se sale en el máximo de 7 días.",
     descripcion:
-      "Compra el retroceso dentro de la tendencia: cierre por encima de la SMA 200 y cierre por debajo del mínimo de los días anteriores. Sale cuando el precio recupera la EMA 9, con stop de 3 ATR y 10 días de tope. Es la única del estudio que rinde MEJOR en la ventana reciente que en su histórico completo. " +
-      "APROXIMACIÓN, y es importante: la versión medida usa el mínimo y el máximo de 7 días. Los indicadores ALTO_7 y BAJO_7 del catálogo se calculan incluyendo la vela en curso, así que la condición «el cierre está por debajo del mínimo de 7 días» es imposible de cumplir con ellos -- el mínimo de la ventana es como mucho el mínimo de hoy, que ya es menor o igual que el cierre de hoy --. Por eso aquí el retroceso se mide contra el canal de Donchian de 10 días, que sí excluye la vela en curso, y la salida es la EMA 9 en vez del máximo de 7. Las cifras de `medido` son las de la versión de 7/7 medida en TradingView, NO las de estas reglas. " +
-      "AVISO del estudio: en ETH la misma regla pierde (−33,39% histórico). Una ventaja que sólo existe en un activo merece desconfianza.",
+      "Compra el retroceso dentro de la tendencia: con el cierre por encima de la SMA 200, entra cuando el cierre marca un mínimo nuevo de siete sesiones, y sale cuando marca un máximo nuevo de siete. Lleva stop de 3 ATR y un tope de 10 días para no quedarse atrapada en un retroceso que no revierte. " +
+      "Es la única del estudio que rinde MEJOR en la ventana reciente (+106,17%) que en su histórico completo (+87,19%). " +
+      "AVISO del estudio: en ETH la misma regla pierde (−33,39% histórico, −21,68% en los últimos cuatro años). Una ventaja que sólo existe en uno de dos activos merece desconfianza.",
     procedencia:
       "Larry Connors y Cesar Alvarez, «Short Term Trading Strategies That Work» (2008). Medida en este proyecto.",
     medido: medidoDelCandidato("double-seven-btc"),
@@ -551,13 +551,16 @@ export const BIBLIOTECA: EstrategiaDeLaBiblioteca[] = [
       direction: "LONG",
       entry: [
         cuando(CIERRE, "MAYOR", ind("SMA200")),
-        cuando(CIERRE, "MENOR", ind("DONCHIAN_BAJO_10")),
+        // Los dos indicadores van sobre cierres y excluyen la vela en curso, que
+        // es lo que permite que estas dos comparaciones estrictas signifiquen
+        // «hoy marca un extremo nuevo» en vez de no cumplirse nunca.
+        cuando(CIERRE, "MENOR", ind("BAJO_7")),
       ],
       exit: {
         stopAtr: 3,
         targetAtr: null,
         maxBars: 10,
-        conditions: [cuando(CIERRE, "CRUZA_ARRIBA", ind("EMA9"))],
+        conditions: [cuando(CIERRE, "MAYOR", ind("ALTO_7"))],
       },
       size: 1,
       hours: [],

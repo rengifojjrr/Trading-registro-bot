@@ -109,7 +109,11 @@ function PaneCanvas({
     // El RSI se pinta siempre de 0 a 100 aunque los datos ocupen menos: es una
     // escala fija, y reescalarla haría que un tramo tranquilo pareciera
     // sobrecompra.
-    const fijo = id === "RSI14";
+    //
+    // Se comprueban los dos periodos y no sólo el de catorce. El RSI de dos
+    // -- el de Connors -- es el que más tiempo pasa pegado a los extremos, así
+    // que es justo al que peor le sienta que le reescalen el eje.
+    const fijo = id === "RSI14" || id === "RSI2";
     const min = fijo ? 0 : Math.min(...visibles.map((p) => p.valor));
     const max = fijo ? 100 : Math.max(...visibles.map((p) => p.valor));
     const rango = max - min || 1;

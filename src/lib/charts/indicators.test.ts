@@ -444,15 +444,32 @@ describe("el catálogo", () => {
 describe("lo que el catálogo tiene que poder expresar", () => {
   const sesion = (t: number) => String(Math.floor(t / 86400));
 
-  it("el máximo de siete sí cuenta la vela en curso", () => {
-    // Al revés que el Donchian, y a propósito: el Double Seven pregunta si el
-    // cierre de hoy es el más bajo de los últimos siete, y esa cuenta empieza
-    // por hoy.
-    const velas = [12, 11, 10, 9, 8, 7, 20].map((alto, i) =>
-      vela({ time: i * 3600, high: alto, low: alto - 3, close: alto - 1 }),
+  it("el máximo y el mínimo de siete van sobre cierres y excluyen la vela en curso", () => {
+    // Las dos cosas son necesarias para que el Double Seven pueda escribirse.
+    //
+    // Sobre cierres porque la regla es «el cierre de hoy es el más bajo de los
+    // últimos siete». Y excluyendo hoy porque el comparador es estricto: con la
+    // vela en curso dentro de la ventana, su mínimo sería como mucho el cierre
+    // de hoy, así que «cierre MENOR mínimo» no se cumpliría nunca y la
+    // estrategia no entraría jamás.
+    const cierres = [12, 11, 10, 9, 8, 7, 20];
+    const velas = cierres.map((c, i) =>
+      vela({ time: i * 3600, high: c + 5, low: c - 5, close: c }),
     );
-    expect(computeIndicator("ALTO_7", velas, sesion)[6]).toBe(20);
-    expect(computeIndicator("BAJO_7", velas, sesion)[6]).toBe(4);
+
+    // En la última vela, la ventana son los seis cierres anteriores (12..7).
+    expect(computeIndicator("ALTO_7", velas, sesion)[6]).toBe(12);
+    expect(computeIndicator("BAJO_7", velas, sesion)[6]).toBe(7);
+
+    // Y la comprobación que de verdad importa: un cierre que marca mínimo nuevo
+    // queda por debajo del indicador, cosa que con la vela incluida era
+    // imposible.
+    const bajando = [10, 9, 8, 7, 6, 5, 4].map((c, i) =>
+      vela({ time: i * 3600, high: c + 5, low: c - 5, close: c }),
+    );
+    const minimo = computeIndicator("BAJO_7", bajando, sesion)[6];
+    expect(minimo).toBe(5);
+    expect(bajando[6].close).toBeLessThan(minimo as number);
   });
 
   it("están los identificadores que usan las estrategias validadas", () => {

@@ -63,195 +63,18 @@ import {
  * durante veintitrés horas al día de funcionamiento perfecto.
  */
 
-// ---------------------------------------------------------------------------
-// Las tablas del simulador, mientras no estén en `src/types/database.ts`.
-//
-// El cliente de Supabase es genérico sobre el esquema, así que `from(...)` con
-// una tabla que el tipo `Database` no conoce no compila. Estas definiciones
-// son ese esquema, escritas contra la migración
-// `20260903100000_paper_trading.sql`, y se mezclan con `Database` sólo para
-// este cliente.
-//
-// Es temporal a propósito: en cuanto `src/types/database.ts` incluya las cinco
-// tablas, esto se borra y el import vuelve a ser el de siempre. Mientras
-// tanto, un tipo escrito a mano y visible es mejor que un `as any` que
-// desactiva la comprobación entera y no deja rastro de que estaba desactivada.
-// ---------------------------------------------------------------------------
-
-type TablaPapel<Row, Insert, Update = Partial<Insert>> = {
-  Row: Row;
-  Insert: Insert;
-  Update: Update;
-  Relationships: [];
-};
-
-/** Los `numeric` de Postgres llegan como cadena, igual que en el resto del esquema. */
-interface TablasDelSimulador {
-  paper_settings: TablaPapel<
-    {
-      user_id: string;
-      comision_pct: string;
-      deslizamiento_pct: string;
-      capital_por_defecto: string;
-      created_at: string;
-      updated_at: string;
-    },
-    {
-      user_id: string;
-      comision_pct?: string | number;
-      deslizamiento_pct?: string | number;
-      capital_por_defecto?: string | number;
-    }
-  >;
-  paper_accounts: TablaPapel<
-    {
-      id: string;
-      user_id: string;
-      bot_id: string;
-      enabled: boolean;
-      capital_asignado: string;
-      efectivo: string;
-      equity: string;
-      started_at: string | null;
-      last_tick_at: string | null;
-      created_at: string;
-      updated_at: string;
-    },
-    {
-      id?: string;
-      user_id: string;
-      bot_id: string;
-      enabled?: boolean;
-      capital_asignado: string | number;
-      efectivo: string | number;
-      equity: string | number;
-      started_at?: string | null;
-      last_tick_at?: string | null;
-    },
-    {
-      enabled?: boolean;
-      capital_asignado?: string | number;
-      efectivo?: string | number;
-      equity?: string | number;
-      started_at?: string | null;
-      last_tick_at?: string | null;
-    }
-  >;
-  paper_positions: TablaPapel<
-    {
-      id: string;
-      user_id: string;
-      bot_id: string;
-      side: string;
-      size: string;
-      precio_entrada: string;
-      hora_entrada: string;
-      stop: string | null;
-      objetivo: string | null;
-      atr_entrada: string | null;
-      status: string;
-      created_at: string;
-      updated_at: string;
-    },
-    {
-      id?: string;
-      user_id: string;
-      bot_id: string;
-      side: string;
-      size: string | number;
-      precio_entrada: string | number;
-      hora_entrada?: string;
-      stop?: string | number | null;
-      objetivo?: string | number | null;
-      atr_entrada?: string | number | null;
-      status?: string;
-    },
-    { status?: string }
-  >;
-  paper_trades: TablaPapel<
-    {
-      id: string;
-      user_id: string;
-      bot_id: string;
-      position_id: string | null;
-      side: string;
-      size: string;
-      precio_entrada: string;
-      hora_entrada: string;
-      precio_salida: string;
-      hora_salida: string;
-      pnl: string;
-      pnl_pct: string;
-      comision: string;
-      motivo_salida: string;
-      barras_en_mercado: number | null;
-      created_at: string;
-    },
-    {
-      id?: string;
-      user_id: string;
-      bot_id: string;
-      position_id?: string | null;
-      side: string;
-      size: string | number;
-      precio_entrada: string | number;
-      hora_entrada: string;
-      precio_salida: string | number;
-      hora_salida: string;
-      pnl: string | number;
-      pnl_pct: string | number;
-      comision?: string | number;
-      motivo_salida: string;
-      barras_en_mercado?: number | null;
-    }
-  >;
-  paper_equity_points: TablaPapel<
-    { id: string; user_id: string; bot_id: string; ts: string; equity: string },
-    { id?: string; user_id: string; bot_id: string; ts?: string; equity: string | number }
-  >;
-}
-
 /**
- * Las tablas de siempre más las cinco del simulador, aplanadas en un solo tipo.
- *
- * Aplanadas y no `A & B`, que sería lo obvio y lo que no funciona: el cliente
- * de Supabase exige que las tablas encajen en `Record<string, GenericTable>`, y
- * TypeScript sólo le supone un índice implícito a un tipo de objeto plano,
- * nunca a una intersección. Con la intersección compila, pero cada `Row` y cada
- * `Insert` se resuelven a `never` y los errores salen a cincuenta líneas de
- * distancia de la causa. Es el mismo `never` silencioso contra el que avisa la
- * cabecera de `src/types/database.ts`.
- */
-type TablasTodas = {
-  [K in keyof Database["public"]["Tables"] | keyof TablasDelSimulador]: K extends
-    keyof TablasDelSimulador
-    ? TablasDelSimulador[K]
-    : K extends keyof Database["public"]["Tables"]
-      ? Database["public"]["Tables"][K]
-      : never;
-};
-
-type EsquemaConSimulador = {
-  public: {
-    Tables: TablasTodas;
-    Views: Database["public"]["Views"];
-    Functions: Database["public"]["Functions"];
-    Enums: Database["public"]["Enums"];
-  };
-};
-
-type ClienteSimulador = SupabaseClient<EsquemaConSimulador>;
-
-/**
- * El cliente de servicio, visto con las tablas del simulador.
+ * El cliente con el que escribe el ciclo.
  *
  * De servicio y no de sesión porque el ciclo lo dispara un cron, y un cron no
  * tiene sesión de nadie. Cada consulta filtra por `user_id` explícitamente
  * -- ver `escribirApertura` y compañía -- para que saltarse la RLS no
  * signifique escribirle a otro en su cuenta.
  */
+type ClienteSimulador = SupabaseClient<Database>;
+
 function clienteDelSimulador(): ClienteSimulador {
-  return createAdminClient() as unknown as ClienteSimulador;
+  return createAdminClient();
 }
 
 // ---------------------------------------------------------------------------
@@ -705,7 +528,7 @@ async function leerAjustes(
   );
 }
 
-type FilaPosicion = TablasDelSimulador["paper_positions"]["Row"];
+type FilaPosicion = Database["public"]["Tables"]["paper_positions"]["Row"];
 
 async function leerPosicionAbierta(
   supabase: ClienteSimulador,

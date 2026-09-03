@@ -589,15 +589,15 @@ export const INDICATORS: IndicatorMeta[] = [
   },
   {
     id: "ALTO_7",
-    label: "Máximo 7",
-    hint: "El máximo de las últimas 7 velas, ésta incluida. Para el Double Seven.",
+    label: "Máximo 7 cierres",
+    hint: "El cierre más alto de las 7 velas anteriores, sin contar ésta. Superarlo es un máximo nuevo.",
     pane: "PRECIO",
     colorToken: "--muted-foreground",
   },
   {
     id: "BAJO_7",
-    label: "Mínimo 7",
-    hint: "El mínimo de las últimas 7 velas, ésta incluida.",
+    label: "Mínimo 7 cierres",
+    hint: "El cierre más bajo de las 7 velas anteriores, sin contar ésta. Perderlo es un mínimo nuevo.",
     pane: "PRECIO",
     colorToken: "--muted-foreground",
   },
@@ -709,19 +709,29 @@ export function computeIndicator(
       return bollinger(cierres, 20, 2).superior;
     case "BB_INFERIOR":
       return bollinger(cierres, 20, 2).inferior;
-    // El máximo y el mínimo de siete **incluyendo la vela actual**, al revés
-    // que el Donchian: aquí la comparación es «el cierre de hoy es el más bajo
-    // de los últimos siete», que sólo tiene sentido si hoy entra en la cuenta.
+    // El máximo y el mínimo de los siete cierres ANTERIORES. Las dos
+    // decisiones -- cierres y no extremos, y desplazado uno -- vienen de la
+    // regla que tienen que poder expresar, que es la del Double Seven: «el
+    // cierre de hoy es el más bajo de los últimos siete».
+    //
+    // Sobre cierres porque es lo que dice la regla. Si se midiera sobre
+    // mínimos, «el cierre está por debajo del mínimo de siete días» exigiría
+    // que el cierre de hoy fuera menor que el mínimo de hoy, que no puede ser.
+    //
+    // Desplazado uno porque el comparador es estricto. Con la vela de hoy
+    // dentro de la ventana, el mínimo de la ventana es como mucho el cierre de
+    // hoy, así que «cierre MENOR mínimo» nunca sería cierto y la estrategia no
+    // entraría jamás. Excluyendo hoy, la comparación dice justo lo que se
+    // quiere: que el cierre de hoy marca un mínimo nuevo de siete sesiones.
+    //
+    // Son SEIS velas y no siete: las seis anteriores más la de hoy hacen los
+    // siete días de la regla. Comparar el cierre de hoy contra el extremo de
+    // los seis anteriores es exactamente preguntar si hoy marca el extremo de
+    // los siete.
     case "ALTO_7":
-      return maximoMovil(
-        velas.map((v) => v.high),
-        7,
-      );
+      return maximoMovil(cierres, 6, 1);
     case "BAJO_7":
-      return minimoMovil(
-        velas.map((v) => v.low),
-        7,
-      );
+      return minimoMovil(cierres, 6, 1);
     // Las dos líneas del MACD salen del mismo cálculo, así que pedirlas por
     // separado lo hace dos veces. Se deja así a propósito: la alternativa es
     // una caché aquí dentro, y una caché en la única función que todo el mundo
