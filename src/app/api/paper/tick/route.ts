@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { serverEnv } from "@/lib/env";
+import { coincideSecreto, secretoDelReloj } from "@/lib/paper/cron-secret";
 import { correrCicloDePapel } from "@/lib/paper/runner";
 import { createClient } from "@/lib/supabase/server";
 
@@ -30,9 +31,23 @@ export async function POST(request: Request) {
   const secreto = serverEnv().CRON_SECRET;
   const cabecera = request.headers.get("x-cron-secret");
   const autorizacion = request.headers.get("authorization");
+  const portador = autorizacion?.startsWith("Bearer ") ? autorizacion.slice("Bearer ".length) : null;
+  const presentado = cabecera ?? portador;
 
-  const esCron =
-    secreto !== undefined && (cabecera === secreto || autorizacion === `Bearer ${secreto}`);
+  // Dos secretos válidos, no uno. El de la variable de entorno es el de
+  // siempre, el que espera el resto de crons del repositorio. El de la base
+  // de datos es el que usa el reloj de pg_cron, que corre dentro de Postgres
+  // y puede leer una tabla pero no el entorno de Vercel. Sin él, poner el
+  // simulador en marcha exigía pegar el mismo secreto en dos consolas y
+  // mantenerlo igual en las dos, y en la práctica nunca se hizo: el paso del
+  // ciclo salió omitido en todas las ejecuciones de GitHub.
+  //
+  // El de la base se consulta sólo si alguien presenta un secreto y el del
+  // entorno no lo explica: una petición con sesión no paga la lectura.
+  const esCronDelEntorno = coincideSecreto(presentado, secreto ?? null);
+  const esCronDelReloj =
+    !esCronDelEntorno && presentado !== null && coincideSecreto(presentado, await secretoDelReloj());
+  const esCron = esCronDelEntorno || esCronDelReloj;
 
   // Presentar un secreto que no vale es un intento, no un despiste: se corta
   // aquí en vez de dejarlo caer al camino de la sesión, donde un 401 por otro

@@ -26,6 +26,12 @@ const PUBLIC_PATH_PREFIXES = [
   "/login",
   "/forgot-password",
   "/reset-password",
+  // El ciclo del simulador lo dispara un reloj sin sesión (pg_cron desde la
+  // propia base de datos). Sin esta exención el guardián lo redirigía al
+  // formulario de acceso con un 307 antes de que la ruta pudiera comprobar su
+  // secreto, y un cron que recibe un 307 cree que todo fue bien. La ruta
+  // sigue exigiendo el secreto o una sesión: aquí sólo se le deja llegar.
+  "/api/paper/tick",
   "/auth/confirm",
   "/auth/auth-code-error",
   "/sw.js",

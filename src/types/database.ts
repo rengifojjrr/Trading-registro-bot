@@ -1647,6 +1647,22 @@ export interface Database {
         }
       >;
 
+      // Una fila, sin políticas: la lee el rol de servicio (la ruta del ciclo)
+      // y postgres (pg_cron). Ver supabase/migrations/20260903170000_paper_cron.sql.
+      paper_cron_secret: Table<
+        {
+          id: number;
+          secret: string;
+          created_at: string;
+          rotated_at: string | null;
+        },
+        {
+          id?: number;
+          secret: string;
+          rotated_at?: string | null;
+        }
+      >;
+
       strategies: Table<
         {
           id: string;

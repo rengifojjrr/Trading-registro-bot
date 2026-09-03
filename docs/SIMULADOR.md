@@ -79,25 +79,56 @@ mal.
 
 ## Cómo se ejecuta
 
-`POST /api/paper/tick` evalúa una vela de cada bot encendido. Lo dispara
-`.github/workflows/paper-trading-tick.yml` cada cinco minutos.
+`POST /api/paper/tick` evalúa una vela de cada bot encendido. **Lo dispara un
+reloj dentro de la propia base de datos**: un trabajo de `pg_cron` que cada
+cinco minutos llama a la ruta con `pg_net`. No hay nada que configurar en
+GitHub ni en Vercel para que funcione.
 
-En GitHub Actions y no en los crons de Vercel porque **el plan gratuito de
-Vercel sólo ejecuta sus crons una vez al día**, y un bot que opera en velas de
-cinco minutos necesita bastante más que eso.
+Se llegó aquí por eliminación. Los crons de Vercel en plan gratuito corren una
+vez al día. Los de GitHub Actions son de mejor esfuerzo: programado cada cinco
+minutos, GitHub lo ejecutó a las 12:30 y a las 16:39 — cuatro horas entre
+ciclos — y además exigía dos secretos pegados a mano en su interfaz que nunca
+se configuraron, así que el paso del ciclo salió omitido en todas las
+ejecuciones. Postgres tiene su propio programador, corre donde ya están los
+datos y no espera a ninguna cola ajena.
 
-Para encenderlo, crea dos secretos en GitHub (Settings → Secrets and variables →
-Actions):
+El reloj se identifica con un secreto que vive en `paper_cron_secret` (una
+fila, RLS sin políticas: sólo lo leen el rol de servicio y `postgres`). La ruta
+lo acepta además del `CRON_SECRET` del entorno, y lo compara en tiempo
+constante. Ver `src/lib/paper/cron-secret.ts`.
 
-- `APP_URL` — la URL del despliegue, sin barra final.
-- `CRON_SECRET` — el mismo valor que tenga el entorno del despliegue.
+El trabajo se crea una vez por entorno, porque lleva la URL del despliegue:
 
-Sin ellos el workflow no falla: avisa y no hace nada. Un despliegue sin
-configurar no es un error, sólo es uno que todavía no tiene nada que simular.
+```sql
+select cron.schedule(
+  'simulador-de-bots-cada-5-min',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://<tu-despliegue>/api/paper/tick',
+    headers := jsonb_build_object(
+      'content-type', 'application/json',
+      'x-cron-secret', (select secret from public.paper_cron_secret where id = 1)
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 120000
+  );
+  $$
+);
+```
 
-GitHub Actions no garantiza el minuto exacto. Da igual: el motor evalúa siempre
-la última vela cerrada y es idempotente por vela, así que un ciclo que llega
-tarde hace lo mismo que uno puntual.
+Para ver si late: `select * from cron.job_run_details order by start_time desc
+limit 10;` y la columna `last_tick_at` de `paper_accounts`, que avanza en cada
+ciclo.
+
+El workflow de GitHub (`.github/workflows/paper-trading-tick.yml`) sigue en el
+repositorio como red de respaldo: si algún día se configuran sus secretos,
+correrá también, y el motor es idempotente por vela, así que dos relojes no
+abren dos posiciones.
+
+El botón «Correr un ciclo ahora» del simulador sigue ahí para no esperar cinco
+minutos cuando se quiere ver algo ya; no hace falta pulsarlo para que los bots
+operen.
 
 ## Poner la biblioteca a operar
 
