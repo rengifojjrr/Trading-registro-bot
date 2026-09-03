@@ -1,40 +1,66 @@
 name: Ciclo del simulador de bots
 
-# El simulador necesita evaluar las velas cerradas de cada bot con bastante
-# frecuencia: los bots de scalping trabajan en velas de 1 y 5 minutos, y una
-# señal que se lee tarde ya no es la misma señal. Los crons nativos de Vercel
-# en plan gratuito sólo se ejecutan una vez al día, así que el programador vive
-# aquí, igual que el de la sincronización con Coinbase.
+# Un bucle que se releva a sí mismo, y no un cron.
 #
-# GitHub Actions no garantiza el minuto exacto: puede atrasarse unos minutos
-# bajo carga. Para este uso vale, porque el motor evalúa siempre la última vela
-# CERRADA y es idempotente por vela -- un ciclo que llega tarde hace lo mismo
-# que uno puntual, y dos ciclos seguidos sobre la misma vela no abren dos
-# posiciones. Lo que no vale es tratarlo como un temporizador preciso.
+# La primera versión de este fichero era un `schedule: "*/5 * * * *"`. GitHub
+# lo ejecutó a las 12:30 y a las 16:39: cuatro horas entre ciclos con un cron
+# de cinco minutos. No es un fallo, es lo que GitHub promete -- las tareas
+# programadas son de mejor esfuerzo y en horas de carga se retrasan cuanto
+# haga falta --, y al cron de sincronización con Coinbase de este mismo
+# repositorio le pasa igual. Para un bot de velas de cinco minutos, un ciclo
+# cada cuatro horas es no tener bot: el usuario acababa pulsando «Correr un
+# ciclo ahora» a mano, que es justo lo contrario de lo que quería.
+#
+# Así que cada ejecución es un trabajo largo que llama al ciclo cada cinco
+# minutos durante casi seis horas (el máximo que GitHub permite a un trabajo),
+# y al terminar lanza la siguiente ejecución por la API. Mientras la cadena no
+# se rompa, la cadencia es de cinco minutos de verdad y no depende de la cola
+# de GitHub. El repositorio es público, así que los minutos no cuentan.
+#
+# La cadena se puede romper: alguien cancela una ejecución, GitHub reinicia
+# un runner, la API de lanzar falla. Por eso el `schedule` sigue ahí, como
+# red: si no hay ninguna ejecución en marcha, la programada arranca una y la
+# cadena vuelve a andar sola. Y por eso el `push` de este fichero también
+# arranca una: así la cadena empieza en cuanto se despliega el cambio, sin
+# esperar a que GitHub se acuerde del cron.
+#
+# Dos ejecuciones a la vez sobre las mismas cuentas es la forma más fácil de
+# duplicar una orden, y el grupo de concurrencia lo impide: la segunda espera
+# en cola, y GitHub sólo guarda una en espera por grupo, así que tampoco se
+# acumulan. Cuando la primera acaba y lanza a su sucesora, la que esperaba en
+# cola arranca antes; la sucesora se queda en cola detrás. Sin solapes.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
+  push:
+    branches:
+      - claude/bitcoin-trading-platform-i0pxa0
+    paths:
+      - ".github/workflows/paper-trading-tick.yml"
 
-# Si un ciclo se alarga, el siguiente espera en vez de solaparse. Dos ciclos a
-# la vez sobre las mismas cuentas es la forma más fácil de duplicar una orden.
 concurrency:
   group: paper-trading-tick
   cancel-in-progress: false
 
+permissions:
+  # Para lanzar la siguiente ejecución por la API con el GITHUB_TOKEN.
+  actions: write
+  contents: read
+
 jobs:
   tick:
     runs-on: ubuntu-latest
+    # El máximo de GitHub son 360 minutos. Se para un poco antes para que el
+    # relevo salga con margen y no se corte a mitad de una llamada.
+    timeout-minutes: 358
     steps:
-      # Un despliegue sin configurar no es un fallo, sólo es un despliegue que
-      # todavía no tiene nada que simular. Sin esta comprobación el job fallaría
-      # cada cinco minutos y GitHub enviaría cientos de correos de error al día,
-      # ninguno de los cuales señalaría un problema real.
+      # Un despliegue sin configurar no es un fallo, sólo es uno que todavía
+      # no tiene nada que simular. Sin esta comprobación el trabajo fallaría y
+      # GitHub mandaría un correo de error por cada intento.
       #
-      # Para encenderlo, crea los secretos del repositorio en la interfaz de
-      # GitHub (nunca en un fichero): APP_URL con la URL del despliegue, sin
-      # barra final, y CRON_SECRET con el mismo valor que tenga configurado el
-      # entorno del despliegue.
+      # Los secretos APP_URL y CRON_SECRET son los mismos que ya usa el cron
+      # de Coinbase, así que si aquél funciona, éste también.
       - name: ¿Está configurado el simulador?
         id: config
         env:
@@ -48,17 +74,58 @@ jobs:
             echo "::notice::Simulador omitido: faltan los secretos APP_URL y/o CRON_SECRET."
           fi
 
-      - name: Evaluar una vela de cada bot encendido (/api/paper/tick)
+      - name: Evaluar una vela de cada bot encendido, cada cinco minutos, durante casi seis horas
         if: steps.config.outputs.ready == 'true'
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          # --fail-with-body para que un 500 salga en el log con el motivo y no
-          # como un código de salida a secas. -sS calla la barra de progreso
-          # pero deja pasar los errores.
+          # 70 vueltas de 5 minutos = 350 minutos, por debajo del tope del
+          # trabajo. La última llamada sale a los 345 minutos y el relevo a
+          # continuación.
+          #
+          # Un fallo de una llamada no tumba el bucle: se apunta y se sigue.
+          # Lo que no se puede permitir es que un 500 a las 03:00 apague el
+          # simulador hasta que alguien lo mire por la mañana. Si fallan
+          # muchas seguidas sí se para, porque entonces el despliegue está
+          # caído y seguir insistiendo cada cinco minutos no arregla nada.
+          fallos_seguidos=0
+          for vuelta in $(seq 1 70); do
+            if curl --fail-with-body -sS -X POST \
+                 -H "x-cron-secret: $CRON_SECRET" \
+                 -H "content-type: application/json" \
+                 --max-time 120 \
+                 "$APP_URL/api/paper/tick"; then
+              fallos_seguidos=0
+            else
+              fallos_seguidos=$((fallos_seguidos + 1))
+              echo "::warning::Vuelta $vuelta: el ciclo falló ($fallos_seguidos seguidas)."
+              if [ "$fallos_seguidos" -ge 6 ]; then
+                echo "::error::Seis fallos seguidos: el despliegue no responde. Se para el bucle; el relevo lo reintentará."
+                break
+              fi
+            fi
+            echo "vuelta $vuelta/70 · $(date -u +%H:%M:%S) UTC"
+            # No se duerme tras la última vuelta: el relevo sale ya.
+            if [ "$vuelta" -lt 70 ]; then sleep 300; fi
+          done
+
+      # El relevo. Se lanza siempre, también si el bucle se paró por fallos:
+      # el sucesor volverá a comprobar el despliegue y, si sigue caído, se
+      # parará igual. Lo que no se hace es dejar la cadena muerta.
+      #
+      # Con `continue-on-error` porque si la API de lanzar fallara, el
+      # `schedule` de arriba recoge la cadena en menos de media hora; un
+      # fallo aquí no merece un correo de error.
+      - name: Lanzar el siguiente relevo
+        if: always() && steps.config.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           curl --fail-with-body -sS -X POST \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -H "content-type: application/json" \
-            --max-time 120 \
-            "$APP_URL/api/paper/tick"
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/paper-trading-tick.yml/dispatches" \
+            -d '{"ref":"${{ github.ref_name }}"}'
+          echo "Relevo lanzado."

@@ -234,9 +234,12 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
                 moneda={currency}
                 temporalidad={bot.timeframe}
               />
+              {/* Abierta de entrada en cuanto hay algo que enseñar: plegada, un
+                  bot con operaciones parecía no tener ninguna. */}
               <CollapsibleSection
-                title="Operaciones simuladas"
-                subtitle={`${papel.operaciones.length} cerrada${papel.operaciones.length === 1 ? "" : "s"}`}
+                title="Operaciones simuladas (papel)"
+                subtitle={`${papel.operaciones.length} cerrada${papel.operaciones.length === 1 ? "" : "s"}${papel.posicion ? " · 1 abierta" : ""}`}
+                defaultOpen={papel.operaciones.length > 0}
               >
                 <PaperTradesTabla
                   operaciones={papel.operaciones}
@@ -343,7 +346,21 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
 
       <Card>
         <CardContent className="pt-5">
-          <CollapsibleSection title="Operaciones" subtitle={trades.length === 0 ? "Ninguna asignada" : `${trades.length} asignadas · las más recientes primero`}>
+          {/* «Con dinero real» en el título a propósito: más arriba hay otra
+              lista de operaciones, la del simulador, y con las dos llamadas
+              «Operaciones» un bot que lleva diez en papel parecía no haber
+              hecho ninguna. Ésta sólo se llena cuando el bot opera de verdad y
+              sus operaciones de Coinbase se le asignan. */}
+          <CollapsibleSection
+            title="Operaciones con dinero real"
+            subtitle={
+              trades.length === 0
+                ? papel
+                  ? "Ninguna asignada · las del simulador están más arriba"
+                  : "Ninguna asignada"
+                : `${trades.length} asignadas · las más recientes primero`
+            }
+          >
             {trades.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Se asignan desde la{" "}
