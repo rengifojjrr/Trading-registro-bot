@@ -162,6 +162,24 @@ interface OpenTradeAccumulator {
   localPosition: Decimal;
   maxAbsLocalPosition: Decimal;
   sequenceCounter: number;
+  /**
+   * Lotes de entrada que siguen abiertos, en orden de llegada.
+   *
+   * Es la contabilidad que hace Coinbase: cada salida cierra primero lo más
+   * antiguo (FIFO), y el «precio de entrada de la posición» es el de lo que
+   * queda. Se separa del WAP de todas las entradas en cuanto vuelves a
+   * comprar después de un cierre parcial -- y ahí es donde la aplicación
+   * decía verde y Coinbase rojo sobre la misma posición. Confirmado contra
+   * `/cfm/positions` el 2026-09-02: `avg_entry_price` y `daily_realized_pnl`
+   * salen de aquí, no del WAP. Ver docs/PNL_METHODOLOGY.md.
+   */
+  openLots: Array<{ price: Decimal; qty: Decimal }>;
+  /**
+   * Σ (precio de salida − precio del lote que cierra) × contratos, con el
+   * signo de la dirección. En precio × contratos: sin multiplicador y sin
+   * comisiones, que se aplican después.
+   */
+  fifoRealizedPoints: Decimal;
 }
 
 /**
@@ -368,6 +386,8 @@ function openTrade(
     localPosition: new Decimal(0),
     maxAbsLocalPosition: new Decimal(0),
     sequenceCounter: 0,
+    openLots: [],
+    fifoRealizedPoints: new Decimal(0),
   };
 }
 
@@ -393,13 +413,38 @@ function allocate(
     acc.entryCommissions = acc.entryCommissions.plus(commission);
     acc.entryPriceWeighted = acc.entryPriceWeighted.plus(price.times(size));
     acc.localPosition = acc.localPosition.plus(size);
+    acc.openLots.push({ price, qty: size });
   } else {
     acc.exitQty = acc.exitQty.plus(size);
     acc.exitCommissions = acc.exitCommissions.plus(commission);
     acc.exitPriceWeighted = acc.exitPriceWeighted.plus(price.times(size));
     acc.localPosition = acc.localPosition.minus(size);
+    consumeLotsFifo(acc, size, price);
   }
   acc.maxAbsLocalPosition = Decimal.max(acc.maxAbsLocalPosition, acc.localPosition.abs());
+}
+
+/**
+ * Una salida cierra lotes empezando por el más antiguo, y lo realizado es la
+ * diferencia entre el precio al que sale y el precio al que entró **ese**
+ * lote -- no la media de todos.
+ *
+ * Dentro de una operación la posición nunca baja de cero (quien llama ya
+ * partió el fill si cruzaba), así que siempre hay lote que consumir; el
+ * `break` es sólo para no colgarse si alguna vez no lo hubiera.
+ */
+function consumeLotsFifo(acc: OpenTradeAccumulator, size: Decimal, exitPrice: Decimal) {
+  let restante = size;
+  while (restante.gt(0)) {
+    const lote = acc.openLots[0];
+    if (!lote) break;
+    const consumido = Decimal.min(lote.qty, restante);
+    const delta = acc.direction === "LONG" ? exitPrice.minus(lote.price) : lote.price.minus(exitPrice);
+    acc.fifoRealizedPoints = acc.fifoRealizedPoints.plus(delta.times(consumido));
+    lote.qty = lote.qty.minus(consumido);
+    restante = restante.minus(consumido);
+    if (lote.qty.isZero()) acc.openLots.shift();
+  }
 }
 
 function finalizeTrade(
@@ -411,6 +456,15 @@ function finalizeTrade(
     ? new Decimal(0)
     : acc.entryPriceWeighted.dividedBy(acc.entryQty);
   const exitWap = acc.exitQty.isZero() ? null : acc.exitPriceWeighted.dividedBy(acc.exitQty);
+
+  // El precio medio de lo que sigue abierto, ponderado por lote. Null cuando
+  // no queda nada: una operación cerrada no tiene «posición».
+  const openLotsQty = acc.openLots.reduce((sum, lote) => sum.plus(lote.qty), new Decimal(0));
+  const openLotsWap = openLotsQty.isZero()
+    ? null
+    : acc.openLots
+        .reduce((sum, lote) => sum.plus(lote.price.times(lote.qty)), new Decimal(0))
+        .dividedBy(openLotsQty);
 
   return {
     openingFillId: acc.openingFillId,
@@ -424,6 +478,8 @@ function finalizeTrade(
     totalExitQty: acc.exitQty.toString(),
     entryWap: entryWap.toString(),
     exitWap: exitWap ? exitWap.toString() : null,
+    openLotsWap: openLotsWap ? openLotsWap.toString() : null,
+    fifoRealizedPoints: acc.fifoRealizedPoints.toString(),
     entryCommissions: acc.entryCommissions.toString(),
     exitCommissions: acc.exitCommissions.toString(),
     entriesCount: acc.allocations.filter((a) => a.role === "ENTRY").length,

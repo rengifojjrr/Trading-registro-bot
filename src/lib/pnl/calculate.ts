@@ -14,6 +14,11 @@ import type { PnlInput, PnlResult } from "./types";
  *   notional = entryWap * totalEntryQty * contractSize
  *   returnPct = netPnl / notional * 100
  *
+ * Con `fifoRealizedPoints` (operación abierta), el bruto realizado es en
+ * cambio `fifoRealizedPoints * contractSize`: lo que cerró cada salida
+ * contra el lote más antiguo, que es como lo reparte Coinbase entre lo ya
+ * cobrado y lo que sigue flotando. Al cerrar, las dos fórmulas coinciden.
+ *
  * Pure function, decimal.js throughout -- never native JS float math on
  * money. Returns null (not 0) for grossPnl/netPnl/returnPct when nothing
  * has been closed yet (totalExitQty === 0): an open position with no
@@ -41,7 +46,10 @@ export function calculatePnl(input: PnlInput): PnlResult {
 
   const exitWap = new Decimal(input.exitWap);
   const priceDelta = input.direction === "LONG" ? exitWap.minus(entryWap) : entryWap.minus(exitWap);
-  const grossPnl = priceDelta.times(totalExitQty).times(contractSize);
+  const grossPnl =
+    input.fifoRealizedPoints !== null && input.fifoRealizedPoints !== undefined
+      ? new Decimal(input.fifoRealizedPoints).times(contractSize)
+      : priceDelta.times(totalExitQty).times(contractSize);
   const netPnl = grossPnl.minus(entryCommissions).minus(exitCommissions);
   const returnPct = notionalValue.isZero() ? null : netPnl.dividedBy(notionalValue).times(100);
 

@@ -23,6 +23,7 @@ export function LiveUnrealizedPnl({
   productId,
   direction,
   entryWap,
+  allEntriesWap,
   openQty,
   contractSize,
   entryCommissions,
@@ -32,7 +33,15 @@ export function LiveUnrealizedPnl({
 }: {
   productId: string;
   direction: "LONG" | "SHORT";
+  /**
+   * El precio medio de los contratos que siguen abiertos (lotes FIFO, como
+   * lo cuenta Coinbase). No es la media de todas las entradas: se separan en
+   * cuanto recompras después de cerrar parte, y con la media de todo esta
+   * tarjeta decía verde mientras Coinbase decía rojo sobre la misma posición.
+   */
   entryWap: string;
+  /** La media de todas las entradas de la operación, para decir la diferencia cuando la hay. */
+  allEntriesWap: string;
   openQty: string;
   contractSize: string;
   entryCommissions: string;
@@ -123,8 +132,9 @@ export function LiveUnrealizedPnl({
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
                 Ya cobrado
                 <InfoHint label="Ya cobrado">
-                  De los {totales.closedQty} contratos que cerraste. Está en tu cuenta y no cambia,
-                  pase lo que pase con el precio.
+                  De los {totales.closedQty} contratos que cerraste, cada uno contra el lote más antiguo
+                  que quedaba (así lo cuenta Coinbase). Está en tu cuenta y no cambia, pase lo que pase
+                  con el precio.
                 </InfoHint>
               </p>
               <p className={cn("text-lg font-semibold tabular-nums", pnlColorClass(totales.realized))}>
@@ -180,6 +190,18 @@ export function LiveUnrealizedPnl({
             Neto: <span className={cn("tabular-nums", pnlColorClass(pnl.netPnl))}>{formatSignedMoney(pnl.netPnl)}</span>
           </span>
         </div>
+
+        {/* Sólo cuando los dos precios difieren, que es exactamente cuando
+            alguien va a comparar esta cifra con Coinbase y no le va a cuadrar
+            con «la media de mis entradas». */}
+        {entryWap !== allEntriesWap ? (
+          <p className="text-xs text-muted-foreground">
+            El flotante se calcula sobre <span className="tabular-nums">{formatMoney(entryWap)}</span>, el precio
+            medio de los {totales.openQty} contratos que siguen abiertos: Coinbase cierra primero los más antiguos,
+            y es la cifra que enseña como precio de entrada de la posición. La media de todas tus entradas fue{" "}
+            <span className="tabular-nums">{formatMoney(allEntriesWap)}</span>.
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );

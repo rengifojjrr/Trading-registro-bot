@@ -136,6 +136,11 @@ export async function persistReconstruction(
       entryCommissions: trade.entryCommissions,
       exitCommissions: trade.exitCommissions,
       contractSize: params.contractSize,
+      // Sólo mientras está abierta: es cuando el reparto entre lo cobrado y
+      // lo flotante existe, y cuando tiene que ser el de Coinbase. Cerrada,
+      // las dos fórmulas dan lo mismo y la de los WAP deja las cifras
+      // guardadas exactamente como estaban.
+      fifoRealizedPoints: trade.status === "OPEN" ? trade.fifoRealizedPoints : null,
     });
 
     // Sólo una operación construida enteramente con fills importados cuenta
@@ -159,6 +164,7 @@ export async function persistReconstruction(
       total_exit_qty: trade.totalExitQty,
       entry_wap: trade.entryWap,
       exit_wap: trade.exitWap,
+      open_lots_wap: trade.openLotsWap,
       contract_multiplier: params.contractSize,
       notional_value: pnl.notionalValue,
       entry_commissions: trade.entryCommissions,

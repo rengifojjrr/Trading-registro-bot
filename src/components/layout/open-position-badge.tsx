@@ -40,7 +40,9 @@ function Badge({ positions }: { positions: OpenPositionRow[] }) {
       : positions.reduce((sum, p) => {
           const pnl = calculateUnrealizedPnl({
             direction: p.direction,
-            entryWap: p.entry_wap ?? "0",
+            // El precio de lo que sigue abierto (lotes FIFO, como Coinbase),
+            // no la media de todas las entradas: ver open-positions-panel.
+            entryWap: p.open_lots_wap ?? p.entry_wap ?? "0",
             currentPrice: String(price),
             openQty: String(Number(p.total_entry_qty) - Number(p.total_exit_qty)),
             contractSize: p.contract_multiplier ?? "1",

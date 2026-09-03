@@ -256,7 +256,7 @@ export async function fetchTradesPage(
 }
 
 const OPEN_POSITION_COLUMNS =
-  "id, product_id, direction, opened_at, entry_wap, max_size, total_entry_qty, total_exit_qty, contract_multiplier, entry_commissions";
+  "id, product_id, direction, opened_at, entry_wap, open_lots_wap, max_size, total_entry_qty, total_exit_qty, contract_multiplier, entry_commissions";
 
 export type OpenPositionRow = Pick<
   TradeRow,
@@ -265,6 +265,7 @@ export type OpenPositionRow = Pick<
   | "direction"
   | "opened_at"
   | "entry_wap"
+  | "open_lots_wap"
   | "max_size"
   | "total_entry_qty"
   | "total_exit_qty"

@@ -48,7 +48,10 @@ export default async function RiskPage() {
       productId: p.product_id,
       displayName: product?.display_name ?? null,
       direction: p.direction,
-      entryWap: p.entry_wap!,
+      // El precio medio de lo que sigue abierto (lotes FIFO, como Coinbase);
+      // la media de todas las entradas sólo si la reconstrucción es anterior
+      // a que se guardaran los lotes.
+      entryWap: p.open_lots_wap ?? p.entry_wap!,
       openQty: new Decimal(p.total_entry_qty).minus(p.total_exit_qty).toString(),
       contractSize: p.contract_multiplier,
       entryCommissions: p.entry_commissions,

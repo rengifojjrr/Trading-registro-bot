@@ -42,6 +42,7 @@ export type TradeDetail = Pick<
   | "session_effective"
   | "source"
   | "liquidated_qty"
+  | "open_lots_wap"
 >;
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -82,6 +83,15 @@ export function TradeSummary({
   // sigue abierta, y una cerrada del todo por Coinbase está cerrada igual.
   const liquidatedQty = Number(trade.liquidated_qty);
   const liquidated = Number.isFinite(liquidatedQty) && liquidatedQty > 0;
+  // El precio de lo que sigue abierto (lotes FIFO) sólo se separa de la media
+  // de las entradas cuando recompraste después de cerrar parte. Se dice sólo
+  // entonces: el resto del tiempo son el mismo número y nombrarlo dos veces
+  // confunde.
+  const openLotsDiffer =
+    isOpen &&
+    trade.open_lots_wap !== null &&
+    trade.entry_wap !== null &&
+    Number(trade.open_lots_wap) !== Number(trade.entry_wap);
 
   return (
     <Card>
@@ -115,13 +125,22 @@ export function TradeSummary({
             hint={
               <>
                 La media ponderada de las {trade.entries_count} entrada(s), {formatNumber(trade.total_entry_qty, 4)}{" "}
-                contratos en total. Al cerrar parte de una posición el precio medio del resto no cambia,
-                así que este número también es el de lo que sigue abierto.
+                contratos en total.
+                {openLotsDiffer ? (
+                  <>
+                    {" "}
+                    No es el precio de lo que sigue abierto: Coinbase cierra primero los contratos más antiguos,
+                    así que después de recomprar tras un cierre parcial lo que queda tiene otro precio medio (
+                    {formatMoney(trade.open_lots_wap)}), y ese es el que manda en el P&amp;L flotante.
+                  </>
+                ) : null}
               </>
             }
             sub={
               isOpen
-                ? `${formatNumber(openQty, 4)} abiertos de ${formatNumber(trade.total_entry_qty, 4)}`
+                ? `${formatNumber(openQty, 4)} abiertos de ${formatNumber(trade.total_entry_qty, 4)}${
+                    openLotsDiffer ? ` · a ${formatMoney(trade.open_lots_wap)}` : ""
+                  }`
                 : `${formatNumber(trade.total_entry_qty, 4)} contratos en ${trade.entries_count} entrada(s)`
             }
           />
@@ -179,6 +198,9 @@ export function TradeSummary({
               />
             ) : null}
             <DetailRow label="WAP entrada" value={formatMoney(trade.entry_wap)} />
+            {openLotsDiffer ? (
+              <DetailRow label="Precio medio de lo abierto (FIFO)" value={formatMoney(trade.open_lots_wap)} />
+            ) : null}
             <DetailRow label="WAP salida" value={formatMoney(trade.exit_wap)} />
             <DetailRow label="Valor nocional" value={formatMoney(trade.notional_value)} />
             <DetailRow

@@ -12,6 +12,16 @@ export interface PnlInput {
   exitCommissions: string;
   /** products.contract_size for this trade's product -- never hardcode this. */
   contractSize: string;
+  /**
+   * Lo realizado por lotes FIFO, en precio × contratos (lo que devuelve el
+   * motor de reconstrucción en `fifoRealizedPoints`). Si se da, el P&L bruto
+   * es esto × contractSize en vez de (WAP salida − WAP entrada) × cerrado ×
+   * contractSize. Se pasa **sólo para operaciones abiertas**: cerradas, las
+   * dos fórmulas dan lo mismo, y la de los WAP se mantiene para que las
+   * cifras guardadas -- y verificadas -- no cambien ni en el último decimal.
+   * Ver docs/PNL_METHODOLOGY.md, «Operación abierta».
+   */
+  fifoRealizedPoints?: string | null;
 }
 
 export interface PnlResult {

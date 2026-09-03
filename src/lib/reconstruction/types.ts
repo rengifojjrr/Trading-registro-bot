@@ -76,6 +76,20 @@ export interface ReconstructedTrade {
   totalExitQty: string;
   entryWap: string;
   exitWap: string | null;
+  /**
+   * Precio medio de los lotes que siguen abiertos, cerrando siempre el más
+   * antiguo primero (FIFO). Es lo que Coinbase enseña como precio de entrada
+   * de la posición, y lo que hay que usar para el P&L flotante. Null cuando
+   * no queda nada abierto. Ver docs/PNL_METHODOLOGY.md, «Operación abierta».
+   */
+  openLotsWap: string | null;
+  /**
+   * Lo realizado por FIFO, en precio × contratos: sin multiplicador y sin
+   * comisiones. En una operación cerrada coincide con
+   * (WAP salida − WAP entrada) × contratos; mientras está abierta, es el
+   * reparto que hace Coinbase entre lo cobrado y lo flotante.
+   */
+  fifoRealizedPoints: string;
   entryCommissions: string;
   exitCommissions: string;
   entriesCount: number;

@@ -29,7 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 import { JournalForm } from "./journal-form";
 
 const TRADE_COLUMNS =
-  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, contract_multiplier, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source, liquidated_qty";
+  "id, account_id, product_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, open_lots_wap, contract_multiplier, notional_value, entry_commissions, exit_commissions, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, is_manually_adjusted, session_effective, source, liquidated_qty";
 
 export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId]">) {
   const { tradeId } = await props.params;
@@ -260,7 +260,8 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
         <LiveUnrealizedPnl
           productId={trade.product_id}
           direction={trade.direction}
-          entryWap={trade.entry_wap!}
+          entryWap={trade.open_lots_wap ?? trade.entry_wap!}
+          allEntriesWap={trade.entry_wap!}
           openQty={openQty}
           realizedNetPnl={trade.net_pnl}
           totalEntryQty={trade.total_entry_qty}

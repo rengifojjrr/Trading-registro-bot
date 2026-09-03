@@ -1000,6 +1000,12 @@ export interface Database {
           total_exit_qty: string;
           entry_wap: string | null;
           exit_wap: string | null;
+          /**
+           * Precio medio de los contratos que siguen abiertos, cerrando el
+           * lote más antiguo primero (FIFO): el «precio de entrada» que
+           * enseña Coinbase para la posición. Null cuando no queda nada.
+           */
+          open_lots_wap: string | null;
           notional_value: string | null;
           contract_multiplier: string;
           entry_commissions: string;
@@ -1043,6 +1049,7 @@ export interface Database {
           total_exit_qty?: string | number;
           entry_wap?: string | number | null;
           exit_wap?: string | number | null;
+          open_lots_wap?: string | number | null;
           notional_value?: string | number | null;
           contract_multiplier?: string | number;
           entry_commissions?: string | number;

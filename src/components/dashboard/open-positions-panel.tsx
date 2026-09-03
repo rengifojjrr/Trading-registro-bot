@@ -27,7 +27,10 @@ export function OpenPositionsPanel({ positions }: { positions: OpenPositionRow[]
       <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex flex-col gap-1">
           <CardTitle className="text-foreground">Posiciones abiertas</CardTitle>
-          <CardDescription>Ganancia o pérdida actual, antes de comisiones -- igual que en Coinbase.</CardDescription>
+          <CardDescription>
+            Ganancia o pérdida de lo que sigue abierto, sobre el precio medio de esos contratos y antes de
+            comisiones: la misma cifra que enseña Coinbase.
+          </CardDescription>
         </div>
         {/* The margin view is the fuller answer for an open position, so
             point at it rather than duplicating that detail here. */}
@@ -48,6 +51,13 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
   const { price, status, ageMs } = useCurrentPrice(position.product_id);
   const openQty = new Decimal(position.total_entry_qty).minus(position.total_exit_qty).toString();
 
+  // El precio de lo que sigue abierto, no la media de todas las entradas.
+  // Se separan en cuanto recompras tras un cierre parcial, y con la media
+  // de todo esta línea salía en verde mientras Coinbase enseñaba rojo sobre
+  // la misma posición. Sin lotes guardados (una reconstrucción vieja) se
+  // vuelve a la media de las entradas, que es lo que había.
+  const basePrice = position.open_lots_wap ?? position.entry_wap!;
+
   // A stale price still produces a meaningful P&L -- it's just old, and
   // the LiveStatus below says so. Hiding the figure entirely would be less
   // informative than showing it with its age attached.
@@ -55,7 +65,7 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
     (status === "ok" || status === "stale") && price !== null
       ? calculateUnrealizedPnl({
           direction: position.direction,
-          entryWap: position.entry_wap!,
+          entryWap: basePrice,
           currentPrice: String(price),
           openQty,
           contractSize: position.contract_multiplier,
@@ -71,7 +81,9 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
       <div className="flex items-center gap-2">
         <Badge variant="outline">{position.direction === "LONG" ? "Long" : "Short"}</Badge>
         <span className="font-medium">{position.product_id}</span>
-        <span className="text-muted-foreground">@ {formatMoney(position.entry_wap)}</span>
+        <span className="text-muted-foreground">
+          {openQty} @ {formatMoney(basePrice)}
+        </span>
         <LiveStatus status={status} ageMs={ageMs} />
       </div>
 

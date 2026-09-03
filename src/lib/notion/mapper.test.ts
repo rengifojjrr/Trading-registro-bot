@@ -22,6 +22,7 @@ const trade: TradeRow = {
   total_exit_qty: "1",
   entry_wap: "64000",
   exit_wap: "64500",
+  open_lots_wap: null,
   notional_value: "640",
   contract_multiplier: "0.01",
   entry_commissions: "0.5",
