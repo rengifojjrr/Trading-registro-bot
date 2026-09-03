@@ -10,13 +10,15 @@ import { HealthCard } from "@/components/bots/health-card";
 import { ImpulseForm } from "@/components/bots/impulse-form";
 import { ImpulseList } from "@/components/bots/impulse-list";
 import { MonteCarloCard } from "@/components/bots/monte-carlo-card";
+import { PaperEquityChart } from "@/components/bots/paper-equity-chart";
+import { PaperTradesTabla } from "@/components/bots/paper-trades-tabla";
 import { PhaseControls } from "@/components/bots/phase-controls";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fetchBotDetail, fetchBotFormOptions } from "@/lib/bots/queries";
+import { fetchBotDetail, fetchBotFormOptions, fetchPaperForBot } from "@/lib/bots/queries";
 import { BASELINE_SOURCE_LABELS, PHASE_LABELS, STYLE_LABELS } from "@/lib/bots/types";
 import { formatDate, formatDateTime, formatNumber, formatPercent, formatSignedMoney, pnlColorClass, pnlTone } from "@/lib/format";
 
@@ -29,7 +31,11 @@ import { formatDate, formatDateTime, formatNumber, formatPercent, formatSignedMo
  */
 export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
   const { botId } = await props.params;
-  const [detail, options] = await Promise.all([fetchBotDetail(botId), fetchBotFormOptions()]);
+  const [detail, options, papel] = await Promise.all([
+    fetchBotDetail(botId),
+    fetchBotFormOptions(),
+    fetchPaperForBot(botId),
+  ]);
   if (!detail) notFound();
 
   const { view, context, trades, equity, history, impulses } = detail;
@@ -122,6 +128,38 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
           </CardHeader>
           <CardContent>
             <EquityCurveChart points={equity} timezone={timezone} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* El simulador va después de la curva real y antes de la fase: es lo que
+          el bot está haciendo ahora mismo, y por tanto parte del porqué de la
+          decisión, no una de las acciones. Sin cuenta de papel no se pinta
+          nada, que es lo normal en un bot que nunca se sembró. */}
+      {papel ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              En el simulador{papel.enabled ? "" : " (apagado)"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <PaperEquityChart
+              puntos={papel.puntos}
+              capitalAsignado={papel.capitalAsignado}
+              timezone={timezone}
+              moneda={currency}
+            />
+            <CollapsibleSection
+              title="Operaciones simuladas"
+              subtitle={`${papel.operaciones.length} cerrada${papel.operaciones.length === 1 ? "" : "s"}`}
+            >
+              <PaperTradesTabla
+                operaciones={papel.operaciones}
+                timezone={timezone}
+                moneda={currency}
+              />
+            </CollapsibleSection>
           </CardContent>
         </Card>
       ) : null}

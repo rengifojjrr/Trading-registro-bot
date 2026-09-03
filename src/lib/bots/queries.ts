@@ -477,3 +477,93 @@ export async function snapshotForHistory(botId: string, now: Date = new Date()) 
     gate,
   };
 }
+
+/**
+ * Lo que el bot lleva hecho en el simulador.
+ *
+ * Va aparte de `fetchBotDetail` y no dentro porque son dos historias
+ * distintas del mismo bot: aquélla cuenta lo que hizo con dinero real, y la
+ * ficha las enseña separadas a propósito. Mezclarlas en una consulta obligaría
+ * además a pagarla en las pantallas que no enseñan el papel.
+ *
+ * Devuelve `null` cuando el bot no tiene cuenta de simulación, que es lo
+ * normal en un bot que nunca se sembró: la sección entera no se pinta, en vez
+ * de aparecer vacía como si algo hubiera fallado.
+ */
+export interface PaperDelBot {
+  capitalAsignado: string;
+  equity: string;
+  enabled: boolean;
+  operaciones: {
+    id: string;
+    side: string;
+    size: string;
+    precioEntrada: string;
+    horaEntrada: string;
+    precioSalida: string;
+    horaSalida: string;
+    pnl: string;
+    pnlPct: string;
+    comision: string;
+    motivoSalida: string;
+    barrasEnMercado: number | null;
+  }[];
+  puntos: { ts: string; equity: string }[];
+}
+
+export async function fetchPaperForBot(botId: string): Promise<PaperDelBot | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data: cuenta } = await supabase
+    .from("paper_accounts")
+    .select("capital_asignado, equity, enabled")
+    .eq("user_id", user.id)
+    .eq("bot_id", botId)
+    .maybeSingle();
+
+  if (!cuenta) return null;
+
+  // Las últimas doscientas y los últimos quinientos puntos. La ficha es para
+  // mirar cómo va, no para auditar el histórico entero, y un bot de un minuto
+  // encendido un mes junta decenas de miles de filas que nadie va a leer.
+  const [{ data: ops }, { data: puntos }] = await Promise.all([
+    supabase
+      .from("paper_trades")
+      .select(
+        "id, side, size, precio_entrada, hora_entrada, precio_salida, hora_salida, pnl, pnl_pct, comision, motivo_salida, barras_en_mercado",
+      )
+      .eq("user_id", user.id)
+      .eq("bot_id", botId)
+      .order("hora_salida", { ascending: false })
+      .limit(200),
+    supabase
+      .from("paper_equity_points")
+      .select("ts, equity")
+      .eq("user_id", user.id)
+      .eq("bot_id", botId)
+      .order("ts", { ascending: true })
+      .limit(500),
+  ]);
+
+  return {
+    capitalAsignado: cuenta.capital_asignado,
+    equity: cuenta.equity,
+    enabled: cuenta.enabled,
+    operaciones: (ops ?? []).map((o) => ({
+      id: o.id,
+      side: o.side,
+      size: o.size,
+      precioEntrada: o.precio_entrada,
+      horaEntrada: o.hora_entrada,
+      precioSalida: o.precio_salida,
+      horaSalida: o.hora_salida,
+      pnl: o.pnl,
+      pnlPct: o.pnl_pct,
+      comision: o.comision,
+      motivoSalida: o.motivo_salida,
+      barrasEnMercado: o.barras_en_mercado,
+    })),
+    puntos: (puntos ?? []).map((p) => ({ ts: p.ts, equity: p.equity })),
+  };
+}

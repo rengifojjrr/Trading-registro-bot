@@ -101,6 +101,11 @@ export const MODULES: ModuleManifest[] = [
         cadence: "DIARIO",
         children: [
           { href: "/bots", label: "Resumen" },
+          // El simulador va el segundo porque es de mirar a diario, no de
+          // repasar el domingo: es donde se ve si los bots que están en papel
+          // siguen operando y cómo van.
+          { href: "/bots/simulador", label: "Simulador" },
+          { href: "/bots/estrategias", label: "Estrategias" },
           { href: "/bots/equipo", label: "Equipo" },
           { href: "/bots/cantera", label: "Cantera" },
           { href: "/bots/riesgo", label: "Riesgo" },
