@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo-data.ts",
     "seed:backtests": "tsx scripts/seed-bots-backtests.ts",
+    "seed:simulador": "tsx scripts/seed-simulador.ts",
     "import:notion": "tsx scripts/import-notion-journal.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"

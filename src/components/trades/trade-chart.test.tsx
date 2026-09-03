@@ -349,6 +349,12 @@ describe("TradeChart tools", () => {
     }
   });
 
+  // Los patrones van anclados con `^` a propósito. El nombre accesible de cada
+  // casilla es su etiqueta seguida de su pista, y las pistas se nombran unas a
+  // otras: la de la EMA 55 dice «con la EMA 21 marca el régimen». Sin el ancla,
+  // buscar /EMA 21/ encuentra dos casillas y la consulta falla -- que es
+  // exactamente lo que pasó al ampliar el catálogo de siete indicadores a
+  // veintitrés. Anclando, cada pista puede explicarse como quiera.
   it("ofrece los indicadores, y se pueden marcar varios", async () => {
     // La mitad de las veces se quiere EMA 9 *y* EMA 21 -- es el cruce que se
     // mira -- así que marcar uno no puede desmarcar el anterior.
@@ -356,14 +362,14 @@ describe("TradeChart tools", () => {
     renderChart();
 
     await user.click(screen.getByRole("button", { name: "Indicadores" }));
-    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
-    await user.click(screen.getByRole("checkbox", { name: /EMA 21/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /^EMA 9/ }));
+    await user.click(screen.getByRole("checkbox", { name: /^EMA 21/ }));
 
-    expect(screen.getByRole("checkbox", { name: /EMA 9/ })).toHaveAttribute(
+    expect(screen.getByRole("checkbox", { name: /^EMA 9/ })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("checkbox", { name: /EMA 21/ })).toHaveAttribute(
+    expect(screen.getByRole("checkbox", { name: /^EMA 21/ })).toHaveAttribute(
       "aria-checked",
       "true",
     );
@@ -379,20 +385,20 @@ describe("TradeChart tools", () => {
     renderChart();
 
     await user.click(screen.getByRole("button", { name: "Indicadores" }));
-    for (const nombre of [/EMA 9/, /EMA 21/, /EMA 50/, /SMA 200/, /VWAP/, /RSI 14/, /ATR 14/]) {
+    for (const nombre of [/^EMA 9/, /^EMA 21/, /^EMA 50/, /^SMA 200/, /^VWAP/, /^RSI 14/, /^ATR 14/]) {
       await user.click(await screen.findByRole("checkbox", { name: nombre }));
     }
 
     // Y apagarlos otra vez, que es el mismo camino al revés.
-    for (const nombre of [/EMA 9/, /EMA 50/]) {
+    for (const nombre of [/^EMA 9/, /^EMA 50/]) {
       await user.click(screen.getByRole("checkbox", { name: nombre }));
     }
 
-    expect(screen.getByRole("checkbox", { name: /EMA 21/ })).toHaveAttribute(
+    expect(screen.getByRole("checkbox", { name: /^EMA 21/ })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("checkbox", { name: /EMA 9/ })).toHaveAttribute(
+    expect(screen.getByRole("checkbox", { name: /^EMA 9/ })).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -408,8 +414,8 @@ describe("TradeChart tools", () => {
     const alPrincipio = graficosCreados;
 
     await user.click(screen.getByRole("button", { name: "Indicadores" }));
-    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
-    await user.click(screen.getByRole("checkbox", { name: /EMA 21/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /^EMA 9/ }));
+    await user.click(screen.getByRole("checkbox", { name: /^EMA 21/ }));
 
     expect(graficosCreados).toBe(alPrincipio);
   });
@@ -421,7 +427,7 @@ describe("TradeChart tools", () => {
     renderChart();
 
     await user.click(screen.getByRole("button", { name: "Indicadores" }));
-    await user.click(await screen.findByRole("checkbox", { name: /EMA 9/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /^EMA 9/ }));
     await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("combobox", { name: "Escala de precios" }));
