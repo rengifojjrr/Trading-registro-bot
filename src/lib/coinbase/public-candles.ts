@@ -70,6 +70,17 @@ export async function velasPublicas(
   productId: string,
   granularidad: GranularidadPublica,
   limite = 300,
+  /**
+   * Devolver también la vela que se está formando.
+   *
+   * Falso para el simulador, por lo dicho arriba. Verdadero sólo para PINTAR:
+   * un gráfico diario que corta en la última vela cerrada parece congelado en
+   * el día de ayer durante veinticuatro horas, y quien lo mira concluye que el
+   * bot no funciona. Verla formarse es lo que hace cualquier gráfico de
+   * mercado. Lo que no puede es entrar en una decisión, y por eso es un
+   * parámetro y no el comportamiento por defecto.
+   */
+  incluirEnCurso = false,
 ): Promise<Vela[]> {
   const segundos = SEGUNDOS_POR_GRANULARIDAD[granularidad];
   const cuantas = Math.min(limite + 1, MAX_VELAS_POR_PETICION);
@@ -135,9 +146,9 @@ export async function velasPublicas(
   velas.sort((a, b) => a.time - b.time);
 
   const ahora = Date.now();
-  const cerradas = velas.filter((v) => v.time + segundos * 1000 <= ahora);
+  const utiles = incluirEnCurso ? velas : velas.filter((v) => v.time + segundos * 1000 <= ahora);
 
-  return cerradas.slice(-limite);
+  return utiles.slice(-limite);
 }
 
 /** La hora de apertura de la última vela cerrada, para saber si ya se evaluó. */

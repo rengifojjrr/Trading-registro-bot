@@ -70,7 +70,12 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
   // API pública sirve: un bot creado a mano con «4h» se queda sin gráfico y
   // la ficha lo dice, en vez de pedir una granularidad que va a fallar.
   const granularidad = esGranularidadPublica(bot.timeframe) ? bot.timeframe : null;
-  const velasMs = papel && granularidad ? await velasPublicas(bot.market, granularidad, 300) : [];
+  // Con la vela en curso incluida: aquí sólo se pinta. Sin ella, el gráfico de
+  // un bot diario se queda en la vela de ayer durante todo el día y parece
+  // congelado, que es exactamente la impresión que hay que evitar. El
+  // simulador sigue evaluando sólo velas cerradas.
+  const velasMs =
+    papel && granularidad ? await velasPublicas(bot.market, granularidad, 300, true) : [];
   // La librería de gráficos trabaja en segundos; las velas llegan en milisegundos.
   const velas = velasMs.map((v) => ({ ...v, time: Math.floor(v.time / 1000) }));
   const precioActual = velas.length > 0 ? velas[velas.length - 1].close : null;
@@ -197,7 +202,9 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
               <CardTitle>Entradas y salidas sobre el precio</CardTitle>
               <p className="text-xs text-muted-foreground">
                 {bot.market} en velas de {bot.timeframe}. Flecha azul, entrada; naranja, salida.
-                {papel.lastTickAt ? ` Última evaluación: ${formatDateTime(papel.lastTickAt, timezone)}.` : ""}
+                {papel.lastTickAt ? ` Última evaluación: ${formatDateTime(papel.lastTickAt, timezone)}.` : ""}{" "}
+                La última vela es la que se está formando ahora; el bot sólo decide sobre velas
+                ya cerradas, así que en {bot.timeframe} la mira {bot.timeframe === "1d" ? "una vez al día" : "al cerrarse"}.
               </p>
             </CardHeader>
             <CardContent>

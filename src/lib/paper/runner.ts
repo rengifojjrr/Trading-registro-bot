@@ -24,6 +24,7 @@ import {
   type MotivoSalida,
   type PosicionAbierta,
 } from "./engine";
+import { velasPendientes } from "./recuperacion";
 
 /**
  * El ciclo del simulador: leer la base, pedir precio, preguntarle al motor y
@@ -40,11 +41,20 @@ import {
  * misma vela cerrada no puede abrir dos posiciones, y para eso hay tres cosas,
  * de la más barata a la más segura:
  *
- *   1. Antes de evaluar, se mira si ya existe un punto de curva en
- *      `paper_equity_points` con `ts` igual a la hora de apertura de esa vela.
- *      Si existe, la vela ya se evaluó y el ciclo se salta la cuenta. El punto
- *      se escribe al final de cada ciclo, así que es a la vez la curva y el
- *      registro de «hasta aquí llegué».
+ *   1. Antes de evaluar, se mira cuál es el punto de curva más reciente en
+ *      `paper_equity_points`. Ese punto es a la vez la curva y la marca de
+ *      «hasta aquí evalué», y de él sale la lista de velas pendientes: las
+ *      cerradas posteriores a esa hora, en orden. Una vela que ya tiene punto
+ *      no vuelve a entrar en la lista, así que dos ciclos sobre la misma vela
+ *      no la evalúan dos veces.
+ *
+ *      Se recuperan todas las pendientes y no sólo la última. El ciclo corre
+ *      cada cinco minutos y las velas no le esperan: mirar sólo la última deja
+ *      a un bot de un minuto viendo una de cada cinco, y hace que un stop que
+ *      saltó dentro de una vela que nadie miró se compruebe tarde, contra un
+ *      precio que ya no es el suyo. El tope de `VELAS_DE_RECUPERACION` corta
+ *      la otra punta: tras un parón largo no se le inventa al bot un
+ *      histórico de operaciones que no ocurrieron.
  *
  *   2. Ese punto se escribe con `on conflict do nothing` contra el índice
  *      único `(bot_id, ts)`. Dos ciclos simultáneos no pueden dejar dos
@@ -105,6 +115,8 @@ export interface DetalleCuenta {
   accion: "ABIERTA" | "CERRADA" | "NADA" | "OMITIDA" | "ERROR";
   motivo?: MotivoOmision | MotivoSalida;
   error?: string;
+  /** Cuántas velas atrasadas se recuperaron en esta pasada. */
+  velasEvaluadas?: number;
 }
 
 export interface ResumenCiclo {
@@ -253,130 +265,161 @@ async function procesarCuenta(entrada: {
   }
   if (velas.length < 2) return omitir("SIN_VELAS");
 
-  const ultima = velas[velas.length - 1];
-  const horaVela = new Date(ultima.time * 1000).toISOString();
-
-  // El sello de la vela ya evaluada. Ver la explicación de idempotencia en la
-  // cabecera del archivo.
-  const { data: yaEvaluada } = await supabase
+  // Hasta dónde llegó la última vez. El punto de curva más reciente es a la
+  // vez la curva y la marca de «hasta aquí evalué»; ver la cabecera.
+  const { data: ultimoPunto } = await supabase
     .from("paper_equity_points")
-    .select("id")
+    .select("ts")
     .eq("bot_id", cuenta.bot_id)
-    .eq("ts", horaVela)
+    .order("ts", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  if (yaEvaluada) {
+  const ultimaEvaluada = ultimoPunto
+    ? Math.floor(new Date(ultimoPunto.ts).getTime() / 1000)
+    : null;
+
+  const pendientes = velasPendientes(velas, ultimaEvaluada);
+  if (pendientes.length === 0) {
     await marcarVisita(supabase, cuenta);
     return omitir("VELA_YA_EVALUADA");
   }
 
+  // Sólo se lee una vez: a partir de aquí la posición viva la llevan
+  // `posicion` y `posicionId`, que sí cambian vela a vela.
   const posicionFila = await leerPosicionAbierta(supabase, cuenta);
-  const posicion = posicionFila ? aPosicion(posicionFila) : null;
+  let posicion = posicionFila ? aPosicion(posicionFila) : null;
+  let posicionId = posicionFila?.id ?? null;
+  let efectivo = Number(cuenta.efectivo);
+  let patrimonio = efectivo;
+  let abiertas = 0;
+  let cerradas = 0;
+  let ultimoMotivo: MotivoSalida | undefined;
 
-  const accion = evaluarVela({
-    velas,
-    estrategia,
-    posicion,
-    ajustes,
-    // El mismo corte de sesión que usa el motor de backtest (`buildContext`):
-    // día natural UTC. Sólo afecta al VWAP, y con un corte distinto el papel
-    // y el backtest dibujarían dos niveles distintos del mismo indicador.
-    sessionOf: (t) => String(Math.floor(t / 86400)),
-  });
+  // Una pasada por cada vela cerrada que quedó sin mirar, en orden.
+  //
+  // Antes se evaluaba sólo la última y se daban por perdidas las de en medio.
+  // Con el ciclo cada cinco minutos, un bot de un minuto veía una vela de cada
+  // cinco: se perdían señales, y un stop que saltó dentro de una vela que
+  // nadie miró se comprobaba tres velas tarde contra un precio que ya no era
+  // el suyo. Cada vuelta ve exactamente lo que habría visto en su momento --
+  // `velas.slice(0, i + 1)` --, así que el resultado no depende de cuándo
+  // llegó el ciclo.
+  for (const i of pendientes) {
+    const vela = velas[i];
+    const hasta = velas.slice(0, i + 1);
+    const horaVela = new Date(vela.time * 1000).toISOString();
 
-  const efectivo = Number(cuenta.efectivo);
-  let resultado: DetalleCuenta = { botId: cuenta.bot_id, nombre, accion: "NADA" };
-  let efectivoFinal = efectivo;
-  let posicionFinal = posicion;
-
-  if (accion.tipo === "ABRIR") {
-    // El tamaño sale del dinero de la cuenta, que es el capital que el usuario
-    // le asignó al bot más lo que haya ganado o perdido desde entonces --
-    // nunca de un número de contratos fijo. Con la posición cerrada el
-    // efectivo ES la cuenta entera, así que esto es «orden al 100% del
-    // capital», exactamente las condiciones con las que se midieron las líneas
-    // base en `lib/bots/backtests-2026.ts`. Sin esa igualdad, comparar el
-    // papel con el backtest no significa nada.
-    const size = tamanoPorCapital(efectivo, accion.precio);
-    if (size <= 0) return omitir("SIN_CAPITAL");
-
-    const nueva: PosicionAbierta = {
-      side: accion.side,
-      size,
-      precioEntrada: accion.precio,
-      horaEntrada: ultima.time,
-      stop: accion.stop,
-      objetivo: accion.objetivo,
-      atrEntrada: accion.atr,
-    };
-
-    const abierta = await escribirApertura(supabase, cuenta, nueva, horaVela);
-    if (abierta) {
-      efectivoFinal = redondearDinero(efectivo - size * accion.precio);
-      posicionFinal = nueva;
-      resultado = { botId: cuenta.bot_id, nombre, accion: "ABIERTA" };
-    }
-  }
-
-  if (accion.tipo === "CERRAR" && posicion && posicionFila) {
-    const cerrada = await escribirCierre({
-      supabase,
-      cuenta,
-      posicionId: posicionFila.id,
+    const accion = evaluarVela({
+      velas: hasta,
+      estrategia,
       posicion,
-      precioSalida: accion.precio,
-      motivo: accion.motivo,
-      horaSalida: horaVela,
-      barras: barrasEnMercado(velas, posicion.horaEntrada),
-      comisionPct: ajustes.comisionPct,
+      ajustes,
+      // El mismo corte de sesión que usa el motor de backtest
+      // (`buildContext`): día natural UTC. Sólo afecta al VWAP, y con un
+      // corte distinto el papel y el backtest dibujarían dos niveles
+      // distintos del mismo indicador.
+      sessionOf: (t) => String(Math.floor(t / 86400)),
     });
 
-    if (cerrada) {
-      efectivoFinal = redondearDinero(
-        efectivo + valorDeCierre(posicion, accion.precio, ajustes.comisionPct),
-      );
-      posicionFinal = null;
-      resultado = { botId: cuenta.bot_id, nombre, accion: "CERRADA", motivo: accion.motivo };
+    if (accion.tipo === "ABRIR") {
+      // El tamaño sale del dinero de la cuenta, que es el capital que el
+      // usuario le asignó al bot más lo que haya ganado o perdido desde
+      // entonces -- nunca de un número de contratos fijo. Con la posición
+      // cerrada el efectivo ES la cuenta entera, así que esto es «orden al
+      // 100% del capital», exactamente las condiciones con las que se
+      // midieron las líneas base en `lib/bots/backtests-2026.ts`. Sin esa
+      // igualdad, comparar el papel con el backtest no significa nada.
+      const size = tamanoPorCapital(efectivo, accion.precio);
+      if (size > 0) {
+        const nueva: PosicionAbierta = {
+          side: accion.side,
+          size,
+          precioEntrada: accion.precio,
+          horaEntrada: vela.time,
+          stop: accion.stop,
+          objetivo: accion.objetivo,
+          atrEntrada: accion.atr,
+        };
+
+        const id = await escribirApertura(supabase, cuenta, nueva, horaVela);
+        if (id) {
+          efectivo = redondearDinero(efectivo - size * accion.precio);
+          posicion = nueva;
+          posicionId = id;
+          abiertas += 1;
+        }
+      }
+    } else if (accion.tipo === "CERRAR" && posicion && posicionId) {
+      const cerrada = await escribirCierre({
+        supabase,
+        cuenta,
+        posicionId,
+        posicion,
+        precioSalida: accion.precio,
+        motivo: accion.motivo,
+        horaSalida: horaVela,
+        barras: barrasEnMercado(hasta, posicion.horaEntrada),
+        comisionPct: ajustes.comisionPct,
+      });
+
+      if (cerrada) {
+        efectivo = redondearDinero(
+          efectivo + valorDeCierre(posicion, accion.precio, ajustes.comisionPct),
+        );
+        posicion = null;
+        posicionId = null;
+        cerradas += 1;
+        ultimoMotivo = accion.motivo;
+      }
     }
-  }
 
-  // El patrimonio es el efectivo más lo que devolvería cerrar ahora: la misma
-  // fórmula que se usa al cerrar de verdad, para que la curva y el histórico
-  // de operaciones no puedan contar dos historias distintas.
-  //
-  // Se acota a cero porque la base no admite un patrimonio negativo. Que haga
-  // falta la cota significa que la cuenta se arruinó -- una cuenta simulada
-  // puede perderlo todo, pero no puede deber dinero -- y es mejor guardar el
-  // cero que dejar que la escritura falle y pare el ciclo de los demás bots.
-  const patrimonio = Math.max(
-    0,
-    redondearDinero(
-      efectivoFinal +
-        (posicionFinal ? valorDeCierre(posicionFinal, ultima.close, ajustes.comisionPct) : 0),
-    ),
-  );
-
-  await supabase
-    .from("paper_equity_points")
-    .upsert(
-      { user_id: cuenta.user_id, bot_id: cuenta.bot_id, ts: horaVela, equity: patrimonio },
-      { onConflict: "bot_id,ts", ignoreDuplicates: true },
+    // El patrimonio es el efectivo más lo que devolvería cerrar ahora: la
+    // misma fórmula que se usa al cerrar de verdad, para que la curva y el
+    // histórico de operaciones no puedan contar dos historias distintas.
+    //
+    // Se acota a cero porque la base no admite un patrimonio negativo. Que
+    // haga falta la cota significa que la cuenta se arruinó -- una cuenta
+    // simulada puede perderlo todo, pero no puede deber dinero -- y es mejor
+    // guardar el cero que dejar que la escritura falle y pare el ciclo.
+    patrimonio = Math.max(
+      0,
+      redondearDinero(
+        efectivo + (posicion ? valorDeCierre(posicion, vela.close, ajustes.comisionPct) : 0),
+      ),
     );
 
+    await supabase
+      .from("paper_equity_points")
+      .upsert(
+        { user_id: cuenta.user_id, bot_id: cuenta.bot_id, ts: horaVela, equity: patrimonio },
+        { onConflict: "bot_id,ts", ignoreDuplicates: true },
+      );
+  }
+
+  // La cuenta se actualiza una vez al final y no en cada vuelta: lo que
+  // importa es dónde quedó, y escribirla en cada vela sería pagar una
+  // escritura por vela recuperada sin que nadie vea los estados intermedios.
   await supabase
     .from("paper_accounts")
     .update({
-      efectivo: Math.max(0, efectivoFinal),
+      efectivo: Math.max(0, efectivo),
       equity: patrimonio,
       last_tick_at: new Date().toISOString(),
     })
     .eq("id", cuenta.id)
     .eq("user_id", cuenta.user_id);
 
-  return resultado;
+  return {
+    botId: cuenta.bot_id,
+    nombre,
+    accion: cerradas > 0 ? "CERRADA" : abiertas > 0 ? "ABIERTA" : "NADA",
+    motivo: ultimoMotivo,
+    velasEvaluadas: pendientes.length,
+  };
 }
 
-/** Sólo refresca «la miré», sin tocar dinero. Para la vela ya evaluada. */
+
 async function marcarVisita(supabase: ClienteSimulador, cuenta: FilaCuenta): Promise<void> {
   await supabase
     .from("paper_accounts")
@@ -397,8 +440,8 @@ async function escribirApertura(
   cuenta: FilaCuenta,
   posicion: PosicionAbierta,
   horaVela: string,
-): Promise<boolean> {
-  const { error } = await supabase.from("paper_positions").insert({
+): Promise<string | null> {
+  const { data, error } = await supabase.from("paper_positions").insert({
     user_id: cuenta.user_id,
     bot_id: cuenta.bot_id,
     side: posicion.side,
@@ -409,10 +452,16 @@ async function escribirApertura(
     objetivo: posicion.objetivo,
     atr_entrada: posicion.atrEntrada,
     status: "ABIERTA",
-  });
+  })
+    // El identificador hace falta aquí mismo: en una pasada de recuperación
+    // la misma posición puede abrirse y cerrarse en dos velas seguidas, y
+    // volver a leerla de la base sería una consulta por vela.
+    .select("id")
+    .single();
 
-  if (!error) return true;
-  if (error.code === "23505") return false;
+  if (!error) return data?.id ?? null;
+  // 23505: el índice único parcial rechazó una segunda posición abierta.
+  if (error.code === "23505") return null;
   throw new Error(`No se pudo abrir la posición: ${error.message}`);
 }
 
