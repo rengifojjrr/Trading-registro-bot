@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Route } from "next";
 
 import { BlockBadge, PhaseBadge, SemaforoBadge } from "@/components/bots/badges";
-import type { BotView } from "@/lib/bots/queries";
-import { formatNumber, formatSignedMoney, pnlColorClass } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
+import type { BotView, ResumenPapel } from "@/lib/bots/queries";
+import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
 
 /**
  * Los bots, uno por fila, para ver cuál rinde más.
@@ -13,10 +14,25 @@ import { formatNumber, formatSignedMoney, pnlColorClass } from "@/lib/format";
  * apagándose ahora mismo, y eso es justo lo que el semáforo ve y el total
  * esconde.
  *
- * En pantallas estrechas se convierte en tarjetas: una tabla de nueve
+ * Las dos últimas columnas son el simulador y sólo se pintan si llega
+ * `papel`. Están aquí y no sólo en /bots/simulador porque esta tabla es
+ * donde se viene a mirar «qué hacen mis bots»: uno encendido en papel con
+ * una posición abierta y cero operaciones reales parecía, sin ellas, un bot
+ * parado. Van al final y separadas del neto real a propósito: son otra
+ * historia y no deben leerse como si sumaran.
+ *
+ * En pantallas estrechas se convierte en tarjetas: una tabla de once
  * columnas en un móvil es un arrastre horizontal que nadie hace.
  */
-export function BotTable({ bots, currency }: { bots: BotView[]; currency: string }) {
+export function BotTable({
+  bots,
+  currency,
+  papel,
+}: {
+  bots: BotView[];
+  currency: string;
+  papel?: Map<string, ResumenPapel>;
+}) {
   if (bots.length === 0) return null;
 
   return (
@@ -52,6 +68,12 @@ export function BotTable({ bots, currency }: { bots: BotView[]; currency: string
                   <dd className="tabular-nums text-foreground">{v.metrics.trades}</dd>
                 </div>
               </dl>
+              {papel && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-xs">
+                  <CeldaPosicion resumen={papel.get(v.bot.id)} currency={currency} />
+                  <CeldaPapel resumen={papel.get(v.bot.id)} currency={currency} />
+                </div>
+              )}
             </Link>
           </li>
         ))}
@@ -71,7 +93,13 @@ export function BotTable({ bots, currency }: { bots: BotView[]; currency: string
               <th className="py-2 pr-3 text-right font-medium">Exp. R</th>
               <th className="py-2 pr-3 text-right font-medium">Sharpe</th>
               <th className="py-2 pr-3 text-right font-medium">DD máx.</th>
-              <th className="py-2 text-right font-medium">Neto</th>
+              <th className={`py-2 text-right font-medium ${papel ? "pr-3" : ""}`}>Neto</th>
+              {papel && (
+                <>
+                  <th className="py-2 pr-3 text-right font-medium">Papel</th>
+                  <th className="py-2 text-left font-medium">Posición</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -102,14 +130,72 @@ export function BotTable({ bots, currency }: { bots: BotView[]; currency: string
                 <td className="py-2 pr-3 text-right tabular-nums text-foreground">
                   {v.metrics.maxDrawdownPct === null ? "--" : `${v.metrics.maxDrawdownPct.toFixed(1)}%`}
                 </td>
-                <td className={`py-2 text-right tabular-nums ${pnlColorClass(v.metrics.netPnl)}`}>
+                <td className={`py-2 text-right tabular-nums ${papel ? "pr-3" : ""} ${pnlColorClass(v.metrics.netPnl)}`}>
                   {formatSignedMoney(v.metrics.netPnl, { currency })}
                 </td>
+                {papel && (
+                  <>
+                    <td className="py-2 pr-3 text-right">
+                      <CeldaPapel resumen={papel.get(v.bot.id)} currency={currency} />
+                    </td>
+                    <td className="py-2">
+                      <CeldaPosicion resumen={papel.get(v.bot.id)} currency={currency} />
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </>
+  );
+}
+
+/**
+ * La cuenta de papel del bot: el equity arriba y, debajo y en color, lo que
+ * lleva ganado o perdido desde que se le asignó capital. El guion largo es
+ * para el bot que nunca se sembró: no es cero, es que no juega.
+ */
+function CeldaPapel({ resumen, currency }: { resumen: ResumenPapel | undefined; currency: string }) {
+  if (!resumen) return <span className="text-muted-foreground">—</span>;
+
+  return (
+    <div className="flex flex-col items-end">
+      <span className="tabular-nums text-foreground">{formatMoney(resumen.equity, { currency, compact: true })}</span>
+      <span className={`text-xs tabular-nums ${pnlColorClass(resumen.pnl)}`}>
+        {formatSignedMoney(resumen.pnl, { currency, compact: true })} · {formatPercent(resumen.pnlPct, 1)}
+      </span>
+    </div>
+  );
+}
+
+/** Verde el que gana subiendo, rojo el que gana bajando; gris lo que no sabemos leer. */
+function colorDelLado(side: string): "positive" | "negative" | "outline" {
+  if (side === "LARGO") return "positive";
+  if (side === "CORTO") return "negative";
+  return "outline";
+}
+
+/**
+ * Lo que el bot tiene abierto en papel, o por qué no tiene nada.
+ *
+ * «Apagado» y «sin posición» se distinguen a propósito: el primero no va a
+ * abrir nada haga lo que haga el mercado; el segundo está mirando y aún no
+ * ha visto señal. Al usuario que acaba de encender los bots le importa esa
+ * diferencia más que ninguna cifra.
+ */
+function CeldaPosicion({ resumen, currency }: { resumen: ResumenPapel | undefined; currency: string }) {
+  if (!resumen) return <span className="text-muted-foreground">—</span>;
+  if (!resumen.enabled) return <span className="text-xs text-muted-foreground">apagado</span>;
+  if (!resumen.posicion) return <span className="text-xs text-muted-foreground">sin posición</span>;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Badge variant={colorDelLado(resumen.posicion.side)}>{resumen.posicion.side}</Badge>
+      <span className="text-xs tabular-nums text-foreground">
+        a {formatMoney(resumen.posicion.precioEntrada, { currency })}
+      </span>
+    </div>
   );
 }

@@ -23,6 +23,14 @@ const PERMITIDOS = new Map<string, string>([
     "Es el archivo de tokens de las paletas: los colores son su contenido.",
   ],
   [
+    "lib/charts/tema-canvas.ts",
+    "Los respaldos del <canvas>, en un solo sitio para todas las gráficas. " +
+      "Un canvas no puede leer variables CSS: lee los tokens computados y " +
+      "sólo cae a estos literales sin hoja de estilo, cosa que en un " +
+      "navegador de verdad no pasa. Tenerlos aquí es lo que permite que " +
+      "ningún componente de gráfico los copie.",
+  ],
+  [
     "components/trades/trade-chart.tsx",
     "Un <canvas> no puede leer variables CSS. Lee los tokens computados del " +
       "DOM y sólo cae a estos literales si no hay hoja de estilo, cosa que en " +

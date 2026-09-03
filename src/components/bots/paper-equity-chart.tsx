@@ -2,6 +2,12 @@ import { Decimal } from "decimal.js";
 
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { ChartFrame } from "@/core/ui/chart-frame";
+import {
+  ETIQUETA_GRANULARIDAD,
+  SEGUNDOS_POR_GRANULARIDAD,
+  esGranularidadPublica,
+  type GranularidadPublica,
+} from "@/lib/coinbase/public-candles";
 import { formatMoney, formatPercent, pnlColorClass } from "@/lib/format";
 
 /**
@@ -22,9 +28,14 @@ import { formatMoney, formatPercent, pnlColorClass } from "@/lib/format";
  * dólares que ha ganado ciento veinte dibuja una recta plana muy arriba, y no
  * se distingue de una que no ha hecho nada.
  *
- * Con menos de dos puntos no se dibuja nada. Un punto suelto no es una curva:
- * es un rectángulo con ejes, y un rectángulo con ejes parece una gráfica rota
- * en lugar de una cuenta que acaba de empezar.
+ * Con menos de tres puntos no se dibuja nada, y en su lugar se explica por
+ * qué. Un punto suelto es un rectángulo con ejes; dos puntos son una raya
+ * recta; y las dos cosas se leen como «el simulador no funciona» cuando lo que
+ * pasa es que el simulador anota un punto por vela cerrada, y un bot diario
+ * lleva un día por punto. Tres es el primer número con el que una línea tiene
+ * forma. Antes de eso, lo honesto es decir cuántas velas faltan y cuánto
+ * tiempo es eso en esta temporalidad, que es la pregunta que se está haciendo
+ * quien mira una gráfica vacía.
  */
 
 export interface PuntoDeCapital {
@@ -34,17 +45,85 @@ export interface PuntoDeCapital {
   equity: string | number;
 }
 
+/** Con menos puntos no hay curva: uno es un rectángulo, dos son una raya. */
+const MINIMO_PUNTOS_PARA_CURVA = 3;
+
+/**
+ * La granularidad del bot, si es una de las seis que sirve la API pública.
+ *
+ * `bots.timeframe` es texto libre y aquí sólo se normaliza lo obvio (espacios
+ * y mayúsculas): la tabla de alias completa vive en el ciclo, que es
+ * `server-only`, y duplicarla aquí es cómo dos sitios acaban traduciendo «1D»
+ * de forma distinta. Lo que no se reconoce se enseña en crudo, sin estimar el
+ * tiempo, en vez de inventarlo.
+ */
+function granularidadConocida(temporalidad: string | undefined): GranularidadPublica | null {
+  if (!temporalidad) return null;
+  const limpio = temporalidad.trim().toLowerCase().replace(/\s+/g, "");
+  return esGranularidadPublica(limpio) ? limpio : null;
+}
+
+/** «unos 3 días», «unas 2 horas», «unos 15 minutos»: el reloj de pared, no el de velas. */
+function tiempoEnPalabras(segundos: number): string {
+  if (segundos >= 86400 && segundos % 86400 === 0) {
+    const dias = segundos / 86400;
+    return `unos ${dias} día${dias === 1 ? "" : "s"}`;
+  }
+  if (segundos >= 3600 && segundos % 3600 === 0) {
+    const horas = segundos / 3600;
+    return `unas ${horas} hora${horas === 1 ? "" : "s"}`;
+  }
+  const minutos = Math.max(1, Math.round(segundos / 60));
+  return `unos ${minutos} minuto${minutos === 1 ? "" : "s"}`;
+}
+
+/**
+ * Por qué todavía no hay curva, con las cifras de este bot.
+ *
+ * Dice tres cosas y en este orden: la mecánica (un punto por vela cerrada),
+ * qué significa para este bot (cuántas velas faltan y cuánto tiempo es eso) y
+ * cuántos lleva ya. Lo último es lo que distingue «acaba de empezar» de
+ * «lleva un día y va bien»: con un punto anotado la cuenta ya está viva,
+ * aunque la gráfica no lo enseñe.
+ */
+function porQueNoHayCurva(anotados: number, temporalidad: string | undefined): string {
+  const faltan = MINIMO_PUNTOS_PARA_CURVA - anotados;
+  const velasQueFaltan = `${faltan} vela${faltan === 1 ? "" : "s"}${anotados > 0 ? " más" : ""}`;
+  const lleva =
+    anotados === 0
+      ? "Todavía no ha anotado ninguno."
+      : anotados === 1
+        ? "Lleva 1 anotado."
+        : `Lleva ${anotados} anotados.`;
+
+  const granularidad = granularidadConocida(temporalidad);
+  if (granularidad === null) {
+    const velas = temporalidad ? `velas de ${temporalidad.trim()}` : "su temporalidad";
+    return `El simulador anota un punto por cada vela cerrada que evalúa. Este bot opera en ${velas}, así que tarda ${velasQueFaltan} en dibujar una curva. ${lleva}`;
+  }
+
+  const espera = tiempoEnPalabras(SEGUNDOS_POR_GRANULARIDAD[granularidad] * faltan);
+  return `El simulador anota un punto por cada vela cerrada que evalúa. Este bot opera en velas de ${ETIQUETA_GRANULARIDAD[granularidad]}, así que tarda ${velasQueFaltan} en dibujar una curva: ${espera} con la cuenta encendida. ${lleva}`;
+}
+
 export function PaperEquityChart({
   puntos,
   capitalAsignado,
   timezone = "UTC",
   moneda = "USD",
+  temporalidad,
 }: {
   puntos: PuntoDeCapital[];
   /** Con lo que arrancó la cuenta. Es la línea del cero de la gráfica. */
   capitalAsignado: string | number;
   timezone?: string;
   moneda?: string;
+  /**
+   * `bots.timeframe`, p. ej. «1d». Sólo se usa para explicar, cuando aún no
+   * hay curva, cuánto va a tardar en haberla. Sin ella la explicación es
+   * genérica, no peor.
+   */
+  temporalidad?: string;
 }) {
   const capital = new Decimal(capitalAsignado);
   const enOrden = [...puntos].sort((a, b) => a.ts.localeCompare(b.ts));
@@ -68,8 +147,8 @@ export function PaperEquityChart({
       title="Cómo va la cuenta"
       question="Lo que valdría la cuenta de papel en cada vela que el simulador ha evaluado."
       hint="El simulador anota un punto por vela evaluada, así que un bot diario deja un punto al día y uno de cinco minutos deja doce por hora. La línea del cero es el capital con el que se abrió la cuenta: por encima gana, por debajo pierde. El valor incluye la posición abierta, si la hay, valorada al último cierre."
-      empty={serie.length < 2}
-      emptyLabel="Todavía no hay curva que dibujar. El simulador escribe un punto cada vez que evalúa una vela de este bot, así que la primera línea aparece en cuanto pase un par de ciclos con la cuenta encendida."
+      empty={serie.length < MINIMO_PUNTOS_PARA_CURVA}
+      emptyLabel={porQueNoHayCurva(serie.length, temporalidad)}
     >
       <div className="flex flex-col gap-4">
         <dl className="grid grid-cols-3 gap-3">

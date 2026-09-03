@@ -494,9 +494,32 @@ export interface PaperDelBot {
   capitalAsignado: string;
   equity: string;
   enabled: boolean;
+  /** Cuándo se encendió por primera vez; `null` si nunca llegó a encenderse. */
+  startedAt: string | null;
+  /**
+   * Cuándo evaluó su última vela cerrada. Es lo que permite decir «visto hace
+   * X»: un bot diario encendido esta mañana no ha visto ninguna todavía, y
+   * sin este dato la ficha vacía parece una avería en vez de una espera.
+   */
+  lastTickAt: string | null;
+  /**
+   * La posición abierta ahora mismo, si la hay. Va aquí y no entre las
+   * operaciones porque todavía no es una operación: no tiene salida ni P&L,
+   * y la lista de cerradas no sabría dónde ponerla.
+   */
+  posicion: {
+    id: string;
+    side: "LARGO" | "CORTO";
+    size: string;
+    precioEntrada: string;
+    horaEntrada: string;
+    stop: string | null;
+    objetivo: string | null;
+    atrEntrada: string | null;
+  } | null;
   operaciones: {
     id: string;
-    side: string;
+    side: "LARGO" | "CORTO";
     size: string;
     precioEntrada: string;
     horaEntrada: string;
@@ -511,13 +534,24 @@ export interface PaperDelBot {
   puntos: { ts: string; equity: string }[];
 }
 
+/**
+ * El lado tal y como lo guardan `paper_positions` y `paper_trades` es un
+ * `string` sin enum. El motor sólo escribe «LARGO» o «CORTO», y todo lo que
+ * colorea o dibuja un lado -- la tabla, las flechas del gráfico -- exige uno
+ * de los dos; cualquier otra cosa es una fila corrupta y se lee como largo,
+ * igual que hace ya /bots/simulador, antes que tirar la ficha entera.
+ */
+function ladoDePapel(side: string): "LARGO" | "CORTO" {
+  return side === "CORTO" ? "CORTO" : "LARGO";
+}
+
 export async function fetchPaperForBot(botId: string): Promise<PaperDelBot | null> {
   const user = await requireUser();
   const supabase = await createClient();
 
   const { data: cuenta } = await supabase
     .from("paper_accounts")
-    .select("capital_asignado, equity, enabled")
+    .select("capital_asignado, equity, enabled, started_at, last_tick_at")
     .eq("user_id", user.id)
     .eq("bot_id", botId)
     .maybeSingle();
@@ -527,7 +561,12 @@ export async function fetchPaperForBot(botId: string): Promise<PaperDelBot | nul
   // Las últimas doscientas y los últimos quinientos puntos. La ficha es para
   // mirar cómo va, no para auditar el histórico entero, y un bot de un minuto
   // encendido un mes junta decenas de miles de filas que nadie va a leer.
-  const [{ data: ops }, { data: puntos }] = await Promise.all([
+  //
+  // La posición abierta se pide con `limit(1)` y no con `maybeSingle`: el
+  // motor sólo deja una por bot, pero si algún día hubiera dos por un fallo,
+  // `maybeSingle` tiraría la ficha entera y aquí preferimos enseñar la más
+  // reciente y seguir.
+  const [{ data: ops }, { data: puntos }, { data: abiertas }] = await Promise.all([
     supabase
       .from("paper_trades")
       .select(
@@ -544,15 +583,39 @@ export async function fetchPaperForBot(botId: string): Promise<PaperDelBot | nul
       .eq("bot_id", botId)
       .order("ts", { ascending: true })
       .limit(500),
+    supabase
+      .from("paper_positions")
+      .select("id, side, size, precio_entrada, hora_entrada, stop, objetivo, atr_entrada")
+      .eq("user_id", user.id)
+      .eq("bot_id", botId)
+      .eq("status", "ABIERTA")
+      .order("hora_entrada", { ascending: false })
+      .limit(1),
   ]);
+
+  const abierta = abiertas?.[0] ?? null;
 
   return {
     capitalAsignado: cuenta.capital_asignado,
     equity: cuenta.equity,
     enabled: cuenta.enabled,
+    startedAt: cuenta.started_at,
+    lastTickAt: cuenta.last_tick_at,
+    posicion: abierta
+      ? {
+          id: abierta.id,
+          side: ladoDePapel(abierta.side),
+          size: abierta.size,
+          precioEntrada: abierta.precio_entrada,
+          horaEntrada: abierta.hora_entrada,
+          stop: abierta.stop,
+          objetivo: abierta.objetivo,
+          atrEntrada: abierta.atr_entrada,
+        }
+      : null,
     operaciones: (ops ?? []).map((o) => ({
       id: o.id,
-      side: o.side,
+      side: ladoDePapel(o.side),
       size: o.size,
       precioEntrada: o.precio_entrada,
       horaEntrada: o.hora_entrada,
@@ -566,4 +629,97 @@ export async function fetchPaperForBot(botId: string): Promise<PaperDelBot | nul
     })),
     puntos: (puntos ?? []).map((p) => ({ ts: p.ts, equity: p.equity })),
   };
+}
+
+/**
+ * El papel de todos los bots de golpe, para la tabla de la portada.
+ *
+ * Va en una función aparte y no dentro de `buildPortfolio` a propósito. El
+ * portfolio es dinero real: su neto, su drawdown, el kill-switch y las
+ * decisiones salen de la tabla `trades`, y son lo que se firma y se revisa el
+ * domingo. El simulador es otra historia del mismo bot -- lo que haría si
+ * operase -- y si entrara en el portfolio acabaría, tarde o temprano,
+ * sumándose a un neto o disparando una escalera con dinero que no existe.
+ * Separadas, la tabla enseña las dos lado a lado sin que ninguna cifra real
+ * se mueva.
+ *
+ * Devuelve un mapa por `bot_id` y no una lista para que la tabla haga una
+ * búsqueda por fila; los bots sin cuenta simplemente no están en él.
+ */
+export interface ResumenPapel {
+  enabled: boolean;
+  capitalAsignado: string;
+  equity: string;
+  /** Equity menos capital asignado, en la moneda de la cuenta. */
+  pnl: number;
+  /** El mismo P&L sobre el capital asignado, en porcentaje. */
+  pnlPct: number;
+  /** Operaciones cerradas en el simulador. */
+  cerradas: number;
+  posicion: { side: string; precioEntrada: string; horaEntrada: string } | null;
+  lastTickAt: string | null;
+}
+
+export async function fetchPaperResumen(): Promise<Map<string, ResumenPapel>> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const [{ data: cuentas, error }, { data: abiertas }] = await Promise.all([
+    supabase
+      .from("paper_accounts")
+      .select("bot_id, enabled, capital_asignado, equity, last_tick_at")
+      .eq("user_id", user.id),
+    supabase
+      .from("paper_positions")
+      .select("bot_id, side, precio_entrada, hora_entrada")
+      .eq("user_id", user.id)
+      .eq("status", "ABIERTA")
+      .order("hora_entrada", { ascending: false }),
+  ]);
+  if (error) throw new Error(`fetchPaperResumen: ${error.message}`);
+
+  const resumen = new Map<string, ResumenPapel>();
+  if (!cuentas || cuentas.length === 0) return resumen;
+
+  // El recuento de cerradas se pide bot a bot con `head: true`: sólo viaja la
+  // cifra. Traer las filas y contarlas en memoria parece más barato, pero
+  // PostgREST corta la respuesta en mil filas y un bot de un minuto las pasa
+  // en un mes, así que el recuento mentiría justo en los bots con más
+  // histórico. Son tantas peticiones como cuentas, y cuentas hay pocas.
+  const recuentos = await Promise.all(
+    cuentas.map((c) =>
+      supabase
+        .from("paper_trades")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("bot_id", c.bot_id),
+    ),
+  );
+
+  // Con el orden descendente, la primera que se ve de cada bot es la más
+  // reciente; las demás -- que no debería haber -- se ignoran.
+  const posicionPorBot = new Map<string, NonNullable<ResumenPapel["posicion"]>>();
+  for (const p of abiertas ?? []) {
+    if (posicionPorBot.has(p.bot_id)) continue;
+    posicionPorBot.set(p.bot_id, { side: p.side, precioEntrada: p.precio_entrada, horaEntrada: p.hora_entrada });
+  }
+
+  cuentas.forEach((c, i) => {
+    const capital = Number(c.capital_asignado);
+    const equity = Number(c.equity);
+    const pnl = equity - capital;
+    resumen.set(c.bot_id, {
+      enabled: c.enabled,
+      capitalAsignado: c.capital_asignado,
+      equity: c.equity,
+      pnl,
+      // Sin capital no hay porcentaje que valga: cero antes que un Infinity en pantalla.
+      pnlPct: capital > 0 ? (pnl / capital) * 100 : 0,
+      cerradas: recuentos[i]?.count ?? 0,
+      posicion: posicionPorBot.get(c.bot_id) ?? null,
+      lastTickAt: c.last_tick_at,
+    });
+  });
+
+  return resumen;
 }

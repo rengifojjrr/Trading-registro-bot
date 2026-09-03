@@ -35,6 +35,10 @@ const MAX_PUNTOS_DE_CURVA = 5000;
 const DESCRIPCION =
   "Todos los bots operando a la vez con dinero ficticio, con los mismos costes que tendrían de verdad.";
 
+// Siempre fresca: el ciclo escribe por detrás cada cinco minutos y la caché
+// de rutas del navegador devolvería el estado de hace medio minuto al volver.
+export const dynamic = "force-dynamic";
+
 export default async function SimuladorPage() {
   const { userId, timezone, currency } = await readBotContext();
   const supabase = await createClient();

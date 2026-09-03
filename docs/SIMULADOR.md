@@ -14,6 +14,14 @@ estas estrategias, ¿cuál aguanta cuando el precio va llegando de uno en uno?**
 - Ver a todos operando a la vez, con su equity y su P&L en la misma tabla.
 - Entrar en cada estrategia y leer qué hace, con qué reglas y de dónde sale.
 - Ver cada operación simulada: cuándo entró, a qué precio, por qué salió.
+- En la ficha de cada bot, **el gráfico de velas de su mercado con cada entrada
+  y cada salida marcadas** (flecha azul entra, naranja sale) y la posición
+  abierta con su P&L latente, su stop y su objetivo. Las velas vienen de la API
+  pública, así que el gráfico se dibuja aunque no haya cuenta de Coinbase.
+
+La curva de capital anota **un punto por vela cerrada evaluada**: un bot diario
+tarda días en dibujarla. No es que no funcione; es que su reloj es lento. El
+gráfico de velas es la forma de ver qué hace mientras tanto.
 
 Todo el dinero es inventado. No hay ninguna orden real en ningún sitio.
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Route } from "next";
 
 import { PhaseBadge, SemaforoBadge } from "@/components/bots/badges";
+import { BotTable } from "@/components/bots/bot-table";
 import { DecisionsList } from "@/components/bots/decisions-list";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,7 +11,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { nextReview } from "@/lib/bots/calendar";
-import { buildPortfolio } from "@/lib/bots/queries";
+import { buildPortfolio, fetchPaperResumen } from "@/lib/bots/queries";
 import { PHASE_LABELS, PIPELINE_PHASES, isProduction } from "@/lib/bots/types";
 import { formatSignedMoney, pnlTone } from "@/lib/format";
 
@@ -22,7 +23,9 @@ import { formatSignedMoney, pnlTone } from "@/lib/format";
  * para tomarlas.
  */
 export default async function BotsPage() {
-  const p = await buildPortfolio();
+  // El papel se pide aparte y a la vez: no forma parte del portfolio (es
+  // dinero que no existe) pero la tabla de abajo lo enseña junto a lo real.
+  const [p, papel] = await Promise.all([buildPortfolio(), fetchPaperResumen()]);
   const { context } = p;
 
   if (p.bots.length === 0) {
@@ -49,6 +52,9 @@ export default async function BotsPage() {
   const produccion = p.bots.filter((v) => isProduction(v.bot.phase));
   const cantera = p.bots.filter((v) => !isProduction(v.bot.phase) && v.bot.phase !== "RETIRADO");
   const retirados = p.bots.filter((v) => v.bot.phase === "RETIRADO");
+  // Los que siguen en juego, en su orden de alta. Los retirados tienen su
+  // sitio en el cementerio de la cantera; aquí sólo estorbarían.
+  const activos = p.bots.filter((v) => v.bot.phase !== "RETIRADO");
   const proxima = nextReview(new Date(), context.timezone);
 
   return (
@@ -168,6 +174,23 @@ export default async function BotsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/*
+        Bot a bot, con el simulador al lado del dinero real. Hasta aquí la
+        portada sólo tenía recuentos y semáforos, y un bot recién encendido en
+        papel, con una posición abierta y cero operaciones reales, no se
+        distinguía de uno parado. Va al final porque es contexto, no decisión.
+      */}
+      {activos.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Bot a bot</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BotTable bots={activos} currency={context.currency} papel={papel} />
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

@@ -9,10 +9,20 @@ import { GateChecklist } from "@/components/bots/gate-checklist";
 import { HealthCard } from "@/components/bots/health-card";
 import { ImpulseForm } from "@/components/bots/impulse-form";
 import { ImpulseList } from "@/components/bots/impulse-list";
+import { BotChart } from "@/components/bots/bot-chart";
+import { EstrategiaDetalle } from "@/components/bots/estrategia-detalle";
 import { MonteCarloCard } from "@/components/bots/monte-carlo-card";
 import { PaperEquityChart } from "@/components/bots/paper-equity-chart";
 import { PaperTradesTabla } from "@/components/bots/paper-trades-tabla";
 import { PhaseControls } from "@/components/bots/phase-controls";
+import { PosicionAbiertaCard } from "@/components/bots/posicion-abierta-card";
+import {
+  SEGUNDOS_POR_GRANULARIDAD,
+  esGranularidadPublica,
+  velasPublicas,
+} from "@/lib/coinbase/public-candles";
+import { operacionesMarcables, posicionMarcable } from "@/lib/paper/marcadores";
+import { estrategiaPorSlug } from "@/lib/paper/strategy-library";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
@@ -29,6 +39,12 @@ import { formatDate, formatDateTime, formatNumber, formatPercent, formatSignedMo
  * decidir), después las cifras y la curva (el porqué), después el contrato y
  * la fase (las acciones), y al final lo que se mira poco.
  */
+// Siempre fresca. Lo que enseña cambia cada cinco minutos sin que el usuario
+// haga nada -- el ciclo del simulador escribe por detrás --, y la caché de
+// rutas del navegador puede devolver la ficha de hace medio minuto al volver
+// atrás. Con una posición abierta, medio minuto es un precio distinto.
+export const dynamic = "force-dynamic";
+
 export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
   const { botId } = await props.params;
   const [detail, options, papel] = await Promise.all([
@@ -41,6 +57,30 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
   const { view, context, trades, equity, history, impulses } = detail;
   const { bot, metrics, health, gate, montecarlo, contractBreached } = view;
   const { currency, timezone } = context;
+
+  // Las velas del mercado del bot, para pintar sus entradas y salidas encima.
+  //
+  // Se piden aquí y no en el cliente: la API pública de Coinbase no necesita
+  // credenciales, así que el servidor puede traerlas en el mismo render, y el
+  // gráfico aparece con datos en vez de con un hueco que se rellena después.
+  // Trescientas es el máximo que sirve el endpoint de una vez y basta de
+  // sobra para ver el contexto de las últimas operaciones.
+  //
+  // Sólo si el bot tiene cuenta de papel y su temporalidad es de las que la
+  // API pública sirve: un bot creado a mano con «4h» se queda sin gráfico y
+  // la ficha lo dice, en vez de pedir una granularidad que va a fallar.
+  const granularidad = esGranularidadPublica(bot.timeframe) ? bot.timeframe : null;
+  const velasMs = papel && granularidad ? await velasPublicas(bot.market, granularidad, 300) : [];
+  // La librería de gráficos trabaja en segundos; las velas llegan en milisegundos.
+  const velas = velasMs.map((v) => ({ ...v, time: Math.floor(v.time / 1000) }));
+  const precioActual = velas.length > 0 ? velas[velas.length - 1].close : null;
+  const segundosPorVela = granularidad ? SEGUNDOS_POR_GRANULARIDAD[granularidad] : 0;
+
+  // Lo que dice la biblioteca de esta estrategia, si el bot salió de ella.
+  // La matrícula «biblioteca:<slug>» es el mismo convenio que usa el catálogo
+  // para reconocer a los suyos.
+  const slug = bot.magicNumber?.startsWith("biblioteca:") ? bot.magicNumber.slice("biblioteca:".length) : null;
+  const estrategia = slug ? estrategiaPorSlug(slug) : null;
   const bl = bot.baseline;
   const tieneBaseline = bl.profitFactor !== null || bl.expectancyR !== null || bl.winRate !== null || bl.sharpe !== null;
 
@@ -137,29 +177,90 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
           decisión, no una de las acciones. Sin cuenta de papel no se pinta
           nada, que es lo normal en un bot que nunca se sembró. */}
       {papel ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              En el simulador{papel.enabled ? "" : " (apagado)"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <PaperEquityChart
-              puntos={papel.puntos}
-              capitalAsignado={papel.capitalAsignado}
-              timezone={timezone}
-              moneda={currency}
-            />
-            <CollapsibleSection
-              title="Operaciones simuladas"
-              subtitle={`${papel.operaciones.length} cerrada${papel.operaciones.length === 1 ? "" : "s"}`}
-            >
-              <PaperTradesTabla
-                operaciones={papel.operaciones}
+        <>
+          {/* Primero lo que está pasando ahora mismo: la posición abierta, con
+              su P&L latente contra el último cierre. Es la pregunta que trae a
+              alguien a esta ficha cuando ve el bot encendido en el simulador. */}
+          <PosicionAbiertaCard
+            posicion={papel.posicion}
+            precioActual={precioActual}
+            moneda={currency}
+            timezone={timezone}
+          />
+
+          {/* El gráfico de velas con cada entrada y cada salida marcada, que
+              es como se lee una operación real en su ficha. Sin velas -- la API
+              pública no respondió, o la temporalidad no es de las que sirve --
+              se explica en vez de dejar un rectángulo con ejes. */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Entradas y salidas sobre el precio</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {bot.market} en velas de {bot.timeframe}. Flecha azul, entrada; naranja, salida.
+                {papel.lastTickAt ? ` Última evaluación: ${formatDateTime(papel.lastTickAt, timezone)}.` : ""}
+              </p>
+            </CardHeader>
+            <CardContent>
+              {velas.length > 0 ? (
+                <BotChart
+                  velas={velas}
+                  operaciones={operacionesMarcables(papel.operaciones)}
+                  posicion={posicionMarcable(papel.posicion)}
+                  segundosPorVela={segundosPorVela}
+                  moneda={currency}
+                  direccionPorDefecto={estrategia?.reglas.direction === "SHORT" ? "CORTO" : "LARGO"}
+                />
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {granularidad
+                    ? "No llegaron velas del mercado. Suele ser un fallo pasajero de la API pública de Coinbase; recarga en un momento."
+                    : `La API pública no sirve velas de ${bot.timeframe}. Sólo 1m, 5m, 15m, 1h, 6h y 1d.`}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Curva de capital en papel{papel.enabled ? "" : " (apagado)"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <PaperEquityChart
+                puntos={papel.puntos}
+                capitalAsignado={papel.capitalAsignado}
                 timezone={timezone}
                 moneda={currency}
+                temporalidad={bot.timeframe}
               />
-            </CollapsibleSection>
+              <CollapsibleSection
+                title="Operaciones simuladas"
+                subtitle={`${papel.operaciones.length} cerrada${papel.operaciones.length === 1 ? "" : "s"}`}
+              >
+                <PaperTradesTabla
+                  operaciones={papel.operaciones}
+                  timezone={timezone}
+                  moneda={currency}
+                />
+              </CollapsibleSection>
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
+      {/* Qué hace la estrategia, contado entero: hipótesis, reglas traducidas
+          a castellano, procedencia y cifras medidas si las hay. Sale de la
+          biblioteca y no de una columna, para que una corrección llegue a
+          todas las fichas a la vez. Un bot creado a mano no tiene entrada y
+          se queda con su hipótesis de arriba. */}
+      {estrategia ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Qué hace esta estrategia</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EstrategiaDetalle estrategia={estrategia} />
           </CardContent>
         </Card>
       ) : null}
