@@ -5,6 +5,7 @@ import type { Route } from "next";
 import { redirect } from "next/navigation";
 
 import { EstrategiaDetalle } from "@/components/bots/estrategia-detalle";
+import { SembrarBibliotecaBoton } from "@/components/bots/sembrar-biblioteca-boton";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -275,6 +276,9 @@ export default async function EstrategiasPage({
       <PageHeader
         title="Estrategias"
         description="Las reglas que el simulador sabe operar, con lo que se sabe de cada una. De aquí sale cada bot de papel."
+        action={
+          <SembrarBibliotecaBoton cuantas={BIBLIOTECA.length} yaCreados={yaCreados.size} />
+        }
       />
 
       {problema && PROBLEMAS[problema] ? (

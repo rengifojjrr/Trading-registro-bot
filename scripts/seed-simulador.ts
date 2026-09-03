@@ -242,26 +242,21 @@ async function guardarCuenta(
 }
 
 /**
- * La fase que le toca según lo que se ha medido, no según lo prometedora que
- * parezca. Sin cifras propias es una hipótesis, y las hipótesis viven en F1.
+ * Todos nacen en F1, tengan backtest o no.
  *
- * Estar medida no basta para subir de F1: hay estrategias medidas que salieron
- * PERDEDORAS, y están en la biblioteca a propósito para poder verlas perder al
- * lado de las demás. El RSI(2) de Connors acierta el 66,67% de las veces y aun
- * así pierde el 39,70% -- es el mejor recordatorio del estudio de que un
- * porcentaje de acierto alto no es una ventaja -- y el Golden Cross es el
- * control negativo, que perdió el 42% en la ventana reciente. Ponerlas en F2
- * diría que superaron el filtro de robustez, y lo que hicieron fue lo
- * contrario: el filtro funcionó y las cazó.
+ * Es la misma regla que sigue la creación de una en una desde
+ * `/bots/estrategias`, y dos comportamientos distintos para el mismo acto
+ * serían un fallo esperando a que alguien se pregunte por qué el mismo bot
+ * aparece en una fase u otra según por dónde lo creó.
+ *
+ * Y es la regla correcta: de la biblioteca al dinero se sube fase a fase. Un
+ * bot que apareciera ya en F3 porque su hoja de cálculo era buena se saltaría
+ * entera la parte del método que sirve para algo. La evidencia medida no se
+ * pierde: viaja en la línea base y en las notas, así que el semáforo tiene
+ * contra qué compararlo desde el primer día.
  */
-function faseDe(e: EstrategiaDeLaBiblioteca): string {
-  if (!e.medido) return "F1";
-  if (e.medido.profitFactor < 1 || e.medido.pnlPct <= 0) return "F1";
-  // Tortugas S2 en ETH es la única con prueba de sensibilidad hecha: se
-  // probaron cinco combinaciones de parámetros alrededor de la elegida y las
-  // cinco salieron positivas.
-  if (e.slug === "tortugas-s2-eth") return "F3";
-  return "F2";
+function faseDe(_e: EstrategiaDeLaBiblioteca): string {
+  return "F1";
 }
 
 function baselineDe(e: EstrategiaDeLaBiblioteca): Record<string, unknown> {

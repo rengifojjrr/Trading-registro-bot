@@ -22,7 +22,12 @@ import {
   granularidadDeTemporalidad,
   productoDeMercado,
 } from "@/lib/paper/runner";
+import {
+  BIBLIOTECA,
+  type EstrategiaDeLaBiblioteca,
+} from "@/lib/paper/strategy-library";
 import { createClient } from "@/lib/supabase/server";
+import type { Json } from "@/types/database";
 
 /**
  * Lo que el usuario puede hacer con una cuenta de papel: encenderla, apagarla
@@ -461,4 +466,170 @@ function aPosicion(fila: {
     objetivo: fila.objetivo === null ? null : Number(fila.objetivo),
     atrEntrada: fila.atr_entrada === null ? null : Number(fila.atr_entrada),
   };
+}
+
+/**
+ * Mete la biblioteca entera en la cantera, lista para operar en papel.
+ *
+ * Existe como acción y no sólo como el script `npm run seed:simulador` porque
+ * el script necesita la clave de servicio, y quien abre la aplicación
+ * desplegada no la tiene ni tiene por qué. Esto corre con la sesión del
+ * usuario y su RLS, así que no puede sembrarle a nadie más.
+ *
+ * Por cada estrategia crea tres cosas: sus reglas en `backtest_strategies`,
+ * su bot en `bots`, y su cuenta en `paper_accounts` con capital y APAGADA.
+ * Nacen apagadas a propósito: crear la cuenta y ponerla a operar son dos
+ * decisiones distintas, y la segunda la toma quien mira la pantalla.
+ *
+ * Se puede ejecutar las veces que haga falta. Las reglas y el bot se
+ * actualizan -- así una corrección de la biblioteca llega a los bots ya
+ * creados -- pero la cuenta NO se toca si ya existe: el capital y el
+ * interruptor son decisiones del usuario, y volver a sembrar no es motivo para
+ * deshacerlas.
+ */
+export async function sembrarBiblioteca(): Promise<ResultadoAccion & { creados?: number }> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error: errAjustes } = await supabase.from("paper_settings").upsert(
+    {
+      user_id: user.id,
+      comision_pct: AJUSTES_DE_FABRICA.comisionPct,
+      deslizamiento_pct: AJUSTES_DE_FABRICA.deslizamientoPct,
+      capital_por_defecto: CAPITAL_AL_SEMBRAR,
+    },
+    { onConflict: "user_id" },
+  );
+  if (errAjustes) return { error: `No se pudieron guardar los ajustes: ${errAjustes.message}` };
+
+  let creados = 0;
+
+  for (const e of BIBLIOTECA) {
+    const { data: reglas, error: errReglas } = await supabase
+      .from("backtest_strategies")
+      .upsert(
+        {
+          user_id: user.id,
+          name: e.nombre,
+          product_id: e.mercado,
+          rules: e.reglas as unknown as Json,
+          costs: {
+            feePerContract: 0,
+            slippageTicks: 0,
+            tickSize: 0.01,
+            comisionPct: AJUSTES_DE_FABRICA.comisionPct,
+          } as unknown as Json,
+          is_active: true,
+        },
+        { onConflict: "user_id,name" },
+      )
+      .select("id")
+      .single();
+
+    if (errReglas || !reglas) {
+      return { error: `No se pudieron guardar las reglas de «${e.nombre}»: ${errReglas?.message ?? "sin id"}` };
+    }
+
+    const { data: bot, error: errBot } = await supabase
+      .from("bots")
+      .upsert(
+        {
+          user_id: user.id,
+          name: e.nombre,
+          market: e.mercado,
+          timeframe: e.temporalidad,
+          style: e.estilo,
+          block: e.bloque,
+          phase: "F1",
+          familia_operativa: e.familia,
+          // La misma matrícula que pone la creación de una en una desde
+          // /bots/estrategias. Sin ella, esa pantalla no reconocería estos
+          // bots como suyos y ofrecería crearlos otra vez.
+          magic_number: `biblioteca:${e.slug}`,
+          hypothesis: e.hipotesis,
+          descripcion_larga: e.descripcion,
+          baseline: baselineDeLaBiblioteca(e) as unknown as Json,
+          backtest_strategy_id: reglas.id,
+          // Sin capital declarado ni contrato firmado: lo primero lo decide
+          // quien opera y lo segundo exige un Monte Carlo que no se ha corrido.
+          sizing_pct: 0,
+          risk_per_trade_pct: 0.5,
+          drawdown_contract_pct: null,
+          notes: notasDeLaBiblioteca(e),
+        },
+        { onConflict: "user_id,name" },
+      )
+      .select("id")
+      .single();
+
+    if (errBot || !bot) {
+      return { error: `No se pudo guardar el bot «${e.nombre}»: ${errBot?.message ?? "sin id"}` };
+    }
+
+    const { data: cuentaPrevia } = await supabase
+      .from("paper_accounts")
+      .select("id")
+      .eq("bot_id", bot.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!cuentaPrevia) {
+      const { error: errCuenta } = await supabase.from("paper_accounts").insert({
+        user_id: user.id,
+        bot_id: bot.id,
+        enabled: false,
+        capital_asignado: CAPITAL_AL_SEMBRAR,
+        efectivo: CAPITAL_AL_SEMBRAR,
+        equity: CAPITAL_AL_SEMBRAR,
+      });
+      if (errCuenta) {
+        return { error: `No se pudo abrir la cuenta de «${e.nombre}»: ${errCuenta.message}` };
+      }
+      creados += 1;
+    }
+  }
+
+  revalidarSimulador();
+  revalidatePath("/bots/estrategias");
+  return { error: null, creados };
+}
+
+/** Con cuánto dinero ficticio nace cada bot sembrado. */
+const CAPITAL_AL_SEMBRAR = 10_000;
+
+function baselineDeLaBiblioteca(e: EstrategiaDeLaBiblioteca): Record<string, unknown> {
+  if (!e.medido) {
+    return {
+      profitFactor: null,
+      expectancyR: null,
+      winRate: null,
+      sharpe: null,
+      maxDrawdownPct: null,
+      tradesPerMonth: null,
+      trades: null,
+      source: "MANUAL",
+      note: "Sin backtest propio. Las reglas están escritas; las cifras están por medir.",
+    };
+  }
+  return {
+    profitFactor: e.medido.profitFactor,
+    expectancyR: null,
+    winRate: null,
+    sharpe: null,
+    maxDrawdownPct: e.medido.ddPct,
+    tradesPerMonth: null,
+    trades: e.medido.trades,
+    source: "BACKTEST",
+    note: `${e.medido.ventana}: ${e.medido.pnlPct}% sobre ${e.mercado} ${e.temporalidad}.`,
+  };
+}
+
+function notasDeLaBiblioteca(e: EstrategiaDeLaBiblioteca): string {
+  return [
+    "[biblioteca-simulador]",
+    `Procedencia: ${e.procedencia}`,
+    e.medido
+      ? `Medido en ${e.medido.ventana}: ${e.medido.pnlPct}% con caída máxima del ${e.medido.ddPct}%, ${e.medido.trades} operaciones, factor de ganancia ${e.medido.profitFactor}.`
+      : "Sin backtest propio todavía: las reglas están escritas pero nadie las ha medido. Por eso entra en F1.",
+  ].join("\n\n");
 }

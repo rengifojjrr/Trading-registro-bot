@@ -108,17 +108,20 @@ encendiste, volver a ejecutar el seed no lo deshace.
 
 ## En qué fase entra cada bot
 
-La decide lo que se ha medido, no lo prometedora que parezca la idea:
+**Todos en F1, sin excepción**, tengan backtest o no. No es un descuido: de la
+biblioteca al dinero se sube fase a fase, y un bot que apareciera ya en F3
+porque su hoja de cálculo era buena se saltaría entera la parte del método que
+sirve para algo.
 
-| Fase | Criterio | Cuántas |
-|---|---|---|
-| **F3** | Backtest en dos mercados + fuera de muestra + sensibilidad | Sólo Tortugas S2 en ETH |
-| **F2** | Backtest medido, sin sensibilidad ni Monte Carlo | Las otras cuatro del estudio |
-| **F1** | Reglas escritas, sin backtest propio | El resto de la biblioteca |
+Lo que sí llevan desde el primer día es su evidencia: las cinco estrategias
+medidas entran con sus cifras reales en la línea base y en las notas, así que
+el semáforo tiene contra qué compararlas en cuanto empiecen a operar. Subirlas
+de fase se hace con las puertas, que es donde se comprueba que la muestra
+alcanza.
 
-Ninguna pasa de F3 porque ninguna ha corrido Monte Carlo ni forward testing, y
-ninguna lleva contrato de drawdown firmado: el contrato es el percentil 95 del
-Monte Carlo, y un contrato inventado es peor que ninguno.
+Ninguna lleva contrato de drawdown firmado: el contrato es el percentil 95 del
+Monte Carlo, ese Monte Carlo no se ha corrido, y un contrato inventado es peor
+que ninguno.
 
 Las cifras medidas están en [BACKTESTS.md](./BACKTESTS.md).
 
