@@ -1,0 +1,64 @@
+name: Ciclo del simulador de bots
+
+# El simulador necesita evaluar las velas cerradas de cada bot con bastante
+# frecuencia: los bots de scalping trabajan en velas de 1 y 5 minutos, y una
+# señal que se lee tarde ya no es la misma señal. Los crons nativos de Vercel
+# en plan gratuito sólo se ejecutan una vez al día, así que el programador vive
+# aquí, igual que el de la sincronización con Coinbase.
+#
+# GitHub Actions no garantiza el minuto exacto: puede atrasarse unos minutos
+# bajo carga. Para este uso vale, porque el motor evalúa siempre la última vela
+# CERRADA y es idempotente por vela -- un ciclo que llega tarde hace lo mismo
+# que uno puntual, y dos ciclos seguidos sobre la misma vela no abren dos
+# posiciones. Lo que no vale es tratarlo como un temporizador preciso.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+# Si un ciclo se alarga, el siguiente espera en vez de solaparse. Dos ciclos a
+# la vez sobre las mismas cuentas es la forma más fácil de duplicar una orden.
+concurrency:
+  group: paper-trading-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      # Un despliegue sin configurar no es un fallo, sólo es un despliegue que
+      # todavía no tiene nada que simular. Sin esta comprobación el job fallaría
+      # cada cinco minutos y GitHub enviaría cientos de correos de error al día,
+      # ninguno de los cuales señalaría un problema real.
+      #
+      # Para encenderlo, crea los secretos del repositorio en la interfaz de
+      # GitHub (nunca en un fichero): APP_URL con la URL del despliegue, sin
+      # barra final, y CRON_SECRET con el mismo valor que tenga configurado el
+      # entorno del despliegue.
+      - name: ¿Está configurado el simulador?
+        id: config
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -n "$APP_URL" ] && [ -n "$CRON_SECRET" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Simulador omitido: faltan los secretos APP_URL y/o CRON_SECRET."
+          fi
+
+      - name: Evaluar una vela de cada bot encendido (/api/paper/tick)
+        if: steps.config.outputs.ready == 'true'
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # --fail-with-body para que un 500 salga en el log con el motivo y no
+          # como un código de salida a secas. -sS calla la barra de progreso
+          # pero deja pasar los errores.
+          curl --fail-with-body -sS -X POST \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "content-type: application/json" \
+            --max-time 120 \
+            "$APP_URL/api/paper/tick"

@@ -1374,6 +1374,8 @@ export interface Database {
           backtest_strategy_id: string | null;
           strategy_id: string | null;
           notes: string | null;
+          descripcion_larga: string | null;
+          familia_operativa: string | null;
           retired_at: string | null;
           retirement_reason: string | null;
           retirement_note: string | null;
@@ -1399,6 +1401,8 @@ export interface Database {
           backtest_strategy_id?: string | null;
           strategy_id?: string | null;
           notes?: string | null;
+          descripcion_larga?: string | null;
+          familia_operativa?: string | null;
           retired_at?: string | null;
           retirement_reason?: string | null;
           retirement_note?: string | null;
@@ -1420,6 +1424,8 @@ export interface Database {
           backtest_strategy_id?: string | null;
           strategy_id?: string | null;
           notes?: string | null;
+          descripcion_larga?: string | null;
+          familia_operativa?: string | null;
           retired_at?: string | null;
           retirement_reason?: string | null;
           retirement_note?: string | null;
@@ -1501,6 +1507,143 @@ export interface Database {
           gate_max_drawdown_pct?: string | number;
           gate_min_trades?: number;
           updated_at?: string;
+        }
+      >;
+
+      // El simulador en papel. Ver supabase/migrations/20260903100000_paper_trading.sql.
+      //
+      // Todas las columnas `numeric` llegan como `string` en Row: postgrest las
+      // serializa así para no perder precisión en números que no caben en un
+      // double. Al escribir se acepta `string | number` porque el cliente
+      // convierte. Tratar un Row como si trajera números es el error fácil aquí:
+      // `equity + pnl` sobre dos strings concatena en vez de sumar.
+      paper_settings: Table<
+        {
+          user_id: string;
+          comision_pct: string;
+          deslizamiento_pct: string;
+          capital_por_defecto: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          user_id: string;
+          comision_pct?: string | number;
+          deslizamiento_pct?: string | number;
+          capital_por_defecto?: string | number;
+        }
+      >;
+
+      paper_accounts: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string;
+          enabled: boolean;
+          capital_asignado: string;
+          efectivo: string;
+          equity: string;
+          started_at: string | null;
+          last_tick_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id: string;
+          enabled?: boolean;
+          capital_asignado: string | number;
+          efectivo: string | number;
+          equity: string | number;
+          started_at?: string | null;
+          last_tick_at?: string | null;
+        }
+      >;
+
+      paper_positions: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string;
+          side: string;
+          size: string;
+          precio_entrada: string;
+          hora_entrada: string;
+          stop: string | null;
+          objetivo: string | null;
+          atr_entrada: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id: string;
+          side: string;
+          size: string | number;
+          precio_entrada: string | number;
+          hora_entrada?: string;
+          stop?: string | number | null;
+          objetivo?: string | number | null;
+          atr_entrada?: string | number | null;
+          status?: string;
+        }
+      >;
+
+      paper_trades: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string;
+          position_id: string | null;
+          side: string;
+          size: string;
+          precio_entrada: string;
+          hora_entrada: string;
+          precio_salida: string;
+          hora_salida: string;
+          pnl: string;
+          pnl_pct: string;
+          comision: string;
+          motivo_salida: string;
+          barras_en_mercado: number | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id: string;
+          position_id?: string | null;
+          side: string;
+          size: string | number;
+          precio_entrada: string | number;
+          hora_entrada: string;
+          precio_salida: string | number;
+          hora_salida: string;
+          pnl: string | number;
+          pnl_pct: string | number;
+          comision?: string | number;
+          motivo_salida: string;
+          barras_en_mercado?: number | null;
+        }
+      >;
+
+      paper_equity_points: Table<
+        {
+          id: string;
+          user_id: string;
+          bot_id: string;
+          ts: string;
+          equity: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          bot_id: string;
+          ts?: string;
+          equity: string | number;
         }
       >;
 

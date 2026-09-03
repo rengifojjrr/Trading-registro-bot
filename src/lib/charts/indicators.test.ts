@@ -2,13 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import {
   atr,
+  bollinger,
   computeIndicator,
+  donchianAlto,
+  donchianBajo,
   ema,
+  ibs,
   INDICATORS,
+  macd,
+  maximoMovil,
+  minimoMovil,
+  rangoPrevio,
   rangoVerdadero,
   rsi,
   sma,
+  supertrend,
   vwap,
+  type IndicatorId,
   type Vela,
 } from "./indicators";
 
@@ -177,6 +187,215 @@ describe("ATR", () => {
   });
 });
 
+describe("ventana móvil de máximos y mínimos", () => {
+  it("no da nada hasta tener la ventana completa", () => {
+    expect(maximoMovil([1, 5, 3, 2], 3)).toEqual([null, null, 5, 5]);
+    expect(minimoMovil([1, 5, 3, 2], 3)).toEqual([null, null, 1, 2]);
+  });
+
+  it("la cola de candidatos da lo mismo que mirar la ventana entera", () => {
+    // Es el único sitio donde la optimización puede mentir: si un candidato se
+    // descarta antes de tiempo, el canal se queda con un extremo viejo y nadie
+    // lo nota mirando el dibujo.
+    const valores = Array.from({ length: 200 }, (_, i) => Math.sin(i) * 100 + Math.cos(i / 3) * 40);
+    const rapido = maximoMovil(valores, 9);
+    for (let i = 8; i < valores.length; i += 1) {
+      expect(rapido[i]!, `vela ${i}`).toBeCloseTo(Math.max(...valores.slice(i - 8, i + 1)), 9);
+    }
+  });
+});
+
+describe("canal de Donchian", () => {
+  // Máximos que suben de uno en uno salvo un pico en la cuarta vela: con el
+  // desplazamiento bien puesto el pico se ve desde la vela siguiente, no desde
+  // la suya.
+  const velas = [10, 11, 12, 20, 13, 14].map((alto, i) =>
+    vela({ time: i, high: alto, low: alto - 5, close: alto - 1 }),
+  );
+
+  it("mira las velas anteriores, no la actual", () => {
+    const canal = donchianAlto(velas, 3);
+    expect(canal[3]).toBe(12); // máximo de 10, 11 y 12 -- el 20 de hoy no cuenta
+    expect(canal[4]).toBe(20); // ahora sí, ya es pasado
+  });
+
+  it("por eso una ruptura puede pasar de verdad", () => {
+    // Sin el desplazamiento, el máximo de la vela entra en su propio canal y
+    // «rompe por encima» no ocurre jamás: la comparación es contra sí misma.
+    // Es el fallo que no da error y que sólo se ve como «cero operaciones».
+    const conDesplazamiento = donchianAlto(velas, 3);
+    const sinDesplazamiento = maximoMovil(
+      velas.map((v) => v.high),
+      3,
+    );
+
+    expect(velas[3].high > conDesplazamiento[3]!).toBe(true);
+    expect(velas[3].high > sinDesplazamiento[3]!).toBe(false);
+  });
+
+  it("el canal de abajo usa los mínimos y también va desplazado", () => {
+    const bajos = [50, 40, 30, 10, 35].map((bajo, i) =>
+      vela({ time: i, high: bajo + 5, low: bajo, close: bajo + 1 }),
+    );
+    const canal = donchianBajo(bajos, 3);
+    expect(canal[3]).toBe(30); // mínimo de 50, 40 y 30
+    expect(canal[4]).toBe(10);
+    expect(bajos[3].low < canal[3]!).toBe(true);
+  });
+
+  it("las primeras velas no tienen canal", () => {
+    // Con periodo 3 y desplazamiento 1 hacen falta cuatro velas.
+    const canal = donchianAlto(velas, 3);
+    expect(canal.slice(0, 3)).toEqual([null, null, null]);
+  });
+});
+
+describe("SuperTrend", () => {
+  // Cuarenta velas cayendo y luego treinta subiendo el triple de rápido: si el
+  // indicador no cambia de lado aquí, no cambia nunca.
+  const bajando = Array.from({ length: 40 }, (_, i) =>
+    vela({ time: i, open: 100 - i, high: 101 - i, low: 99 - i, close: 100 - i }),
+  );
+  const subiendo = Array.from({ length: 30 }, (_, i) =>
+    vela({
+      time: 40 + i,
+      open: 60 + i * 3,
+      high: 61 + i * 3,
+      low: 59 + i * 3,
+      close: 60 + i * 3,
+    }),
+  );
+  const velas = [...bajando, ...subiendo];
+  const linea = supertrend(velas, 10, 1.5);
+
+  it("va por encima del precio mientras cae", () => {
+    expect(linea[30]!).toBeGreaterThan(velas[30].close);
+  });
+
+  it("y por debajo cuando la subida se confirma", () => {
+    expect(linea.at(-1)!).toBeLessThan(velas.at(-1)!.close);
+  });
+
+  it("cambia de lado una sola vez en un giro limpio", () => {
+    // Más de un cambio en un tramo así sería el indicador oscilando, que es lo
+    // que la banda con trinquete existe para evitar.
+    const lados = velas
+      .map((v, i) => (linea[i] === null ? null : v.close > linea[i]!))
+      .filter((l): l is boolean => l !== null);
+    const cambios = lados.filter((l, i) => i > 0 && l !== lados[i - 1]).length;
+    expect(cambios).toBe(1);
+  });
+
+  it("la banda no se afloja mientras dura el lado", () => {
+    // El trinquete es lo que lo convierte en un stop que acompaña. Sin él la
+    // línea se separaría del precio en cada vela ancha.
+    for (let i = 12; i < 40; i += 1) {
+      expect(linea[i]!, `vela ${i}`).toBeLessThanOrEqual(linea[i - 1]!);
+    }
+  });
+
+  it("no dice nada antes de tener ATR", () => {
+    expect(linea[9]).toBeNull();
+    expect(linea[10]).not.toBeNull();
+  });
+});
+
+describe("Bollinger", () => {
+  it("sin dispersión las bandas son la media", () => {
+    const planas = bollinger(new Array(30).fill(100), 20, 2);
+    expect(planas.superior.at(-1)!).toBeCloseTo(100, 9);
+    expect(planas.inferior.at(-1)!).toBeCloseTo(100, 9);
+  });
+
+  it("son la media más y menos las desviaciones pedidas", () => {
+    // Media 5 y desviación 2 a mano, con la fórmula de población.
+    const valores = [2, 4, 4, 4, 5, 5, 7, 9];
+    const bandas = bollinger(valores, 8, 2);
+    expect(bandas.media.at(-1)!).toBeCloseTo(5, 9);
+    expect(bandas.superior.at(-1)!).toBeCloseTo(9, 9);
+    expect(bandas.inferior.at(-1)!).toBeCloseTo(1, 9);
+  });
+});
+
+describe("MACD", () => {
+  const valores = Array.from({ length: 120 }, (_, i) => 100 + Math.sin(i / 5) * 10);
+  const { linea, senal } = macd(valores);
+
+  it("la línea arranca cuando arranca la exponencial lenta", () => {
+    expect(linea[24]).toBeNull();
+    expect(linea[25]).not.toBeNull();
+  });
+
+  it("la señal arranca nueve velas después, no antes", () => {
+    // Si los huecos de la línea se le pasaran como ceros, la señal empezaría
+    // en la vela 25 y hundida, cruzando la línea donde no cruza nada.
+    expect(senal[32]).toBeNull();
+    expect(senal[33]).not.toBeNull();
+  });
+
+  it("la primera señal está dentro del tramo que suaviza", () => {
+    const tramo = linea.slice(25, 34).map((v) => v!);
+    expect(senal[33]!).toBeGreaterThanOrEqual(Math.min(...tramo));
+    expect(senal[33]!).toBeLessThanOrEqual(Math.max(...tramo));
+  });
+});
+
+describe("IBS", () => {
+  it("cerrar en el mínimo es cero", () => {
+    expect(ibs([vela({ time: 1, high: 110, low: 100, close: 100 })])[0]).toBe(0);
+  });
+
+  it("cerrar en el máximo es uno", () => {
+    expect(ibs([vela({ time: 1, high: 110, low: 100, close: 110 })])[0]).toBe(1);
+  });
+
+  it("por el medio es la fracción del rango", () => {
+    expect(ibs([vela({ time: 1, high: 110, low: 100, close: 102.5 })])[0]).toBeCloseTo(0.25, 9);
+  });
+
+  it("una vela sin rango no tiene IBS", () => {
+    // Contestar 0,5 sería inventar una lectura neutra donde no hay ninguna, y
+    // esa media verdad acabaría dentro de una condición de reversión.
+    expect(ibs([vela({ time: 1, high: 100, low: 100, close: 100 })])[0]).toBeNull();
+  });
+});
+
+describe("rango previo", () => {
+  it("es el de la vela anterior, no el de la actual", () => {
+    // La vela en curso todavía está creciendo: medir una ruptura contra un
+    // número que crece con ella da un resultado distinto según cuándo se mire.
+    const velas = [
+      vela({ time: 1, high: 110, low: 100 }),
+      vela({ time: 2, high: 130, low: 120 }),
+    ];
+    expect(rangoPrevio(velas)).toEqual([null, 10]);
+  });
+});
+
+describe("RSI 2", () => {
+  it("es el mismo cálculo de Wilder con periodo dos", () => {
+    // A mano: subidas medias 1,5 y bajadas 0 en la vela 2 -- cien por
+    // definición. En la 3, (1,5+0)/2 contra (0+1)/2 da rs 3 y RSI 60.
+    expect(rsi([100, 101, 103, 102], 2)).toEqual([null, null, 100, 60]);
+  });
+
+  it("arranca en la segunda vela y no antes", () => {
+    const salida = rsi([100, 101, 103, 102, 104], 2);
+    expect(salida[1]).toBeNull();
+    expect(salida[2]).not.toBeNull();
+  });
+
+  it("llega al extremo mucho antes que el de catorce", () => {
+    // Es su razón de ser: con dos velas basta una racha corta para marcar
+    // sobreventa, y ahí es donde Connors compra.
+    const valores = [...Array.from({ length: 30 }, (_, i) => 100 + i), 128, 126, 124];
+    const corto = rsi(valores, 2).at(-1)!;
+    const largo = rsi(valores, 14).at(-1)!;
+    expect(corto).toBeLessThan(20);
+    expect(largo).toBeGreaterThan(40);
+  });
+});
+
 describe("el catálogo", () => {
   const velas = Array.from({ length: 250 }, (_, i) =>
     vela({
@@ -219,5 +438,48 @@ describe("el catálogo", () => {
 
   it("no repite identificadores", () => {
     expect(new Set(INDICATORS.map((i) => i.id)).size).toBe(INDICATORS.length);
+  });
+});
+
+describe("lo que el catálogo tiene que poder expresar", () => {
+  const sesion = (t: number) => String(Math.floor(t / 86400));
+
+  it("el máximo de siete sí cuenta la vela en curso", () => {
+    // Al revés que el Donchian, y a propósito: el Double Seven pregunta si el
+    // cierre de hoy es el más bajo de los últimos siete, y esa cuenta empieza
+    // por hoy.
+    const velas = [12, 11, 10, 9, 8, 7, 20].map((alto, i) =>
+      vela({ time: i * 3600, high: alto, low: alto - 3, close: alto - 1 }),
+    );
+    expect(computeIndicator("ALTO_7", velas, sesion)[6]).toBe(20);
+    expect(computeIndicator("BAJO_7", velas, sesion)[6]).toBe(4);
+  });
+
+  it("están los identificadores que usan las estrategias validadas", () => {
+    // La lista literal, no `INDICATORS.length`: lo que rompe una estrategia
+    // guardada es que desaparezca un identificador concreto, y un recuento no
+    // se entera de un cambio de nombre.
+    const imprescindibles: IndicatorId[] = [
+      "EMA21",
+      "EMA55",
+      "SMA50",
+      "SMA200",
+      "DONCHIAN_ALTO_20",
+      "DONCHIAN_BAJO_10",
+      "DONCHIAN_ALTO_55",
+      "DONCHIAN_BAJO_20",
+      "SUPERTREND",
+      "BB_SUPERIOR",
+      "BB_INFERIOR",
+      "ALTO_7",
+      "BAJO_7",
+      "RSI2",
+      "MACD",
+      "MACD_SENAL",
+      "IBS",
+      "RANGO_PREVIO",
+    ];
+    const declarados = new Set(INDICATORS.map((i) => i.id));
+    for (const id of imprescindibles) expect(declarados.has(id), id).toBe(true);
   });
 });
