@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import Link from "next/link";
 
 import { CalendarHeatmap } from "@/components/dashboard/calendar-heatmap";
+import { ImminentEventBanner } from "@/components/economic-calendar/imminent-event-banner";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
@@ -18,6 +19,7 @@ import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLi
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
 import type { TradeSortKey } from "@/lib/analytics/trade-sort";
 import { requireUser } from "@/lib/auth/require-user";
+import { fetchNextKeyEvent } from "@/lib/economic-calendar/queries";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
 import { readSyncStatus } from "@/lib/sync/read-status";
 import { createClient } from "@/lib/supabase/server";
@@ -27,15 +29,30 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
   const supabase = await createClient();
   const searchParams = await props.searchParams;
 
-  const [{ count: totalTradeCount }, { data: settings }, accounts, products, openPositions, filterOptions] =
-    await Promise.all([
-      supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("orphaned_at", null),
-      supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
-      fetchAccounts(),
-      fetchDistinctProductIds(),
-      fetchOpenLivePositions(),
-      fetchFilterOptions(),
-    ]);
+  const [
+    { count: totalTradeCount },
+    { data: settings },
+    accounts,
+    products,
+    openPositions,
+    filterOptions,
+    nextEvent,
+  ] = await Promise.all([
+    supabase.from("trades").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("orphaned_at", null),
+    supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),
+    fetchAccounts(),
+    fetchDistinctProductIds(),
+    fetchOpenLivePositions(),
+    fetchFilterOptions(),
+    // El calendario es un extra: si falla, el panel entero no puede caerse
+    // por él. Sin evento, el aviso simplemente no se pinta.
+    fetchNextKeyEvent().catch(() => null),
+  ]);
+
+  const openContracts = openPositions.reduce(
+    (sum, p) => sum + (Number(p.total_entry_qty) - Number(p.total_exit_qty)),
+    0,
+  );
 
   if (!totalTradeCount) {
     return (
@@ -151,6 +168,12 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
           días -- o si falta un fill, o si la posición no cuadra con Coinbase --
           eso hay que leerlo antes que las cifras que matiza. */}
       <SyncStatusBar status={await readSyncStatus(user.id)} />
+
+      {/* Justo encima de la posición, porque es lo que la pone en contexto: un
+          dato de alto impacto a menos de dos horas con contratos abiertos. Se
+          pinta solo cuando esas dos cosas se dan a la vez; el resto del tiempo
+          no ocupa ni una línea. */}
+      <ImminentEventBanner event={nextEvent} openContracts={openContracts} />
 
       <OpenPositionsPanel positions={openPositions} />
 

@@ -43,6 +43,20 @@ src/lib/coinbase/
 
 Ni el motor de reconstrucción ni el dashboard hablan con `venues/cfm.ts` o `venues/intx.ts` directamente -- todo pasa por `MarketDataPort`. Esto es lo que permite que la migración de INTX al futuro gateway (o cualquier cambio de infraestructura de Coinbase) se resuelva reemplazando un archivo, no reconstruyendo la plataforma.
 
+## Calendario económico
+
+```
+src/lib/economic-calendar/
+  types.ts          # EconomicEvent + EconomicCalendarPort -- la interfaz de la que depende la pantalla
+  tradingview.ts     # la única fuente hoy: endpoint público sin documentar, leído a la defensiva
+  sync.ts             # trae la ventana por tramos (la fuente corta en 2000 sin avisar) y la reescribe
+  queries.ts           # lo que lee la pantalla, siempre de la tabla `economic_events`
+  relevance.ts          # qué es cada categoría y cuáles se miran para Bitcoin
+  format.ts              # cómo se escriben los números y la cuenta atrás
+```
+
+Mismo patrón que Coinbase y por la misma razón: la fuente es reemplazable y la pantalla no debe saber nada de ella. Detalle completo, incluidas las trampas del endpoint, en `docs/CALENDARIO_ECONOMICO.md`.
+
 ## Server Actions vs. Route Handlers
 
 Las mutaciones iniciadas por el usuario (editar el diario, crear una etiqueta, guardar configuración, subir un CSV) usan **Server Actions** (`actions.ts` junto a cada `page.tsx`), no un árbol paralelo de endpoints REST bajo `app/api/`. `app/api/*` se reserva para lo que genuinamente necesita semántica HTTP: `cron/*` (disparado por un programador externo, protegido por `CRON_SECRET`), `export/*` (descargas de archivo con encabezados HTTP reales), y una futura ruta de salud.

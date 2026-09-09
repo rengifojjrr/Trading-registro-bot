@@ -733,6 +733,63 @@ export interface Database {
         }
       >;
 
+      /**
+       * El calendario económico. Tabla de referencia, sin `user_id`: que la
+       * Reserva Federal decida tipos el miércoles es un hecho del mundo, no
+       * un dato de nadie. Ver la migración 20260909120000.
+       */
+      economic_events: Table<
+        {
+          id: string;
+          source: string;
+          source_event_id: string;
+          occurs_at: string;
+          country: string;
+          currency: string | null;
+          title: string;
+          indicator: string | null;
+          category: string | null;
+          /** -1 baja, 0 media, 1 alta: la escala de la fuente, sin traducir. */
+          importance: number;
+          period: string | null;
+          actual: string | null;
+          forecast: string | null;
+          previous: string | null;
+          unit: string | null;
+          scale: string | null;
+          comment: string | null;
+          source_name: string | null;
+          source_url: string | null;
+          raw_payload: Json;
+          fetched_at: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          source?: string;
+          source_event_id: string;
+          occurs_at: string;
+          country: string;
+          currency?: string | null;
+          title: string;
+          indicator?: string | null;
+          category?: string | null;
+          importance?: number;
+          period?: string | null;
+          actual?: string | number | null;
+          forecast?: string | number | null;
+          previous?: string | number | null;
+          unit?: string | null;
+          scale?: string | null;
+          comment?: string | null;
+          source_name?: string | null;
+          source_url?: string | null;
+          raw_payload?: Json;
+          fetched_at?: string;
+        }
+      >;
+
       products: Table<
         {
           product_id: string;

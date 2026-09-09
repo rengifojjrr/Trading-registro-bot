@@ -94,6 +94,9 @@ export const MODULES: ModuleManifest[] = [
       { href: "/trades", label: "Operaciones", cadence: "DIARIO" },
       { href: "/journal", label: "Diario", cadence: "DIARIO" },
       { href: "/risk", label: "Riesgo", cadence: "DIARIO" },
+      // Qué se publica hoy y qué viene. Es de mirar antes de abrir posición,
+      // no el domingo: por eso está aquí y no en «para repasar».
+      { href: "/noticias", label: "Noticias", cadence: "DIARIO" },
       // Los bots: un módulo dentro del módulo, con su propio menú.
       {
         href: "/bots",
