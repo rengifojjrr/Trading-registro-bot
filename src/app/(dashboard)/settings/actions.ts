@@ -36,6 +36,55 @@ function emptyToNull<T extends z.ZodTypeAny>(inner: T) {
 
 export type SettingsState = { error: string | null; success: boolean };
 
+/**
+ * Cambia sólo la zona horaria.
+ *
+ * Existe aparte de `updateSettings` porque el caso es otro: no es alguien
+ * abriendo Configuración a ajustar cosas, es el aviso que salta cuando la zona
+ * guardada no es la del navegador. Ahí hay que poder arreglarlo de un clic, y
+ * mandar el formulario entero de Configuración desde el panel obligaría a
+ * arrastrar veinte campos que nadie ha tocado.
+ *
+ * El valor por defecto era `UTC`, así que hasta que alguien entraba a
+ * cambiarlo la aplicación enseñaba todas las horas cinco husos por delante sin
+ * decirlo. Las cifras eran correctas; las horas, de otro sitio.
+ */
+export async function adoptTimezone(timezone: string): Promise<{ error: string | null }> {
+  const user = await requireUser();
+
+  const parsed = z.string().min(1).safeParse(timezone);
+  if (!parsed.success) return { error: "Zona horaria no válida." };
+
+  // Que la resuelva el propio runtime es la única comprobación que de verdad
+  // vale: una lista fija se queda vieja, y guardar una zona que Luxon no sabe
+  // resolver rompería todas las fechas de la aplicación a la vez.
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: parsed.data });
+  } catch {
+    return { error: "Zona horaria no válida." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("app_settings")
+    .update({ timezone: parsed.data })
+    .eq("user_id", user.id);
+
+  if (error) return { error: "No se pudo guardar la zona horaria." };
+
+  await recordAudit({
+    userId: user.id,
+    action: "SETTINGS_UPDATED",
+    entityType: "app_settings",
+    metadata: { timezone: parsed.data, via: "aviso-de-zona" },
+  });
+
+  // Las horas salen en casi todas las pantallas, así que se revalida la raíz
+  // en vez de ir listando cuáles.
+  revalidatePath("/", "layout");
+  return { error: null };
+}
+
 export async function updateSettings(
   _prevState: SettingsState,
   formData: FormData,

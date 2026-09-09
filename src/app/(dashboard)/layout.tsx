@@ -6,7 +6,9 @@ import { OfflineQueue } from "@/components/layout/offline-queue";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SyncOnVisit } from "@/components/layout/sync-on-visit";
 import { Topbar } from "@/components/layout/topbar";
+import { TimezoneMismatchNotice } from "@/components/settings/timezone-mismatch-notice";
 import { requireUser } from "@/lib/auth/require-user";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
   children,
@@ -14,6 +16,17 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
+
+  // La zona horaria se lee aquí, en el marco, y no en cada pantalla: las
+  // horas salen en todas -- cuándo abriste, cuándo cerró Coinbase, cuándo
+  // sale el dato -- así que un aviso de que están desplazadas sólo en una
+  // dejaría las demás mintiendo igual.
+  const supabase = await createClient();
+  const { data: settings } = await supabase
+    .from("app_settings")
+    .select("timezone")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   // The document itself scrolls (not a clipped single-viewport shell with
   // an inner overflow-y-auto main) -- sidebar/topbar/banner stay in place
@@ -53,7 +66,12 @@ export default async function DashboardLayout({
               porque es el único hueco de primer nivel de toda la
               aplicación -- lo de dentro de cada tarjeta no se toca, que es
               justo lo que hace que compactar no apelmace el texto. */}
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-aire">{children}</div>
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-aire">
+            {/* Sólo se pinta si el navegador dice una zona distinta de la
+                guardada, así que lo normal es que no ocupe nada. */}
+            <TimezoneMismatchNotice configured={settings?.timezone || "UTC"} />
+            {children}
+          </div>
         </main>
 
         {/* En el móvil, los cinco destinos de diario a un toque. En el

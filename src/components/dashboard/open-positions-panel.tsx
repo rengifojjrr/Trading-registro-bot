@@ -24,8 +24,12 @@ export function OpenPositionsPanel({ positions }: { positions: OpenPositionRow[]
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-        <div className="flex flex-col gap-1">
+      {/* `min-w-0` en la columna de texto no es decorativo: sin él, un hijo
+          flex no encoge por debajo del ancho de su contenido, así que esta
+          descripción larga empujaba la tarjeta más allá de la pantalla y
+          desplazaba la página entera en el móvil. */}
+      <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
+        <div className="flex min-w-0 flex-col gap-1">
           <CardTitle className="text-foreground">Posiciones abiertas</CardTitle>
           <CardDescription>
             Ganancia o pérdida de lo que sigue abierto, sobre el precio medio de esos contratos y antes de
@@ -74,11 +78,14 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
       : null;
 
   return (
+    // Seis datos en una línea no caben en un móvil, y sin permitirles saltar
+    // la fila empujaba el ancho de toda la página: el resto de las pantallas
+    // aparecían corridas hacia la izquierda con el borde derecho cortado.
     <Link
       href={`/trades/${position.id}`}
-      className="flex items-center justify-between gap-4 py-3 text-sm transition-colors hover:bg-accent/40"
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm transition-colors hover:bg-accent/40"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <Badge variant="outline">{position.direction === "LONG" ? "Long" : "Short"}</Badge>
         <span className="font-medium">{position.product_id}</span>
         <span className="text-muted-foreground">
@@ -88,11 +95,11 @@ function OpenPositionListItem({ position }: { position: OpenPositionRow }) {
       </div>
 
       {status === "unavailable" ? (
-        <span className="text-xs text-muted-foreground">Precio no disponible</span>
+        <span className="shrink-0 text-xs text-muted-foreground">Precio no disponible</span>
       ) : status === "loading" || !pnl ? (
-        <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
       ) : (
-        <div className="flex items-center gap-3 tabular-nums">
+        <div className="flex shrink-0 items-center gap-3 tabular-nums">
           <span className="text-muted-foreground">{formatMoney(price)}</span>
           <span className={pnlColorClass(pnl.grossPnl)}>{formatSignedMoney(pnl.grossPnl)}</span>
         </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { CalendarHeatmap } from "@/components/dashboard/calendar-heatmap";
 import { ImminentEventBanner } from "@/components/economic-calendar/imminent-event-banner";
+import { TodayNewsCard } from "@/components/economic-calendar/today-news-card";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
@@ -19,7 +20,7 @@ import { fetchAccounts, fetchDistinctProductIds, fetchFilterOptions, fetchOpenLi
 import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analytics/stats";
 import type { TradeSortKey } from "@/lib/analytics/trade-sort";
 import { requireUser } from "@/lib/auth/require-user";
-import { fetchNextKeyEvent } from "@/lib/economic-calendar/queries";
+import { fetchEventsBetween, fetchNextKeyEvent } from "@/lib/economic-calendar/queries";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
 import { readSyncStatus } from "@/lib/sync/read-status";
 import { createClient } from "@/lib/supabase/server";
@@ -81,7 +82,18 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
   const currency = accounts[0]?.currency ?? "USD";
   const filters = parseTradeFilters(searchParams, timezone);
 
-  const trades = await fetchTradesForStats(filters);
+  // Lo que se publica hoy, para el acceso directo del panel. Sólo impacto
+  // alto y medio: la lista entera de un día trae subastas de letras que aquí
+  // no aportan nada. En paralelo con las operaciones, que es la consulta que
+  // manda; si el calendario falla, el panel se pinta igual sin él.
+  const [trades, todayEvents] = await Promise.all([
+    fetchTradesForStats(filters),
+    fetchEventsBetween({
+      from: DateTime.now().setZone(timezone).startOf("day").toJSDate(),
+      to: DateTime.now().setZone(timezone).endOf("day").toJSDate(),
+      minImportance: 0,
+    }).catch(() => []),
+  ]);
   const stats = computeStats(trades);
 
   // Only meaningful when the user picked an explicit date range -- an
@@ -176,6 +188,11 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
       <ImminentEventBanner event={nextEvent} openContracts={openContracts} />
 
       <OpenPositionsPanel positions={openPositions} />
+
+      {/* Qué se publica hoy, junto a lo que tienes abierto: es la pareja que
+          decide si hoy conviene estar dentro. El calendario entero está a un
+          clic. */}
+      <TodayNewsCard events={todayEvents} next={nextEvent} timezone={timezone} />
 
       <FilterBar
         accounts={accounts}
