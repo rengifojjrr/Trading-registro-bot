@@ -1,6 +1,11 @@
 import { DateTime } from "luxon";
 
-import type { ReactionCandle } from "@/lib/economic-calendar/market-reaction";
+import {
+  aggregateCandles,
+  chartWindowFor,
+  formatHorizonLabel,
+  type ReactionCandle,
+} from "@/lib/economic-calendar/market-reaction";
 
 /**
  * Qué hizo el precio alrededor de la publicación.
@@ -25,16 +30,27 @@ export function ReactionChart({
   eventAt,
   timezone,
   productId,
+  horizonMinutes,
 }: {
   candles: ReactionCandle[];
   eventAt: string;
   timezone: string;
   productId: string;
+  /** El plazo que se está mirando: decide cuánto se enseña y de qué tamaño las velas. */
+  horizonMinutes: number;
 }) {
-  if (candles.length < 2) return null;
-
   const t0 = Math.floor(new Date(eventAt).getTime() / 1000);
-  const ordenadas = [...candles].sort((a, b) => a.time - b.time);
+  const { beforeMin, afterMin, groupMin } = chartWindowFor(horizonMinutes);
+
+  const recortadas = candles.filter(
+    (c) => c.time >= t0 - beforeMin * 60 && c.time <= t0 + afterMin * 60,
+  );
+  const ordenadas = aggregateCandles(recortadas, groupMin);
+  if (ordenadas.length < 2) return null;
+
+  // Dónde acaba el plazo medido, para sombrearlo: sin esto, las cifras de
+  // debajo («a 2 h») no se corresponden visiblemente con nada del dibujo.
+  const tFinHorizonte = t0 + horizonMinutes * 60;
 
   const tMin = ordenadas[0].time;
   const tMax = ordenadas[ordenadas.length - 1].time;
@@ -73,6 +89,16 @@ export function ReactionChart({
         aria-label={`Precio de ${productId} alrededor de la publicación`}
         preserveAspectRatio="none"
       >
+        {/* El tramo que miden las cifras de abajo, sombreado. Va lo primero
+            de todo para que no tape ni una vela. */}
+        <rect
+          x={xEvento}
+          y={MARGEN.arriba}
+          width={Math.max(0, Math.min(x(tFinHorizonte), MARGEN.izquierda + anchoUtil) - xEvento)}
+          height={altoUtil}
+          className="fill-warning/5"
+        />
+
         {/* Rejilla y precios, primero: todo lo demás va encima. */}
         {etiquetasPrecio.map((precio) => (
           <g key={precio}>
@@ -159,8 +185,9 @@ export function ReactionChart({
       </svg>
 
       <figcaption className="text-xs text-muted-foreground">
-        {productId} · velas de un minuto · la línea de puntos horizontal es el precio justo antes del
-        dato. Horas en tu zona.
+        {productId} · velas de {groupMin === 1 ? "un minuto" : `${groupMin} minutos`} · la línea de
+        puntos horizontal es el precio justo antes del dato, y la zona sombreada el plazo de{" "}
+        {formatHorizonLabel(horizonMinutes)} que miden las cifras. Horas en tu zona.
       </figcaption>
     </figure>
   );

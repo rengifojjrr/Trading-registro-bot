@@ -25,9 +25,17 @@ const ENDPOINT = "https://api.coinbase.com/api/v3/brokerage/market/products";
 /** El mercado de referencia cuando el producto configurado no tiene velas. */
 const FALLBACK_PRODUCT = "BTC-USD";
 
-/** Coinbase corta en 350 velas por petición; con una hora y media de margen sobra. */
+/**
+ * La ventana que se trae, en minutos alrededor de la publicación.
+ *
+ * Coinbase corta en 350 velas por petición, así que con velas de un minuto el
+ * techo está en 350 minutos. Treinta antes y cuatro horas y media después son
+ * 300: cubre el plazo más largo que se mide (cuatro horas) con margen para que
+ * la última vela no caiga justo en el borde, y deja sitio por si algún día se
+ * añade un plazo mayor sin tener que paginar.
+ */
 const ANTES_MIN = 30;
-const DESPUES_MIN = 90;
+const DESPUES_MIN = 270;
 
 export interface ReactionCandles {
   candles: ReactionCandle[];

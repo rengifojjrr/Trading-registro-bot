@@ -58,15 +58,38 @@ Tres bloques, en este orden:
 
 Esto es lo más delicado de todo el módulo, así que el encuadre es explícito en la propia pantalla: es la lectura habitual, no una predicción; lo que mueve el precio suele ser la sorpresa y no el nivel; y cuando el dato venía descontado, a veces pasa lo contrario. **Un indicador que no esté en el catálogo no recibe interpretación inventada** — es preferible callar a improvisar una explicación macro plausible.
 
-**Cómo reaccionó el mercado.** Lo que hizo el precio en la hora siguiente a cada una de las últimas seis publicaciones del mismo indicador: gráfico de velas de un minuto con el instante exacto marcado, y cuatro cifras — a 15 minutos, a 1 hora, cuánto llegó a moverse y el recorrido total.
+**Cómo reaccionó el mercado.** Lo que hizo el precio después de cada una de las últimas seis publicaciones del mismo indicador: la lista comparativa, el gráfico de velas con el instante exacto marcado, y la tabla de plazos.
 
 Es la respuesta honesta a «qué podría pasar»: no una predicción, sino lo que de hecho pasó, medido.
 
+### Cuatro plazos, no uno
+
+Se mide a **15 minutos, 1 hora, 2 horas y 4 horas**. Un selector cambia el plazo de la columna comparativa y del gráfico; la tabla de la publicación seleccionada enseña los cuatro a la vez, para que leer la fila de «acabó» de izquierda a derecha cuente la historia: si el golpe fue inmediato y se deshizo, si tardó en arrancar, o si se dio la vuelta.
+
+Que no baste con una cifra no es teórico. El PPI del 13 de agosto de 2026, sobre el contrato que se opera:
+
+| Plazo | Acabó | Llegó a moverse | Recorrido |
+|---|---|---|---|
+| 15 min | 0,00 % | 0,21 % | 0,38 % |
+| 1 h | +0,02 % | 0,35 % | 0,57 % |
+| 2 h | **+0,33 %** | 0,48 % | 0,69 % |
+| 4 h | **−0,24 %** | 0,65 % | 1,06 % |
+
+Con la cifra de una hora sola, ese dato «no movió el mercado». A las dos horas estaba un 0,33 % arriba y a las cuatro se había dado la vuelta. El movimiento llegó después de la ventana en la que casi todo el mundo deja de mirar.
+
 ### Por qué «llegó a moverse» y no sólo «dónde acabó»
 
-El PPI del 13 de agosto de 2026 lo ilustra, con datos reales del contrato que se opera: a la hora el precio estaba un 0,016 % arriba —prácticamente igual—, pero llegó a alejarse un 0,354 % y recorrió un 0,567 % entre máximo y mínimo. Mirando sólo dónde acabó, ese dato «no hizo nada». Con apalancamiento, el viaje de ida es lo que liquida una posición.
+En la misma tabla: a la hora el precio estaba prácticamente igual, pero llegó a alejarse un 0,354 % y recorrió un 0,567 % entre máximo y mínimo. Mirando sólo dónde acabó, ese dato «no hizo nada». Con apalancamiento, el viaje de ida es lo que liquida una posición.
 
-Esas cifras son el fixture de `market-reaction.real.test.ts`: la medición se prueba contra velas reales, con sus huecos y sus mechas, no sólo contra números redondos.
+### Decir «no se sabe» cuando no se sabe
+
+Un plazo cuyo histórico de velas no alcanza queda en blanco, nunca con el último precio disponible. Sin eso, el precio de la hora y media se colaría como si fuera el de las cuatro horas — el fallo más fácil de cometer aquí, y el más difícil de detectar mirando la pantalla. Hay margen de cinco minutos para los huecos normales de mercado, que no son lo mismo que un histórico corto.
+
+Todas las cifras de arriba son el fixture de `market-reaction.real.test.ts`: la medición se prueba contra cuatro horas de velas reales, con sus huecos y sus mechas, no sólo contra números redondos.
+
+### El gráfico se ajusta al plazo
+
+Cuatro horas en velas de un minuto son 240 barras en el ancho de una tarjeta: pelos ilegibles. Así que el gráfico recorta la ventana y agrupa las velas según el plazo (1 min hasta una hora, 2 min a las dos horas, 5 min a las cuatro), y sombrea el tramo que miden las cifras. Las **medidas siempre se calculan sobre el minuto**, que es donde está el movimiento; la agrupación es sólo para poder verlo.
 
 ### Las velas
 
@@ -75,6 +98,8 @@ Del endpoint **público** de mercado de Coinbase (`api.coinbase.com/api/v3/broke
 Se pide sobre el **producto que operas** (`COINBASE_PRODUCT_ID`), no sobre el contado: un futuro con vencimiento lejano cotiza muy por encima —78.000 frente a 63.000 el mismo día de agosto—, así que enseñar el contado como si fuera lo tuyo confundiría. Si ese producto no tiene velas de aquella fecha (un contrato que aún no existía), se cae a `BTC-USD` y la pantalla dice cuál usó.
 
 Comprobado el 2026-09-09: hay velas de un minuto de hace más de un año, tanto del contado como del contrato.
+
+La ventana que se pide es de −30 a +270 minutos: son 300 velas de un minuto, justo por debajo del tope de 350 por petición que impone Coinbase. Cubre el plazo más largo que se mide con margen para que la última vela no caiga en el borde. Un plazo mayor exigiría paginar o bajar la granularidad.
 
 ## Lo que esto NO hace
 

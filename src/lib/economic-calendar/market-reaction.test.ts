@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSignedPct, measureReaction, type ReactionCandle } from "./market-reaction";
+import {
+  aggregateCandles,
+  formatAbsPct,
+  formatHorizonLabel,
+  formatSignedPct,
+  horizonOf,
+  measureReaction,
+  type ReactionCandle,
+} from "./market-reaction";
 
 /** 2026-08-13T12:30:00Z, la publicación real del PPI de julio. */
 const EVENTO = new Date("2026-08-13T12:30:00.000Z");
@@ -18,100 +26,125 @@ function vela(offsetMin: number, precios: Partial<ReactionCandle> = {}): Reactio
   };
 }
 
+/** Una vela por minuto de -1 a `hasta`, todas planas salvo las que se indiquen. */
+function serie(hasta: number, especiales: Record<number, Partial<ReactionCandle>> = {}) {
+  const out: ReactionCandle[] = [vela(-1, { close: 100 })];
+  for (let m = 0; m <= hasta; m++) out.push(vela(m, especiales[m] ?? { close: 100 }));
+  return out;
+}
+
 describe("measureReaction", () => {
   it("mide contra la última vela cerrada antes de la publicación", () => {
-    const candles = [
-      vela(-2, { close: 100 }),
-      // Ésta es la referencia: la última anterior al evento.
-      vela(-1, { close: 200 }),
-      vela(0, { high: 210, low: 190, close: 204 }),
-    ];
-
+    const candles = [vela(-2, { close: 100 }), vela(-1, { close: 200 }), ...serie(20).slice(1)];
     const r = measureReaction(candles, EVENTO)!;
-
     expect(r.reference).toBe(200);
-    expect(r.high).toBe(210);
-    expect(r.low).toBe(190);
-    expect(r.rangePct).toBeCloseTo(10, 6);
   });
 
-  it("el precio a los 15 y a los 60 minutos, en porcentaje", () => {
-    const candles = [
-      vela(-1, { close: 100 }),
-      vela(0, { close: 101 }),
-      vela(15, { close: 102 }),
-      vela(60, { close: 98 }),
-    ];
+  it("da una medida por plazo, y sólo de los plazos que las velas alcanzan", () => {
+    // Velas hasta los 70 minutos: llegan a 15 y a 60, no a 120 ni a 240.
+    const r = measureReaction(serie(70), EVENTO)!;
 
-    const r = measureReaction(candles, EVENTO)!;
+    expect(r.horizons.map((h) => h.minutes)).toEqual([15, 60, 120, 240]);
+    expect(horizonOf(r, 15)!.changePct).not.toBeNull();
+    expect(horizonOf(r, 60)!.changePct).not.toBeNull();
+    // Aquí está lo importante: sin velas hasta las dos horas, la respuesta es
+    // «no se sabe», no el último precio disponible disfrazado de dato.
+    expect(horizonOf(r, 120)!.changePct).toBeNull();
+    expect(horizonOf(r, 240)!.changePct).toBeNull();
+  });
 
-    expect(r.after15).toBe(102);
-    expect(r.changePct15).toBeCloseTo(2, 6);
-    expect(r.after60).toBe(98);
-    expect(r.changePct60).toBeCloseTo(-2, 6);
+  it("cada plazo mide su propia ventana, no la de después", () => {
+    const r = measureReaction(
+      serie(240, {
+        // Un pico a los 90 minutos: no debe contar en el plazo de una hora.
+        90: { high: 110, low: 100, close: 110 },
+      }),
+      EVENTO,
+    )!;
+
+    expect(horizonOf(r, 60)!.maxMovePct).toBeCloseTo(0, 6);
+    expect(horizonOf(r, 120)!.maxMovePct).toBeCloseTo(10, 6);
+    expect(horizonOf(r, 240)!.maxMovePct).toBeCloseTo(10, 6);
   });
 
   it("el mayor alejamiento cuenta aunque el precio vuelva", () => {
     // El caso que importa a quien opera apalancado: el precio se desploma un
     // 3 % y vuelve. Mirar sólo dónde acabó diría que no pasó nada.
-    const candles = [
-      vela(-1, { close: 100 }),
-      vela(0, { high: 100, low: 97, close: 97.5 }),
-      vela(30, { high: 100, low: 99, close: 100 }),
-      vela(60, { close: 100 }),
-    ];
+    const r = measureReaction(serie(70, { 0: { high: 100, low: 97, close: 100 } }), EVENTO)!;
+    const h = horizonOf(r, 60)!;
 
-    const r = measureReaction(candles, EVENTO)!;
+    expect(h.changePct).toBeCloseTo(0, 6);
+    expect(h.maxMovePct).toBeCloseTo(3, 6);
+  });
 
-    expect(r.changePct60).toBeCloseTo(0, 6);
-    expect(r.maxMovePct).toBeCloseTo(3, 6);
+  it("tolera minutos sueltos sin operaciones al final del plazo", () => {
+    // Falta la vela del minuto 60 exacto, pero hay una del 57: eso es un hueco
+    // normal de mercado, no un histórico que no llega.
+    const candles = serie(70).filter((c) => c.time !== T0 + 60 * 60);
+    expect(horizonOf(measureReaction(candles, EVENTO)!, 60)!.changePct).not.toBeNull();
   });
 
   it("sin vela anterior no hay punto cero, y no se inventa uno", () => {
-    // Usar la primera vela posterior como referencia escondería justo el
-    // movimiento del minuto de la publicación, que es el que se busca.
-    const candles = [vela(0, { close: 100 }), vela(1, { close: 105 })];
-    expect(measureReaction(candles, EVENTO)).toBeNull();
+    expect(measureReaction([vela(0, { close: 100 }), vela(1, { close: 105 })], EVENTO)).toBeNull();
   });
 
   it("sin velas posteriores tampoco hay reacción que medir", () => {
     expect(measureReaction([vela(-2), vela(-1)], EVENTO)).toBeNull();
   });
 
-  it("sin velas, null", () => {
-    expect(measureReaction([], EVENTO)).toBeNull();
-  });
-
   it("una referencia de cero no produce infinitos", () => {
-    const candles = [vela(-1, { close: 0 }), vela(0, { close: 5 })];
-    expect(measureReaction(candles, EVENTO)).toBeNull();
-  });
-
-  it("no cuenta las velas de fuera de la ventana", () => {
-    const candles = [
-      vela(-1, { close: 100 }),
-      vela(0, { high: 101, low: 100, close: 101 }),
-      // Muy posterior: no debe entrar en el máximo de la ventana de una hora.
-      vela(180, { high: 500, low: 100, close: 500 }),
-    ];
-
-    const r = measureReaction(candles, EVENTO)!;
-    expect(r.high).toBe(101);
+    expect(measureReaction([vela(-1, { close: 0 }), vela(0, { close: 5 })], EVENTO)).toBeNull();
   });
 
   it("acepta las velas desordenadas", () => {
-    const candles = [vela(15, { close: 102 }), vela(-1, { close: 100 }), vela(0, { close: 101 })];
-    const r = measureReaction(candles, EVENTO)!;
-    expect(r.reference).toBe(100);
-    expect(r.after15).toBe(102);
+    const candles = [...serie(20)].reverse();
+    expect(measureReaction(candles, EVENTO)!.reference).toBe(100);
   });
 });
 
-describe("formatSignedPct", () => {
-  it("lleva el signo delante para poder comparar de un vistazo", () => {
+describe("aggregateCandles", () => {
+  it("junta las velas en bloques alineados con el reloj", () => {
+    const candles = [
+      vela(0, { open: 100, high: 105, low: 99, close: 103 }),
+      vela(1, { open: 103, high: 108, low: 102, close: 107 }),
+      vela(2, { open: 107, high: 109, low: 101, close: 104 }),
+      vela(3, { open: 104, high: 106, low: 103, close: 105 }),
+    ];
+
+    // T0 es 12:30 en punto, así que con bloques de dos minutos caen 0-1 y 2-3.
+    const out = aggregateCandles(candles, 2);
+
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ time: T0, open: 100, high: 108, low: 99, close: 107 });
+    expect(out[1]).toEqual({ time: T0 + 120, open: 107, high: 109, low: 101, close: 105 });
+  });
+
+  it("con bloques de un minuto o menos devuelve lo mismo, ordenado", () => {
+    const candles = [vela(2, { close: 102 }), vela(0, { close: 100 })];
+    expect(aggregateCandles(candles, 1).map((c) => c.close)).toEqual([100, 102]);
+  });
+
+  it("sin velas no inventa ninguna", () => {
+    expect(aggregateCandles([], 5)).toEqual([]);
+  });
+});
+
+describe("formato", () => {
+  it("el signo delante permite comparar de un vistazo", () => {
     expect(formatSignedPct(1.234)).toBe("+1,23%");
     expect(formatSignedPct(-0.5)).toBe("-0,5%");
     expect(formatSignedPct(0)).toBe("0%");
     expect(formatSignedPct(null)).toBe("—");
+  });
+
+  it("«llegó a moverse» no tiene sentido negativo", () => {
+    expect(formatAbsPct(-1.5)).toBe("1,5%");
+    expect(formatAbsPct(null)).toBe("—");
+  });
+
+  it("los plazos se nombran en minutos u horas, no en minutos siempre", () => {
+    expect(formatHorizonLabel(15)).toBe("15 min");
+    expect(formatHorizonLabel(60)).toBe("1 h");
+    expect(formatHorizonLabel(240)).toBe("4 h");
   });
 });
