@@ -94,6 +94,10 @@ export async function fetchEventsBetween(params: {
   to: Date;
   /** Deja fuera lo que la fuente marca por debajo de esto. */
   minImportance?: EventImportance;
+  /** Sólo esta importancia exacta. Manda sobre `minImportance` cuando se da. */
+  exactImportance?: EventImportance;
+  /** Sólo esta categoría de la fuente ('prce', 'lbr'…). */
+  category?: string;
   limit?: number;
 }): Promise<CalendarEvent[]> {
   const supabase = await createClient();
@@ -106,13 +110,59 @@ export async function fetchEventsBetween(params: {
     .order("occurs_at", { ascending: true })
     .limit(params.limit ?? 500);
 
-  if (params.minImportance !== undefined) {
+  if (params.exactImportance !== undefined) {
+    query = query.eq("importance", params.exactImportance);
+  } else if (params.minImportance !== undefined) {
     query = query.gte("importance", params.minImportance);
   }
+
+  if (params.category) query = query.eq("category", params.category);
 
   const { data, error } = await query;
   if (error) throw new Error(`fetchEventsBetween: ${error.message}`);
   return (data ?? []).map((row) => toEvent(row as unknown as Row));
+}
+
+/** Un evento por su identificador, para la ficha. Null si no existe. */
+export async function fetchEventById(id: string): Promise<CalendarEvent | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("economic_events")
+    .select(COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(`fetchEventById: ${error.message}`);
+  return data ? toEvent(data as unknown as Row) : null;
+}
+
+/**
+ * Las categorías que de verdad hay en la ventana que se está mirando.
+ *
+ * Se calculan de los datos en vez de listar las doce posibles: un filtro que
+ * ofrece «Energía» y al pulsarlo no enseña nada es un filtro roto.
+ */
+export async function fetchCategoriesBetween(params: {
+  from: Date;
+  to: Date;
+  minImportance?: EventImportance;
+}): Promise<string[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("economic_events")
+    .select("category")
+    .gte("occurs_at", params.from.toISOString())
+    .lte("occurs_at", params.to.toISOString())
+    .not("category", "is", null);
+
+  if (params.minImportance !== undefined) query = query.gte("importance", params.minImportance);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`fetchCategoriesBetween: ${error.message}`);
+
+  return [...new Set((data ?? []).map((r) => (r as { category: string }).category))].sort();
 }
 
 /**

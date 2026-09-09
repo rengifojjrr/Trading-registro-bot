@@ -41,7 +41,40 @@ La hora de la última sincronización sale de `max(fetched_at)` de la propia tab
 
 **El aviso de posición** — cuando faltan menos de dos horas para el evento **y** tienes contratos abiertos. Sólo entonces: un aviso que sale siempre es un aviso que se ignora.
 
-**La agenda** — por días, en tu zona horaria (un dato de las 12:30 UTC cae a las 07:30 en Bogotá, y una agenda en otro huso no sirve para saber si es hoy). Por defecto esconde lo de impacto bajo — subastas de letras e inventarios de crudo, cuarenta filas al día que entierran las tres que importan; «Todo» lo enseña.
+**La agenda** — por días, en tu zona horaria (un dato de las 12:30 UTC cae a las 07:30 en Bogotá, y una agenda en otro huso no sirve para saber si es hoy). Cada fila entra en su ficha.
+
+**Los filtros** son dos ejes que se combinan y se conservan entre sí:
+
+- **Impacto**: `Importantes` (alto + medio, el de entrada), `Alto`, `Medio`, `Bajo`, `Todo`. Los tres niveles sueltos existen porque preparar la semana y averiguar por qué se movió el precio a una hora rara son dos tareas distintas: la primera sólo quiere lo grande, la segunda necesita ver hasta lo pequeño.
+- **Tema**: las categorías de la fuente, traducidas. Se calculan **de los datos de la ventana**, no de la lista de las doce posibles: un filtro que ofrece «Energía» y al pulsarlo no enseña nada es un filtro roto.
+
+## La ficha de un dato (`/noticias/[eventId]`)
+
+Tres bloques, en este orden:
+
+**Qué mide.** Explicación propia en español para los datos que se conocen bien (`indicator-guide.ts`), con la definición original de la fuente plegada debajo. Para un dato sin ficha propia, sólo la de la fuente — en inglés, pero verdadera.
+
+**Cómo se suele leer.** Qué significa que salga por encima o por debajo de lo previsto, explicado por el mecanismo: un IPC alto empuja a la Reserva Federal a mantener los tipos altos, y el dinero caro resta apetito por activos de riesgo. Cuando el dato ya salió, se resalta la lectura que de hecho aplica.
+
+Esto es lo más delicado de todo el módulo, así que el encuadre es explícito en la propia pantalla: es la lectura habitual, no una predicción; lo que mueve el precio suele ser la sorpresa y no el nivel; y cuando el dato venía descontado, a veces pasa lo contrario. **Un indicador que no esté en el catálogo no recibe interpretación inventada** — es preferible callar a improvisar una explicación macro plausible.
+
+**Cómo reaccionó el mercado.** Lo que hizo el precio en la hora siguiente a cada una de las últimas seis publicaciones del mismo indicador: gráfico de velas de un minuto con el instante exacto marcado, y cuatro cifras — a 15 minutos, a 1 hora, cuánto llegó a moverse y el recorrido total.
+
+Es la respuesta honesta a «qué podría pasar»: no una predicción, sino lo que de hecho pasó, medido.
+
+### Por qué «llegó a moverse» y no sólo «dónde acabó»
+
+El PPI del 13 de agosto de 2026 lo ilustra, con datos reales del contrato que se opera: a la hora el precio estaba un 0,016 % arriba —prácticamente igual—, pero llegó a alejarse un 0,354 % y recorrió un 0,567 % entre máximo y mínimo. Mirando sólo dónde acabó, ese dato «no hizo nada». Con apalancamiento, el viaje de ida es lo que liquida una posición.
+
+Esas cifras son el fixture de `market-reaction.real.test.ts`: la medición se prueba contra velas reales, con sus huecos y sus mechas, no sólo contra números redondos.
+
+### Las velas
+
+Del endpoint **público** de mercado de Coinbase (`api.coinbase.com/api/v3/brokerage/market/products/…/candles`), que no pide firma ni clave. Es deliberado: el resto de la aplicación necesita credenciales porque lee *tu* cuenta, pero el precio de Bitcoin del 13 de agosto no es de nadie. Así esta parte funciona aunque Coinbase no esté configurado y no gasta cuota de la clave privada dibujando gráficos.
+
+Se pide sobre el **producto que operas** (`COINBASE_PRODUCT_ID`), no sobre el contado: un futuro con vencimiento lejano cotiza muy por encima —78.000 frente a 63.000 el mismo día de agosto—, así que enseñar el contado como si fuera lo tuyo confundiría. Si ese producto no tiene velas de aquella fecha (un contrato que aún no existía), se cae a `BTC-USD` y la pantalla dice cuál usó.
+
+Comprobado el 2026-09-09: hay velas de un minuto de hace más de un año, tanto del contado como del contrato.
 
 ## Lo que esto NO hace
 
@@ -61,6 +94,7 @@ La lista de lo que «se mira para Bitcoin» (`CLAVES_PARA_BITCOIN` en `relevance
 
 ## Lo que queda por hacer
 
-- **Qué hizo Bitcoin la última vez.** Con las velas que ya sabe pedir la aplicación (`fetchTradeCandles`) se puede medir el movimiento real en los quince minutos posteriores a cada publicación pasada. Es la respuesta más honesta a «qué podría pasar»: no una predicción, sino lo que de hecho pasó las últimas seis veces.
+- **Guardar las reacciones medidas.** Hoy se calculan al abrir la ficha, con una petición de velas por publicación (seis, en paralelo, cacheadas una hora). Guardarlas en una tabla permitiría responder preguntas agregadas que ahora no se pueden hacer: «de media, ¿cuánto mueve el IPC frente al PPI?», o «¿qué datos mueven de verdad este contrato?».
 - **Aviso al móvil** antes de un evento de alto impacto con posición abierta, reutilizando `push_subscriptions`.
 - **Marcar la operación** con los eventos que ocurrieron mientras estaba abierta, para que el diario pueda responder «¿cuánto de esto fue el mercado y cuánto fui yo?».
+- **Ampliar el catálogo** de `indicator-guide.ts`. Cubre los datos que mueven el mercado; los que no están caen a la definición de la fuente, que es correcta pero está en inglés y no explica cómo se lee.

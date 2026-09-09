@@ -1,4 +1,7 @@
+import { ChevronRight } from "lucide-react";
 import { DateTime } from "luxon";
+import type { Route } from "next";
+import Link from "next/link";
 
 import { ImpactBars } from "@/components/economic-calendar/impact-bars";
 import { formatEventValue, surpriseOf } from "@/lib/economic-calendar/format";
@@ -68,8 +71,15 @@ function EventRow({
   const hora = DateTime.fromISO(event.occursAt, { zone: "utc" }).setZone(timezone).toFormat("HH:mm");
 
   return (
-    <li className={cn("px-3 py-2", yaSalio && "opacity-70")}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <li className={cn(yaSalio && "opacity-70")}>
+      {/* Toda la fila entra en la ficha, que es donde vive lo que explica el
+          dato y cómo reaccionó el precio las veces anteriores. Antes esto era
+          un `<details>` con la definición en inglés metida bajo la fila; una
+          agenda de cuarenta filas no es sitio para leer nada. */}
+      <Link
+        href={`/noticias/${event.id}` as Route}
+        className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2 transition-colors hover:bg-accent/40"
+      >
         <span className="w-11 shrink-0 text-sm tabular-nums text-muted-foreground">{hora}</span>
         <ImpactBars importance={event.importance} />
 
@@ -77,6 +87,11 @@ function EventRow({
           <span className="font-medium">{event.title}</span>
           {event.period ? (
             <span className="ml-1.5 text-xs text-muted-foreground">{event.period}</span>
+          ) : null}
+          {categoryLabel(event.category) ? (
+            <span className="ml-1.5 hidden text-xs text-muted-foreground sm:inline">
+              · {categoryLabel(event.category)}
+            </span>
           ) : null}
         </span>
 
@@ -92,20 +107,9 @@ function EventRow({
             tono={sorpresa && sorpresa.direction !== "EN_LINEA" ? "sorpresa" : undefined}
           />
         </span>
-      </div>
 
-      {event.comment ? (
-        <details className="mt-1 ml-14">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            Qué mide
-            {categoryLabel(event.category) ? ` · ${categoryLabel(event.category)}` : ""}
-          </summary>
-          <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
-            {event.comment}
-            {event.sourceName ? <span className="block mt-1">Fuente: {event.sourceName}</span> : null}
-          </p>
-        </details>
-      ) : null}
+        <ChevronRight className="size-3.5 shrink-0 self-center text-muted-foreground" aria-hidden />
+      </Link>
     </li>
   );
 }

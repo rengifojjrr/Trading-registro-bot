@@ -12,10 +12,13 @@ import { pickSearchParam } from "@/lib/analytics/filter-params";
 import { fetchOpenLivePositions } from "@/lib/analytics/queries";
 import { requireUser } from "@/lib/auth/require-user";
 import {
+  fetchCategoriesBetween,
   fetchEventsBetween,
   fetchIndicatorHistory,
   fetchNextKeyEvent,
 } from "@/lib/economic-calendar/queries";
+import { categoryLabel } from "@/lib/economic-calendar/relevance";
+import type { EventImportance } from "@/lib/economic-calendar/types";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +37,28 @@ import { cn } from "@/lib/utils";
 /** Cuántos días hacia delante enseña la agenda. */
 const DIAS_AGENDA = 14;
 
+/**
+ * Los niveles del filtro.
+ *
+ * «Importantes» es el de entrada y agrupa alto y medio; los tres niveles
+ * sueltos están porque no es lo mismo preparar la semana -- donde sólo
+ * interesa lo grande -- que buscar por qué se movió el precio a una hora rara,
+ * donde hace falta ver hasta lo pequeño.
+ */
+const NIVELES = {
+  importantes: { label: "Importantes", min: 0 as EventImportance, exact: undefined },
+  alto: { label: "Alto", min: undefined, exact: 1 as EventImportance },
+  medio: { label: "Medio", min: undefined, exact: 0 as EventImportance },
+  bajo: { label: "Bajo", min: undefined, exact: -1 as EventImportance },
+  todo: { label: "Todo", min: undefined, exact: undefined },
+} as const;
+
+type NivelKey = keyof typeof NIVELES;
+
+function esNivel(value: string | undefined): value is NivelKey {
+  return value !== undefined && value in NIVELES;
+}
+
 export default async function NoticiasPage(props: PageProps<"/noticias">) {
   const user = await requireUser();
   const supabase = await createClient();
@@ -46,10 +71,9 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
     .maybeSingle();
   const timezone = settings?.timezone || "UTC";
 
-  // Por defecto se esconde lo de impacto bajo: son subastas de letras e
-  // inventarios de crudo, cuarenta filas al día que entierran las tres que
-  // importan. Enseñarlo todo es una opción, no lo que se ve al entrar.
-  const verTodo = pickSearchParam(searchParams.filtro) === "todo";
+  const nivelParam = pickSearchParam(searchParams.nivel);
+  const nivel: NivelKey = esNivel(nivelParam) ? nivelParam : "importantes";
+  const categoria = pickSearchParam(searchParams.cat) || null;
 
   const now = new Date();
   // Desde el principio de hoy *en tu zona*, para que lo ya publicado hoy siga
@@ -58,12 +82,22 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
   const desde = DateTime.now().setZone(timezone).startOf("day").toJSDate();
   const hasta = DateTime.now().setZone(timezone).plus({ days: DIAS_AGENDA }).endOf("day").toJSDate();
 
-  const [events, next, openPositions] = await Promise.all([
-    fetchEventsBetween({ from: desde, to: hasta, minImportance: verTodo ? -1 : 0 }),
+  const [events, next, openPositions, categorias] = await Promise.all([
+    fetchEventsBetween({
+      from: desde,
+      to: hasta,
+      minImportance: NIVELES[nivel].min,
+      exactImportance: NIVELES[nivel].exact,
+      category: categoria ?? undefined,
+    }),
     fetchNextKeyEvent(now),
     // Nunca tumba la página: sin Coinbase configurado el calendario sigue
     // siendo útil, sólo pierde el aviso de posición.
     fetchOpenLivePositions().catch(() => []),
+    // Las categorías se calculan sobre todo lo de la ventana, no sobre el
+    // nivel filtrado: si dependieran del nivel, elegir una categoría podría
+    // hacer desaparecer el chip que acabas de pulsar.
+    fetchCategoriesBetween({ from: desde, to: hasta }).catch(() => []),
   ]);
 
   const history =
@@ -76,11 +110,22 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
     0,
   );
 
+  /** Conserva el otro filtro al cambiar uno: son dos ejes, no una lista de opciones. */
+  const href = (cambio: { nivel?: NivelKey; cat?: string | null }): Route => {
+    const params = new URLSearchParams();
+    const nivelFinal = cambio.nivel ?? nivel;
+    const catFinal = cambio.cat === undefined ? categoria : cambio.cat;
+    if (nivelFinal !== "importantes") params.set("nivel", nivelFinal);
+    if (catFinal) params.set("cat", catFinal);
+    const query = params.toString();
+    return (query ? `/noticias?${query}` : "/noticias") as Route;
+  };
+
   return (
     <>
       <PageHeader
         title="Noticias"
-        description="Datos macroeconómicos de Estados Unidos: cuándo se publican, qué se espera y qué salió."
+        description="Datos macroeconómicos de Estados Unidos: cuándo se publican, qué se espera y qué salió. Entra en cualquiera para ver qué mide y cómo reaccionó el precio las veces anteriores."
       />
 
       {/* Pide el refresco después de pintar, no antes: la página ya tiene lo
@@ -97,20 +142,40 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
         />
       ) : null}
 
-      <div className="flex items-center gap-2 text-sm">
-        <FiltroLink href={"/noticias" as Route} activo={!verTodo}>
-          Lo que importa
-        </FiltroLink>
-        <FiltroLink href={"/noticias?filtro=todo" as Route} activo={verTodo}>
-          Todo
-        </FiltroLink>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-muted-foreground">Impacto</span>
+          {(Object.keys(NIVELES) as NivelKey[]).map((key) => (
+            <Chip key={key} href={href({ nivel: key })} activo={nivel === key}>
+              {NIVELES[key].label}
+            </Chip>
+          ))}
+        </div>
+
+        {categorias.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs text-muted-foreground">Tema</span>
+            <Chip href={href({ cat: null })} activo={categoria === null}>
+              Todos
+            </Chip>
+            {categorias.map((cat) => {
+              const label = categoryLabel(cat);
+              if (!label) return null;
+              return (
+                <Chip key={cat} href={href({ cat })} activo={categoria === cat}>
+                  {label}
+                </Chip>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       {events.length === 0 ? (
         <EmptyState
           icon={CalendarOff}
-          title="Todavía no hay eventos guardados"
-          description="El calendario se está trayendo por primera vez. La primera carga baja algo más de un año de publicaciones, así que puede tardar unos segundos; recarga en un momento."
+          title="Nada que enseñar con estos filtros"
+          description="No hay publicaciones de ese impacto y ese tema en los próximos catorce días. Prueba a ampliar el filtro de impacto."
         />
       ) : (
         <EventAgenda events={events} timezone={timezone} now={now} />
@@ -125,7 +190,7 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
   );
 }
 
-function FiltroLink({
+function Chip({
   href,
   activo,
   children,
