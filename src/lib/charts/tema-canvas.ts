@@ -55,3 +55,26 @@ export function resolverTemaCanvas(): TemaCanvas {
   }
   return tema;
 }
+
+/**
+ * Una variante translúcida de un color ya resuelto.
+ *
+ * Vive aquí y no en un componente porque la usan las dos gráficas -- la de una
+ * operación y la de la reacción a una noticia -- y una copia en cada sitio es
+ * una copia que se corrige en uno solo.
+ *
+ * Acepta las formas en que puede llegar un token (`#rgb`, `#rrggbb`,
+ * `hsl(...)`, `rgb(...)`) y devuelve el original si no reconoce ninguna: un
+ * color sin transparencia se ve raro, pero un `undefined` no se ve.
+ */
+export function conAlfa(color: string, alfa: number): string {
+  const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
+    const n = parseInt(h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alfa})`;
+  }
+  const fn = color.trim().match(/^(hsl|rgb)\((.+)\)$/i);
+  if (fn) return `${fn[1].toLowerCase()}a(${fn[2]}, ${alfa})`;
+  return color;
+}

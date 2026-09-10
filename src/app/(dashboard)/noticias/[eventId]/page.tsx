@@ -262,7 +262,7 @@ export default async function EventoPage(props: PageProps<"/noticias/[eventId]">
                   {seleccionada.event.period ? ` · ${seleccionada.event.period}` : ""}
                 </p>
                 <ReactionChart
-                  candles={velasSeleccionadas.candles}
+                  initialCandles={velasSeleccionadas.candles}
                   eventAt={seleccionada.event.occursAt}
                   timezone={timezone}
                   productId={velasSeleccionadas.productId}

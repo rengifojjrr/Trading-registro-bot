@@ -87,9 +87,22 @@ Un plazo cuyo histórico de velas no alcanza queda en blanco, nunca con el últi
 
 Todas las cifras de arriba son el fixture de `market-reaction.real.test.ts`: la medición se prueba contra cuatro horas de velas reales, con sus huecos y sus mechas, no sólo contra números redondos.
 
-### El gráfico se ajusta al plazo
+### El gráfico
 
-Cuatro horas en velas de un minuto son 240 barras en el ancho de una tarjeta: pelos ilegibles. Así que el gráfico recorta la ventana y agrupa las velas según el plazo (1 min hasta una hora, 2 min a las dos horas, 5 min a las cuatro), y sombrea el tramo que miden las cifras. Las **medidas siempre se calculan sobre el minuto**, que es donde está el movimiento; la agrupación es sólo para poder verlo.
+Empezó siendo un SVG fijo: se veía la ventana que la aplicación decidía y ni una vela más. Servía para responder «cuánto se movió» y no para lo siguiente que uno quiere hacer, que es mirar antes y después — qué venía haciendo el precio esa mañana, si el movimiento aguantó a la tarde. Para eso hace falta desplazar y ampliar, y eso es un gráfico, no un dibujo.
+
+Ahora es `lightweight-charts`, la misma librería que el gráfico de una operación, con:
+
+- **Desplazamiento y zoom**, y **carga de más velas al llegar al borde**: se pide el tramo de al lado por `/api/economic-calendar/candles` y se funde con lo que ya había. Nunca más allá de ahora — pedir el futuro devuelve vacío y volvería a pedirlo en cada arrastre.
+- **Temporalidades** de 1 min, 5 min, 15 min y 1 hora. Cada ventana inicial cabe en las ~300 velas por petición que devuelve Coinbase (comprobado: 299, 300, 296 y 298).
+- **Barra de precios** con el OHLC de la vela bajo el cursor, fija arriba y no en un globo flotante, que taparía justo la zona que se mira.
+- **Marcas**: una flecha en la publicación, otra al final del plazo medido, y la línea de puntos del precio previo. Son marcadores de la librería y no líneas dibujadas encima porque es lo que aguanta bien al ampliar y desplazar.
+- **Horas en tu zona** en el eje y en el crosshair: sin `tickMarkFormatter` la librería las pinta en UTC y el gráfico contradiría a la tabla de al lado.
+- **Botón de volver al momento**, porque tras pasearse por la sesión entera hace falta una forma de volver sin recargar.
+
+La paleta sale de `lib/charts/tema-canvas.ts`, que ya era el sitio único donde se resuelven los tokens del tema para un canvas y de donde beben las gráficas de operaciones y de bots. Un canvas no entiende `var(--positive)`, así que hay que resolverlo en tiempo de ejecución; tenerlo en un solo módulo es lo que impide que dos gráficos de la misma aplicación acaben con dos verdes distintos. `conAlfa` se movió ahí desde el componente del gráfico de operaciones por lo mismo.
+
+**Lo que este gráfico no trae, a propósito:** herramientas de dibujo, indicadores ni capturas. Todo eso vive en el gráfico de una operación y se guarda contra ella (`chart_drawings.trade_id` es `not null` con clave ajena a `trades`); aquí no hay operación a la que atarlo, y hacerlo genérico costaría reescribir un componente de 2.500 líneas —`entry`, `exit`, `fills` y `direction` suman unas setenta referencias, y siete rutas de API cuelgan del identificador de la operación— para portar cosas que sobre la reacción del IPC de mayo nadie va a volver a mirar.
 
 ### Las velas
 

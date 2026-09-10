@@ -66,6 +66,7 @@ import { DrawingSettings } from "@/components/trades/drawing-settings";
 import { IndicatorMenu } from "@/components/trades/indicator-menu";
 import { IndicatorPane } from "@/components/trades/indicator-pane";
 import { ToolPalette } from "@/components/trades/tool-palette";
+import { conAlfa as withAlpha } from "@/lib/charts/tema-canvas";
 import { buildShape, type Point as ShapePoint } from "@/lib/charts/geometry";
 import { distanceToShape, renderShape } from "@/lib/charts/render";
 import {
@@ -200,17 +201,6 @@ type ChartTheme = typeof THEME_FALLBACK;
  * the fallbacks), so both are handled; anything unrecognised is returned
  * unchanged, which merely loses the transparency rather than the bar.
  */
-function withAlpha(color: string, alpha: number): string {
-  const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hex) {
-    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
-    const n = parseInt(h, 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-  }
-  const fn = color.trim().match(/^(hsl|rgb)\((.+)\)$/i);
-  if (fn) return `${fn[1].toLowerCase()}a(${fn[2]}, ${alpha})`;
-  return color;
-}
 
 /**
  * Un token del tema, resuelto a color.

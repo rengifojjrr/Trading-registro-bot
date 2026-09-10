@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  aggregateCandles,
   formatAbsPct,
   formatHorizonLabel,
   formatSignedPct,
@@ -99,33 +98,6 @@ describe("measureReaction", () => {
   it("acepta las velas desordenadas", () => {
     const candles = [...serie(20)].reverse();
     expect(measureReaction(candles, EVENTO)!.reference).toBe(100);
-  });
-});
-
-describe("aggregateCandles", () => {
-  it("junta las velas en bloques alineados con el reloj", () => {
-    const candles = [
-      vela(0, { open: 100, high: 105, low: 99, close: 103 }),
-      vela(1, { open: 103, high: 108, low: 102, close: 107 }),
-      vela(2, { open: 107, high: 109, low: 101, close: 104 }),
-      vela(3, { open: 104, high: 106, low: 103, close: 105 }),
-    ];
-
-    // T0 es 12:30 en punto, así que con bloques de dos minutos caen 0-1 y 2-3.
-    const out = aggregateCandles(candles, 2);
-
-    expect(out).toHaveLength(2);
-    expect(out[0]).toEqual({ time: T0, open: 100, high: 108, low: 99, close: 107 });
-    expect(out[1]).toEqual({ time: T0 + 120, open: 107, high: 109, low: 101, close: 105 });
-  });
-
-  it("con bloques de un minuto o menos devuelve lo mismo, ordenado", () => {
-    const candles = [vela(2, { close: 102 }), vela(0, { close: 100 })];
-    expect(aggregateCandles(candles, 1).map((c) => c.close)).toEqual([100, 102]);
-  });
-
-  it("sin velas no inventa ninguna", () => {
-    expect(aggregateCandles([], 5)).toEqual([]);
   });
 });
 

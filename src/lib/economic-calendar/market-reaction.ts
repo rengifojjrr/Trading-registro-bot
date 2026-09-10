@@ -22,6 +22,8 @@ export interface ReactionCandle {
   high: number;
   low: number;
   close: number;
+  /** Opcional: ninguna medida lo usa, sólo el gráfico si decide pintarlo. */
+  volume?: number;
 }
 
 /** Los plazos que se miden. Cuatro: más columnas se leen peor de lo que informan. */
@@ -129,64 +131,6 @@ export function measureReaction(
 /** La medida de un plazo concreto, o null si no se midió. */
 export function horizonOf(reaction: MarketReaction, minutes: number): HorizonMeasure | null {
   return reaction.horizons.find((h) => h.minutes === minutes) ?? null;
-}
-
-/**
- * Junta velas de un minuto en velas de N minutos.
- *
- * Para el gráfico, no para las cifras: cuatro horas son doscientas cuarenta
- * velas de un minuto, y en el ancho de una tarjeta se convierten en pelos
- * ilegibles. Las medidas siempre se calculan sobre el minuto, que es donde
- * está el movimiento de verdad.
- *
- * Los bloques se alinean con el reloj (`time` múltiplo del tamaño), no con la
- * primera vela: así la vela que contiene la publicación es siempre la misma
- * aunque cambie la ventana.
- */
-export function aggregateCandles(candles: ReactionCandle[], groupMinutes: number): ReactionCandle[] {
-  if (groupMinutes <= 1 || candles.length === 0) return [...candles].sort((a, b) => a.time - b.time);
-
-  const paso = groupMinutes * 60;
-  const bloques = new Map<number, ReactionCandle[]>();
-
-  for (const vela of candles) {
-    const inicio = Math.floor(vela.time / paso) * paso;
-    const lista = bloques.get(inicio) ?? [];
-    lista.push(vela);
-    bloques.set(inicio, lista);
-  }
-
-  return [...bloques.entries()]
-    .map(([time, grupo]) => {
-      const orden = grupo.sort((a, b) => a.time - b.time);
-      return {
-        time,
-        open: orden[0].open,
-        close: orden[orden.length - 1].close,
-        high: Math.max(...orden.map((c) => c.high)),
-        low: Math.min(...orden.map((c) => c.low)),
-      };
-    })
-    .sort((a, b) => a.time - b.time);
-}
-
-/**
- * Cuánto gráfico enseñar para un plazo, y de qué tamaño las velas.
- *
- * Dos reglas: se ve algo antes y algo después del plazo medido -- para que el
- * final no caiga en el borde y se entienda que la historia sigue -- y las
- * velas se agrupan lo justo para que quepan legibles. Cuatro horas en velas de
- * un minuto son doscientas cuarenta barras en el ancho de una tarjeta: pelos.
- */
-export function chartWindowFor(horizonMinutes: number): {
-  beforeMin: number;
-  afterMin: number;
-  groupMin: number;
-} {
-  if (horizonMinutes <= 15) return { beforeMin: 10, afterMin: 25, groupMin: 1 };
-  if (horizonMinutes <= 60) return { beforeMin: 20, afterMin: 80, groupMin: 1 };
-  if (horizonMinutes <= 120) return { beforeMin: 25, afterMin: 145, groupMin: 2 };
-  return { beforeMin: 30, afterMin: 265, groupMin: 5 };
 }
 
 export function formatPct(value: number): string {

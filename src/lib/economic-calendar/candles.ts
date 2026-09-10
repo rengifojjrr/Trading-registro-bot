@@ -1,5 +1,7 @@
 import "server-only";
 
+import { GRANULARITY_SECONDS } from "@/lib/analytics/chart-window";
+import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { serverEnv } from "@/lib/env";
 
 import type { ReactionCandle } from "./market-reaction";
@@ -23,25 +25,10 @@ import type { ReactionCandle } from "./market-reaction";
 const ENDPOINT = "https://api.coinbase.com/api/v3/brokerage/market/products";
 
 /** El mercado de referencia cuando el producto configurado no tiene velas. */
-const FALLBACK_PRODUCT = "BTC-USD";
+export const FALLBACK_PRODUCT = "BTC-USD";
 
-/**
- * La ventana que se trae, en minutos alrededor de la publicación.
- *
- * Coinbase corta en 350 velas por petición, así que con velas de un minuto el
- * techo está en 350 minutos. Treinta antes y cuatro horas y media después son
- * 300: cubre el plazo más largo que se mide (cuatro horas) con margen para que
- * la última vela no caiga justo en el borde, y deja sitio por si algún día se
- * añade un plazo mayor sin tener que paginar.
- */
-const ANTES_MIN = 30;
-const DESPUES_MIN = 270;
-
-export interface ReactionCandles {
-  candles: ReactionCandle[];
-  /** De qué producto son. Se dice en la pantalla: no es lo mismo el contrato que el contado. */
-  productId: string;
-}
+/** Coinbase corta en 350 velas por petición. Se pide por debajo, con margen. */
+export const MAX_CANDLES = 300;
 
 interface RawCandle {
   start?: unknown;
@@ -49,6 +36,7 @@ interface RawCandle {
   high?: unknown;
   low?: unknown;
   close?: unknown;
+  volume?: unknown;
 }
 
 function num(value: unknown): number | null {
@@ -57,25 +45,43 @@ function num(value: unknown): number | null {
 }
 
 function mapCandles(raw: RawCandle[]): ReactionCandle[] {
-  return raw
-    .map((c) => {
-      const time = num(c.start);
-      const open = num(c.open);
-      const high = num(c.high);
-      const low = num(c.low);
-      const close = num(c.close);
-      if (time === null || open === null || high === null || low === null || close === null) return null;
-      return { time, open, high, low, close };
-    })
-    .filter((c): c is ReactionCandle => c !== null)
-    .sort((a, b) => a.time - b.time);
+  const out: ReactionCandle[] = [];
+  for (const c of raw) {
+    const time = num(c.start);
+    const open = num(c.open);
+    const high = num(c.high);
+    const low = num(c.low);
+    const close = num(c.close);
+    // Una vela a la que le falte cualquier precio no se arregla poniéndole un
+    // cero: se descarta, y el gráfico enseña el hueco que de verdad hay.
+    if (time === null || open === null || high === null || low === null || close === null) continue;
+    out.push({ time, open, high, low, close, volume: num(c.volume) ?? 0 });
+  }
+  return out.sort((a, b) => a.time - b.time);
 }
 
-async function pedir(productId: string, from: Date, to: Date): Promise<ReactionCandle[]> {
-  const url = new URL(`${ENDPOINT}/${encodeURIComponent(productId)}/candles`);
-  url.searchParams.set("start", String(Math.floor(from.getTime() / 1000)));
-  url.searchParams.set("end", String(Math.floor(to.getTime() / 1000)));
-  url.searchParams.set("granularity", "ONE_MINUTE");
+/**
+ * Un tramo de velas de un producto.
+ *
+ * Recorta el final si el rango pedido daría más velas de las que Coinbase
+ * devuelve de una vez: sin esto, la respuesta llegaría cortada por el lado que
+ * decida el servidor y el gráfico enseñaría un hueco sin decir que lo hay.
+ */
+export async function fetchCandlesRange(params: {
+  productId: string;
+  from: Date;
+  to: Date;
+  granularity: CoinbaseCandleGranularity;
+}): Promise<ReactionCandle[]> {
+  const segundos = GRANULARITY_SECONDS[params.granularity];
+  const desde = Math.floor(params.from.getTime() / 1000);
+  const hastaPedido = Math.floor(params.to.getTime() / 1000);
+  const hasta = Math.min(hastaPedido, desde + MAX_CANDLES * segundos);
+
+  const url = new URL(`${ENDPOINT}/${encodeURIComponent(params.productId)}/candles`);
+  url.searchParams.set("start", String(desde));
+  url.searchParams.set("end", String(hasta));
+  url.searchParams.set("granularity", params.granularity);
 
   // Las velas de una publicación pasada no cambian nunca, pero las de una de
   // hace diez minutos todavía sí. Una hora de caché sirve para las dos.
@@ -100,13 +106,29 @@ export function chartProductId(): string {
   return serverEnv().COINBASE_PRODUCT_ID ?? FALLBACK_PRODUCT;
 }
 
+/**
+ * La ventana inicial de la ficha, en minutos alrededor de la publicación.
+ *
+ * Treinta antes y cuatro horas y media después caben en 300 velas de un
+ * minuto y cubren el plazo más largo que se mide. A partir de ahí, desplazar
+ * el gráfico pide más tramos por la ruta de velas.
+ */
+const ANTES_MIN = 30;
+const DESPUES_MIN = 270;
+
+export interface ReactionCandles {
+  candles: ReactionCandle[];
+  /** De qué producto son. Se dice en la pantalla: no es lo mismo el contrato que el contado. */
+  productId: string;
+}
+
 export async function fetchReactionCandles(at: Date): Promise<ReactionCandles | null> {
   const from = new Date(at.getTime() - ANTES_MIN * 60_000);
   const to = new Date(at.getTime() + DESPUES_MIN * 60_000);
 
   for (const productId of [chartProductId(), FALLBACK_PRODUCT]) {
     try {
-      const candles = await pedir(productId, from, to);
+      const candles = await fetchCandlesRange({ productId, from, to, granularity: "ONE_MINUTE" });
       // Menos de un puñado de velas no da para medir nada: se prueba el
       // siguiente producto antes que enseñar un gráfico de tres barras.
       if (candles.length >= 10) return { candles, productId };
