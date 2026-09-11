@@ -62,9 +62,20 @@ Esto es lo más delicado de todo el módulo, así que el encuadre es explícito 
 
 Es la respuesta honesta a «qué podría pasar»: no una predicción, sino lo que de hecho pasó, medido.
 
+### Dos selectores, no tres
+
+La sección entera (`market-reaction-section.tsx`) es cliente, y esto no es un detalle de implementación: **comparar dos publicaciones es para lo que sirve**. Cuando cada publicación era un enlace con `?ref=`, elegir otra recargaba la página y devolvía la vista arriba del todo, así que comparar costaba dos viajes y dos vueltas a bajar con la rueda. Ahora sólo se mueve el gráfico.
+
+De paso desaparecieron dos selectores de tiempo que parecían el mismo. Quedan dos, y cada uno vive junto a lo que cambia:
+
+- **Medir a** (15 min · 1 h · 2 h · 4 h), arriba de la lista: cuánto después del dato se mide. Manda sobre la columna comparativa, sobre la flecha del gráfico y sobre qué columna de la tabla va resaltada.
+- **Velas de** (1 min · 5 min · 15 min · 1 h), dentro del gráfico: el tamaño de vela. Es cosa del dibujo y no de la medida, y mezclarlas era justo la confusión.
+
+Las velas de la primera publicación llegan con el HTML; las demás se piden al elegirlas, con la respuesta guardada para que volver a una ya vista sea instantáneo. La publicación dibujada y sus velas son **un solo estado**: si se cambiara la una antes que las otras, durante un instante la cabecera diría una fecha y el gráfico enseñaría otra. Mientras llegan, lo de abajo sigue siendo lo anterior, atenuado.
+
 ### Cuatro plazos, no uno
 
-Se mide a **15 minutos, 1 hora, 2 horas y 4 horas**. Un selector cambia el plazo de la columna comparativa y del gráfico; la tabla de la publicación seleccionada enseña los cuatro a la vez, para que leer la fila de «acabó» de izquierda a derecha cuente la historia: si el golpe fue inmediato y se deshizo, si tardó en arrancar, o si se dio la vuelta.
+Se mide a **15 minutos, 1 hora, 2 horas y 4 horas**. La tabla de la publicación seleccionada enseña los cuatro a la vez, para que leer la fila de «acabó» de izquierda a derecha cuente la historia: si el golpe fue inmediato y se deshizo, si tardó en arrancar, o si se dio la vuelta.
 
 Que no baste con una cifra no es teórico. El PPI del 13 de agosto de 2026, sobre el contrato que se opera:
 
@@ -95,10 +106,11 @@ Ahora es `lightweight-charts`, la misma librería que el gráfico de una operaci
 
 - **Desplazamiento y zoom**, y **carga de más velas al llegar al borde**: se pide el tramo de al lado por `/api/economic-calendar/candles` y se funde con lo que ya había. Nunca más allá de ahora — pedir el futuro devuelve vacío y volvería a pedirlo en cada arrastre.
 - **Temporalidades** de 1 min, 5 min, 15 min y 1 hora. Cada ventana inicial cabe en las ~300 velas por petición que devuelve Coinbase (comprobado: 299, 300, 296 y 298).
-- **Barra de precios** con el OHLC de la vela bajo el cursor, fija arriba y no en un globo flotante, que taparía justo la zona que se mira.
-- **Marcas**: una flecha en la publicación, otra al final del plazo medido, y la línea de puntos del precio previo. Son marcadores de la librería y no líneas dibujadas encima porque es lo que aguanta bien al ampliar y desplazar.
-- **Horas en tu zona** en el eje y en el crosshair: sin `tickMarkFormatter` la librería las pinta en UTC y el gráfico contradiría a la tabla de al lado.
-- **Botón de volver al momento**, porque tras pasearse por la sesión entera hace falta una forma de volver sin recargar.
+- **Barra de precios** con el OHLC de la vela bajo el cursor, fija arriba y no en un globo flotante, que taparía justo la zona que se mira. Acaba en **«vs. antes»**: dónde está esa vela respecto al precio de justo antes del dato, que es la cifra que se viene a leer — la variación contra su propia apertura no dice nada aquí.
+- **Marcas**: una flecha en la publicación, otra al final del plazo medido, y la línea de puntos del precio previo. Son marcadores de la librería y no líneas dibujadas encima porque es lo que aguanta bien al ampliar y desplazar. Se **reutilizan** en vez de recrearse con cada tramo: creándolas de nuevo se apilaban, y el gráfico acababa con tres etiquetas «antes del dato» superpuestas en el eje, que además no eran el mismo precio.
+- **Horas en tu zona** en el eje y en el crosshair: sin `tickMarkFormatter` la librería las pinta en UTC y el gráfico contradiría a la tabla de al lado. Los precios van con separador de miles por lo mismo: 77.284,77 se lee de un vistazo y 77284.77 hay que contarlo.
+- **Botón de centrar**, porque tras pasearse por la sesión entera hace falta una forma de volver sin recargar. Reencuadra contando **velas** y no minutos: con minutos fijos, «los 45 minutos anteriores» es menos de una vela en la temporalidad de una hora, y el gráfico salía con el dato pegado a un borde.
+- **Alto según el ancho** (320 px en móvil, 420 px a partir de `sm`): lo decide el CSS y el gráfico lo sigue, en vez de un alto fijo que en pantalla grande deja las velas aplastadas.
 
 La paleta sale de `lib/charts/tema-canvas.ts`, que ya era el sitio único donde se resuelven los tokens del tema para un canvas y de donde beben las gráficas de operaciones y de bots. Un canvas no entiende `var(--positive)`, así que hay que resolverlo en tiempo de ejecución; tenerlo en un solo módulo es lo que impide que dos gráficos de la misma aplicación acaben con dos verdes distintos. `conAlfa` se movió ahí desde el componente del gráfico de operaciones por lo mismo.
 
