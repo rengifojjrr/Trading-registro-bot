@@ -143,6 +143,22 @@ describe("se puede salir sin contestar", () => {
   });
 });
 
+describe("ir a mirar la operación", () => {
+  it("hay salida a la ficha desde cada pregunta, no sólo al final", async () => {
+    const user = userEvent.setup();
+    abrir();
+
+    for (let i = 0; i < SURVEY_TOTAL; i += 1) {
+      const enlace = screen.getByRole("link", { name: /Ver la operación/ });
+      expect(enlace.getAttribute("href")).toBe(`/trades/${TRADE_ID}`);
+      await user.click(screen.getByRole("button", { name: /Saltar|Terminar/ }));
+    }
+
+    // Y también en la pantalla final.
+    await waitFor(() => expect(screen.getByRole("link", { name: /Ver la operación/ })).toBeTruthy());
+  });
+});
+
 describe("empieza donde lo dejaste", () => {
   it("con las dos primeras contestadas, abre en la tercera", () => {
     abrir(operacion({ plan: 4, entrada: 2 }));

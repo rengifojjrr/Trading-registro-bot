@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Loader2, PartyPopper, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, Loader2, PartyPopper, X } from "lucide-react";
 import { DateTime } from "luxon";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
@@ -240,6 +240,7 @@ export function TradeSurvey({
           <Pregunta
             pantalla={pantalla}
             answers={answers}
+            tradeId={trade.id}
             onNota={responderNota}
             onEmocion={alternarEmocion}
             onError={alternarError}
@@ -331,6 +332,7 @@ function Cabecera({
 function Pregunta({
   pantalla,
   answers,
+  tradeId,
   onNota,
   onEmocion,
   onError,
@@ -341,6 +343,7 @@ function Pregunta({
 }: {
   pantalla: SurveyStepId;
   answers: SurveyAnswers;
+  tradeId: string;
   onNota: (paso: "plan" | "entrada", valor: number) => void;
   onEmocion: (emocion: string) => void;
   onError: (code: MistakeCode) => void;
@@ -464,7 +467,7 @@ function Pregunta({
         />
       ) : null}
 
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         {hayAnterior ? (
           <Button type="button" variant="ghost" size="sm" onClick={onAtras}>
             <ArrowLeft className="size-3.5" aria-hidden />
@@ -472,14 +475,30 @@ function Pregunta({
           </Button>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* «Saltar» y «Siguiente» son el mismo botón con dos nombres, porque
-              son la misma acción: pasar. Llamarlo «saltar» cuando no has
-              contestado quita la sensación de estar dejando algo a medias. */}
-          <Button type="button" size="sm" variant={contestada ? "default" : "ghost"} onClick={onContinuar}>
-            {contestada ? (ultima ? "Terminar" : "Siguiente") : ultima ? "Terminar" : "Saltar"}
-          </Button>
-        </div>
+        {/* Media de las preguntas no se contestan de memoria: «¿qué tal la
+            entrada?» se responde mirando dónde entraste. Sin esta salida hay
+            que cerrar la encuesta para ir a verlo, y lo que se cierra no se
+            vuelve a abrir. Lo contestado ya está guardado, así que se puede
+            ir y volver; al volver, la encuesta sigue donde la dejaste. */}
+        <Button type="button" variant="ghost" size="sm" asChild>
+          <Link href={`/trades/${tradeId}`}>
+            Ver la operación
+            <ArrowUpRight className="size-3.5" aria-hidden />
+          </Link>
+        </Button>
+
+        {/* «Saltar» y «Siguiente» son el mismo botón con dos nombres, porque
+            son la misma acción: pasar. Llamarlo «saltar» cuando no has
+            contestado quita la sensación de estar dejando algo a medias. */}
+        <Button
+          type="button"
+          size="sm"
+          variant={contestada ? "default" : "ghost"}
+          onClick={onContinuar}
+          className="ml-auto"
+        >
+          {contestada ? (ultima ? "Terminar" : "Siguiente") : ultima ? "Terminar" : "Saltar"}
+        </Button>
       </div>
     </div>
   );
@@ -564,7 +583,10 @@ function Final({
 
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" asChild>
-          <Link href={`/trades/${tradeId}`}>Ver la operación</Link>
+          <Link href={`/trades/${tradeId}`}>
+            Ver la operación
+            <ArrowUpRight className="size-3.5" aria-hidden />
+          </Link>
         </Button>
         <Button type="button" size="sm" onClick={onCerrar}>
           Cerrar
