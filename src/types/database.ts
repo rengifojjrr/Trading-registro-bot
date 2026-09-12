@@ -1782,6 +1782,7 @@ export interface Database {
           mistake_tag: string | null;
           lesson_learned: string | null;
           notes: string | null;
+          survey_closed_at: string | null;
           created_at: string;
           updated_at: string;
         },
@@ -1803,6 +1804,7 @@ export interface Database {
           mistake_tag?: string | null;
           lesson_learned?: string | null;
           notes?: string | null;
+          survey_closed_at?: string | null;
         }
       >;
 

@@ -1,6 +1,8 @@
 import { Decimal } from "decimal.js";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
+import { SurveyPrompt } from "@/components/journal/survey-launcher";
 import { BackToList } from "@/components/shared/back-to-list";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -338,6 +340,15 @@ export default async function TradeDetailPage(props: PageProps<"/trades/[tradeId
       <div className="flex justify-end">
         <DeleteTrade tradeId={trade.id} source={trade.source} hasJournal={Boolean(journalEntry)} />
       </div>
+
+      {/* Encima del formulario largo, no debajo: es la alternativa a él para
+          quien llega aquí, ve dieciséis campos vacíos y se va. Sólo para las
+          cerradas -- media operación no se puede repasar. */}
+      {trade.closed_at ? (
+        <Suspense fallback={null}>
+          <SurveyPrompt tradeId={trade.id} />
+        </Suspense>
+      ) : null}
 
       <JournalForm
         tradeId={trade.id}

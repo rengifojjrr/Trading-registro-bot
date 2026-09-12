@@ -4,6 +4,7 @@ import { raiseNotification } from "@/lib/notifications/create";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { findPendingJournals, WINDOW_DAYS, type ClosedTrade } from "./pending";
+import { hasJournalContent, JOURNAL_CONTENT_COLUMNS } from "./written";
 
 /**
  * Recuerda apuntar las operaciones que se cerraron solas.
@@ -34,10 +35,12 @@ export async function checkPendingJournals(userId: string): Promise<string[]> {
   if (!trades || trades.length === 0) return [];
 
   // Una fila de diario vacía no cuenta como apuntada: el formulario puede
-  // haberla creado al abrirlo. Lo que cuenta es que haya algo escrito.
+  // haberla creado al abrirlo. Lo que cuenta es que haya algo escrito, y el
+  // criterio vive en un solo sitio para que esto y la bandeja no puedan
+  // acabar contando cosas distintas.
   const { data: journals } = await supabase
     .from("journal_entries")
-    .select("trade_id, notes, lesson_learned, emotional_state, mistake_tag, strategy_id")
+    .select(JOURNAL_CONTENT_COLUMNS)
     .eq("user_id", userId)
     .in(
       "trade_id",
@@ -45,16 +48,7 @@ export async function checkPendingJournals(userId: string): Promise<string[]> {
     );
 
   const conContenido = new Set(
-    (journals ?? [])
-      .filter(
-        (j) =>
-          (j.notes ?? "").trim() !== "" ||
-          (j.lesson_learned ?? "").trim() !== "" ||
-          j.emotional_state !== null ||
-          j.mistake_tag !== null ||
-          j.strategy_id !== null,
-      )
-      .map((j) => j.trade_id),
+    (journals ?? []).filter(hasJournalContent).map((j) => j.trade_id),
   );
 
   const candidatas: ClosedTrade[] = trades

@@ -57,6 +57,12 @@ src/lib/economic-calendar/
 
 Mismo patrón que Coinbase y por la misma razón: la fuente es reemplazable y la pantalla no debe saber nada de ella. Detalle completo, incluidas las trampas del endpoint, en `docs/CALENDARIO_ECONOMICO.md`.
 
+## El diario se pregunta de dos formas
+
+Las mismas columnas, dos interfaces: el formulario completo de la ficha (`trades/[tradeId]/journal-form.tsx`) y la encuesta de cinco preguntas que sale al cerrar una operación (`components/journal/trade-survey.tsx`). No hay una segunda tabla ni un «diario rápido» aparte -- eso obligaría a consultar dos sitios para saber la verdad sobre una operación. Lo que cambia es cómo se pregunta, y por qué eso importa está en `docs/ENCUESTA_CIERRE.md`.
+
+De ahí sale también `lib/journal/written.ts`: el criterio de «esta operación ya está apuntada» lo usaban por separado el aviso de la sincronización y la bandeja del diario, cada uno con su copia. Tres copias son, a la primera corrección, tres criterios distintos, y entonces el aviso dice que hay seis sin apuntar y la bandeja enseña cinco.
+
 ## Server Actions vs. Route Handlers
 
 Las mutaciones iniciadas por el usuario (editar el diario, crear una etiqueta, guardar configuración, subir un CSV) usan **Server Actions** (`actions.ts` junto a cada `page.tsx`), no un árbol paralelo de endpoints REST bajo `app/api/`. `app/api/*` se reserva para lo que genuinamente necesita semántica HTTP: `cron/*` (disparado por un programador externo, protegido por `CRON_SECRET`), `export/*` (descargas de archivo con encabezados HTTP reales), y una futura ruta de salud.

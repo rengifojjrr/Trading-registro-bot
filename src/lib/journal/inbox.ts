@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { groupIntoBursts, type Burst } from "./bursts";
 import { WINDOW_DAYS } from "./pending";
+import { hasJournalContent, JOURNAL_CONTENT_COLUMNS } from "./written";
 
 /**
  * Lo que está esperando a que lo apuntes.
@@ -65,7 +66,7 @@ export async function fetchJournalInbox(): Promise<JournalInbox> {
   const [{ data: journals }, { data: mistakes }] = await Promise.all([
     supabase
       .from("journal_entries")
-      .select("trade_id, notes, lesson_learned, emotional_state, mistake_tag, strategy_id")
+      .select(JOURNAL_CONTENT_COLUMNS)
       .eq("user_id", user.id)
       .in(
         "trade_id",
@@ -83,13 +84,7 @@ export async function fetchJournalInbox(): Promise<JournalInbox> {
 
   const apuntadas = new Set<string>();
   for (const j of journals ?? []) {
-    const tieneAlgo =
-      (j.notes ?? "").trim() !== "" ||
-      (j.lesson_learned ?? "").trim() !== "" ||
-      j.emotional_state !== null ||
-      j.mistake_tag !== null ||
-      j.strategy_id !== null;
-    if (tieneAlgo) apuntadas.add(j.trade_id);
+    if (hasJournalContent(j)) apuntadas.add(j.trade_id);
   }
   for (const m of mistakes ?? []) apuntadas.add(m.trade_id);
 

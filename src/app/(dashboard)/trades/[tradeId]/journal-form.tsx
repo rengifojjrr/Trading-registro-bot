@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { RiskReading } from "@/components/trades/risk-reading";
 import { PlannedPriceField } from "@/components/trades/planned-price-field";
 import {
+  EMOTION_OPTIONS,
   HTF_BIAS_OPTIONS,
   RATING_OPTIONS,
   SR_PROXIMITY_OPTIONS,
@@ -32,7 +33,6 @@ const initialState: JournalFormState = { error: null, success: false };
 // Mirrors the option lists actually configured on the original Notion
 // "Emociones"/"Errores" multi-select properties (see docs/NOTION_IMPORT.md)
 // so this form uses the same vocabulary the historical data was written in.
-const EMOTION_OPTIONS = ["Calma", "Ansiedad", "Confianza", "Miedo", "Euforia", "Frustración", "FOMO"];
 const MISTAKE_OPTIONS = [
   "Overtrading",
   "Entrada temprana",
@@ -358,10 +358,10 @@ export function JournalForm({
   );
 }
 
-function mergeOptions(known: string[], storedValue: string | null): string[] {
+function mergeOptions(known: readonly string[], storedValue: string | null): string[] {
   const stored = splitList(storedValue);
   const extra = stored.filter((v) => !known.includes(v));
-  return extra.length > 0 ? [...known, ...extra] : known;
+  return [...known, ...extra];
 }
 
 /** One titled block of related fields, so the form reads as three short steps instead of one long wall. */

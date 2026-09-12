@@ -64,6 +64,7 @@ const journalEntry: JournalEntryRow = {
   mistake_tag: "ninguno",
   lesson_learned: "Nada nuevo.",
   notes: "Operación de prueba.",
+  survey_closed_at: null,
   created_at: "2026-08-01T00:00:00Z",
   updated_at: "2026-08-01T01:00:00Z",
 };

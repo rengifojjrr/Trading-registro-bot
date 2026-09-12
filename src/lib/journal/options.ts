@@ -29,6 +29,24 @@ export const SR_PROXIMITY_OPTIONS = [
 ] as const;
 
 /**
+ * Cómo estabas mientras la operación estaba abierta.
+ *
+ * Vive aquí y no en cada formulario porque lo preguntan tres sitios -- la
+ * ficha de una operación, el cuadro de apuntar varias a la vez y la encuesta
+ * del cierre -- y una lista copiada tres veces se convierte, a la primera
+ * corrección, en tres listas distintas que ya no se pueden agrupar.
+ */
+export const EMOTION_OPTIONS = [
+  "Calma",
+  "Ansiedad",
+  "Confianza",
+  "Miedo",
+  "Euforia",
+  "Frustración",
+  "FOMO",
+] as const;
+
+/**
  * 1-5 with words attached. A bare number invites drifting standards; a
  * label makes today's 4 mean the same as last month's 4.
  */

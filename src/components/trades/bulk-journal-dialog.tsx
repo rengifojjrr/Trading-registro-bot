@@ -19,12 +19,11 @@ import type {
   BulkValues,
   PlannedDirection,
 } from "@/lib/journal/bulk-apply";
-import { HTF_BIAS_OPTIONS, RATING_OPTIONS, SR_PROXIMITY_OPTIONS } from "@/lib/journal/options";
+import { EMOTION_OPTIONS, HTF_BIAS_OPTIONS, RATING_OPTIONS, SR_PROXIMITY_OPTIONS } from "@/lib/journal/options";
 import { describeTemplate, type JournalTemplateRow } from "@/lib/journal/saved-templates";
 import { MISTAKE_CODES, MISTAKE_META, type MistakeCode } from "@/lib/journal/mistakes";
 import { SETUP_GRADES, type SetupGrade } from "@/lib/journal/setup-grade";
 
-const EMOTION_OPTIONS = ["Calma", "Ansiedad", "Confianza", "Miedo", "Euforia", "Frustración", "FOMO"];
 const RATINGS = [1, 2, 3, 4, 5];
 
 /**

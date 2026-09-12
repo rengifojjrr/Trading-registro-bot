@@ -1,6 +1,7 @@
 import { LayoutDashboard, SearchX } from "lucide-react";
 import { DateTime } from "luxon";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { CalendarHeatmap } from "@/components/dashboard/calendar-heatmap";
 import { ImminentEventBanner } from "@/components/economic-calendar/imminent-event-banner";
@@ -8,6 +9,7 @@ import { TodayNewsCard } from "@/components/economic-calendar/today-news-card";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
+import { SurveyLauncher } from "@/components/journal/survey-launcher";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
@@ -175,6 +177,13 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
         title="Trading"
         description="Capital, rendimiento y estadísticas de tus operaciones de futuros de Bitcoin."
       />
+
+      {/* La encuesta de la última operación cerrada, si la hay y si no se
+          contestó ya. Va en `Suspense` porque son dos consultas más y las
+          cifras del panel no pueden esperar por ellas: aparece cuando esté. */}
+      <Suspense fallback={null}>
+        <SurveyLauncher />
+      </Suspense>
 
       {/* Encima de las posiciones, no debajo: si los datos son de hace cinco
           días -- o si falta un fill, o si la posición no cuadra con Coinbase --

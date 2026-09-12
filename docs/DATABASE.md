@@ -24,6 +24,8 @@ Postgres vía Supabase. Migraciones versionadas en `supabase/migrations/`, aplic
 
 **Diario**: `strategies`, `tags`, `trade_tags`, `journal_entries` (1:1 con trade, campos subjetivos), `trade_screenshots`, `trade_comments`.
 
+`journal_entries.survey_closed_at` es la única columna de la tabla que no es una respuesta sino un estado de la interfaz: marca que la encuesta del cierre ya se abrió para esa operación y se cerró, contestada o no. No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastro en ninguna otra columna -- y sin ella la encuesta volvería a salir en cada visita, que es la forma más rápida de conseguir que se cierre sin leerla para siempre. Ver `docs/ENCUESTA_CIERRE.md`.
+
 **Notion**: `notion_sync_links`, `notion_sync_queue`, `notion_field_mappings` (la única tabla de Notion editable por el usuario), `notion_sync_history`.
 
 **Sistema**: `notifications`, `csv_imports`, `csv_import_rows`, `profiles`, `app_settings`, `audit_log`.
