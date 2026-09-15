@@ -1,6 +1,15 @@
-# La encuesta del cierre
+# Las encuestas
 
-Cinco preguntas, una a la vez, cuando se cierra una operación.
+Preguntas de una en una, en vez de un formulario con todos los huecos a la vista.
+
+Empezó en el diario de trading y funcionó por un motivo que no tiene nada que ver con el trading: **un formulario de dieciséis campos vacíos se cierra y una pregunta sola se contesta**. Así que el motor vive en `core/encuesta` y lo usan todos los módulos; cada uno pone sus preguntas y qué hacer con cada respuesta.
+
+| Dónde | Preguntas |
+|---|---|
+| `lib/journal/survey.ts` | Al cerrar una operación |
+| `modules/sleep/domain/encuesta.ts` | Antes de dormir, y al despertar |
+
+El resto de este documento describe la de trading, que es la primera y la que fijó las decisiones.
 
 ## El problema que resuelve
 
@@ -64,7 +73,9 @@ No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastr
 
 | Archivo | Qué hace |
 |---|---|
-| `lib/journal/survey.ts` | Las preguntas y el recorrido. Puro, probado entero. |
+| `core/encuesta/pasos.ts` | El recorrido, sin pantalla y sin red: qué preguntas hay, cuál está contestada, por dónde se sigue, qué resumen se enseña. Puro, probado entero. |
+| `core/encuesta/encuesta.tsx` | El componente: una pregunta, la barra de avance y el pie. Sirve en un cuadro que sale solo (trading) y en línea dentro de una página (sueño). |
+| `lib/journal/survey.ts` | Las cinco preguntas del diario y la frontera entre el diccionario del motor y el tipo cerrado del módulo. |
 | `lib/journal/survey-queries.ts` | A qué operación toca preguntarle. |
 | `lib/journal/written.ts` | Cuándo cuenta una operación como apuntada. Un solo criterio para el aviso, la bandeja y la encuesta. |
 | `app/(dashboard)/trades/survey-actions.ts` | Guardar una respuesta; cerrar la encuesta. |

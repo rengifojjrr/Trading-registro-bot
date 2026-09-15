@@ -1,16 +1,21 @@
+import type { Paso, Respuestas } from "@/core/encuesta/pasos";
+
+import { MISTAKE_CODES, MISTAKE_META, type MistakeCode } from "./mistakes";
 import { EMOTION_OPTIONS } from "./options";
-import { MISTAKE_META, type MistakeCode } from "./mistakes";
 
 /**
- * Las cinco preguntas que se hacen al cerrar una operación, de una en una.
+ * Las cinco preguntas que se hacen al cerrar una operación.
  *
- * El diario completo existe desde el principio y casi nunca se rellenaba. No
- * porque falten ganas: es un formulario de dieciséis campos que aparece
+ * El recorrido -- cuál está contestada, por dónde se sigue, qué resumen se
+ * enseña -- vive en `core/encuesta`, que es el mismo motor que usan el resto
+ * de módulos. Aquí sólo están las preguntas del diario de trading.
+ *
+ * El diario completo existe desde la primera fase y casi nunca se rellenaba.
+ * No porque falten ganas: es un formulario de dieciséis campos que aparece
  * cuando ya has cerrado y te vas, y ver dieciséis huecos vacíos a la vez es
  * justo lo que hace cerrarlo. Así que esto no añade datos nuevos --escribe en
  * las mismas columnas de siempre-- sino una forma de contestarlo que no
- * intimide: una pregunta en pantalla, respuestas que se eligen tocando, y
- * salir cuando quieras sin perder lo ya contestado.
+ * intimide.
  *
  * Qué se pregunta y qué no:
  *
@@ -29,50 +34,15 @@ import { MISTAKE_META, type MistakeCode } from "./mistakes";
  * número que se guarda es el mismo, pero un 5 de «seguir el plan» y un 5 de
  * «calidad de la entrada» no significan lo mismo, y una escala genérica
  * («Muy bien») hace que cada uno acabe puntuando con su vara.
- *
- * Puro: sin red y sin base de datos, para poder probar el recorrido entero.
  */
 
 export const SURVEY_STEP_IDS = ["plan", "entrada", "animo", "errores", "leccion"] as const;
 
 export type SurveyStepId = (typeof SURVEY_STEP_IDS)[number];
 
-export const SURVEY_TOTAL = SURVEY_STEP_IDS.length;
+const GRUPOS_DE_ERROR = ["ENTRADA", "GESTIÓN", "SALIDA", "DISCIPLINA"] as const;
 
-export interface EscalaOpcion {
-  valor: number;
-  etiqueta: string;
-  /** Qué cuenta como esta nota, para que el 4 de hoy sea el 4 del mes que viene. */
-  detalle: string;
-}
-
-interface PasoBase {
-  id: SurveyStepId;
-  pregunta: string;
-  ayuda: string;
-}
-
-export interface PasoEscala extends PasoBase {
-  tipo: "escala";
-  opciones: EscalaOpcion[];
-}
-
-export interface PasoChips extends PasoBase {
-  tipo: "chips";
-  fuente: "emociones" | "errores";
-  /** Qué dice el botón de «no hubo ninguno», que no es lo mismo que no contestar. */
-  ninguno: string;
-}
-
-export interface PasoTexto extends PasoBase {
-  tipo: "texto";
-  marcador: string;
-  maximo: number;
-}
-
-export type SurveyStep = PasoEscala | PasoChips | PasoTexto;
-
-export const SURVEY_STEPS: SurveyStep[] = [
+export const SURVEY_STEPS: Paso[] = [
   {
     id: "plan",
     tipo: "escala",
@@ -105,17 +75,28 @@ export const SURVEY_STEPS: SurveyStep[] = [
   {
     id: "animo",
     tipo: "chips",
-    fuente: "emociones",
+    multiple: true,
     pregunta: "¿Cómo estabas mientras tanto?",
     ayuda: "Marca las que te suenen. Puedes elegir varias.",
+    opciones: EMOTION_OPTIONS,
     ninguno: "Ni fu ni fa",
   },
   {
     id: "errores",
     tipo: "chips",
-    fuente: "errores",
+    multiple: true,
     pregunta: "¿Se coló algún error?",
     ayuda: "De la lista de siempre, para que luego se puedan contar.",
+    grupos: GRUPOS_DE_ERROR.map((grupo) => ({
+      titulo: grupo,
+      opciones: MISTAKE_CODES.filter((code) => MISTAKE_META[code].group === grupo).map((code) => ({
+        valor: code,
+        etiqueta: MISTAKE_META[code].label,
+        // La definición a mano, para que el mismo fallo reciba la misma
+        // etiqueta el mes que viene y las cuentas signifiquen algo.
+        detalle: MISTAKE_META[code].description,
+      })),
+    })),
     ninguno: "Ninguno, limpia",
   },
   {
@@ -129,6 +110,17 @@ export const SURVEY_STEPS: SurveyStep[] = [
     maximo: 2000,
   },
 ];
+
+export const SURVEY_TOTAL = SURVEY_STEPS.length;
+
+/** Cómo se llama cada respuesta en el resumen del final, en una palabra. */
+export const SURVEY_LABELS: Record<string, string> = {
+  plan: "Plan",
+  entrada: "Entrada",
+  animo: "Ánimo",
+  errores: "Errores",
+  leccion: "Te llevas",
+};
 
 export interface SurveyAnswers {
   plan: number | null;
@@ -162,100 +154,39 @@ export const RESPUESTAS_VACIAS: SurveyAnswers = {
   leccion: "",
 };
 
-export function stepById(id: SurveyStepId): SurveyStep {
-  const paso = SURVEY_STEPS.find((s) => s.id === id);
-  // No puede pasar: los identificadores salen del propio array. Lanzar es
-  // preferible a devolver un paso cualquiera, que pintaría la pregunta
-  // equivocada y guardaría la respuesta en la columna equivocada.
-  if (!paso) throw new Error(`Paso desconocido: ${id}`);
-  return paso;
-}
-
-export function isAnswered(id: SurveyStepId, answers: SurveyAnswers): boolean {
-  switch (id) {
-    case "plan":
-      return answers.plan !== null;
-    case "entrada":
-      return answers.entrada !== null;
-    case "animo":
-      return answers.animo.length > 0;
-    case "errores":
-      return answers.errores.length > 0;
-    case "leccion":
-      return answers.leccion.trim() !== "";
-  }
-}
-
-export function answeredCount(answers: SurveyAnswers): number {
-  return SURVEY_STEP_IDS.filter((id) => isAnswered(id, answers)).length;
-}
-
 /**
- * Por dónde se empieza.
+ * Las dos caras de lo mismo.
  *
- * Si ya había algo escrito -- la ficha completa se puede rellenar a mano, y la
- * encuesta se puede dejar a medias -- se abre en la primera pregunta sin
- * contestar en vez de volver a preguntar lo que ya está. Devuelve la primera
- * cuando está todo contestado: reabrirla entonces es para cambiar algo.
+ * El motor trabaja con un diccionario porque no puede saber qué campos tiene
+ * una operación; el resto del módulo -- la consulta que las lee, la acción que
+ * las guarda -- trabaja con un tipo cerrado porque sí puede, y perder eso
+ * convertiría cada error de nombre en un fallo que sólo se ve en producción.
+ * Estas dos funciones son la frontera entre las dos cosas.
  */
-export function firstUnanswered(answers: SurveyAnswers): SurveyStepId {
-  return SURVEY_STEP_IDS.find((id) => !isAnswered(id, answers)) ?? SURVEY_STEP_IDS[0];
+export function aRespuestas(answers: SurveyAnswers): Respuestas {
+  return {
+    plan: answers.plan,
+    entrada: answers.entrada,
+    animo: answers.animo,
+    errores: answers.errores,
+    leccion: answers.leccion,
+  };
 }
 
-export function stepIndex(id: SurveyStepId): number {
-  return SURVEY_STEP_IDS.indexOf(id);
+export function deRespuestas(respuestas: Respuestas): SurveyAnswers {
+  const lista = (valor: unknown): string[] => (Array.isArray(valor) ? valor.map(String) : []);
+  const nota = (valor: unknown): number | null => (typeof valor === "number" ? valor : null);
+
+  return {
+    plan: nota(respuestas.plan),
+    entrada: nota(respuestas.entrada),
+    animo: lista(respuestas.animo),
+    // Un código que ya no exista en la lista se descarta en vez de guardarse:
+    // la restricción de la tabla lo rechazaría y se perdería la respuesta
+    // entera, no sólo ese error.
+    errores: lista(respuestas.errores).filter((c): c is MistakeCode =>
+      (MISTAKE_CODES as readonly string[]).includes(c),
+    ),
+    leccion: typeof respuestas.leccion === "string" ? respuestas.leccion : "",
+  };
 }
-
-/** El siguiente, o null si era el último. */
-export function nextStep(id: SurveyStepId): SurveyStepId | null {
-  return SURVEY_STEP_IDS[stepIndex(id) + 1] ?? null;
-}
-
-/** El anterior, o null si era el primero. */
-export function previousStep(id: SurveyStepId): SurveyStepId | null {
-  const i = stepIndex(id);
-  return i > 0 ? SURVEY_STEP_IDS[i - 1] : null;
-}
-
-/** La etiqueta de una nota, para poder enseñar el resumen sin repetir las listas. */
-export function escalaEtiqueta(id: "plan" | "entrada", valor: number | null): string | null {
-  if (valor === null) return null;
-  const paso = stepById(id);
-  if (paso.tipo !== "escala") return null;
-  return paso.opciones.find((o) => o.valor === valor)?.etiqueta ?? null;
-}
-
-/**
- * Lo contestado, en frases, para la pantalla final.
- *
- * Enseñarlo al acabar no es decoración: es lo que convierte cinco toques en
- * algo que se ha dicho, y la última oportunidad de corregir un 2 que quería
- * ser un 4. Las preguntas sin contestar no salen -- una lista con tres huecos
- * se lee como una tarea a medio hacer, y saltar era una opción legítima.
- */
-export function surveySummary(answers: SurveyAnswers): { etiqueta: string; valor: string }[] {
-  const lineas: { etiqueta: string; valor: string }[] = [];
-
-  const plan = escalaEtiqueta("plan", answers.plan);
-  if (plan) lineas.push({ etiqueta: "Plan", valor: plan });
-
-  const entrada = escalaEtiqueta("entrada", answers.entrada);
-  if (entrada) lineas.push({ etiqueta: "Entrada", valor: entrada });
-
-  if (answers.animo.length > 0) lineas.push({ etiqueta: "Ánimo", valor: answers.animo.join(", ") });
-  if (answers.errores.length > 0) {
-    // Por su nombre y no «2 errores»: es la última oportunidad de ver que se
-    // marcó «salida tardía» queriendo marcar «salida prematura», y una cuenta
-    // no deja verlo.
-    lineas.push({
-      etiqueta: "Errores",
-      valor: answers.errores.map((code) => MISTAKE_META[code].label).join(", "),
-    });
-  }
-  if (answers.leccion.trim() !== "") lineas.push({ etiqueta: "Te llevas", valor: answers.leccion.trim() });
-
-  return lineas;
-}
-
-/** Las emociones de la lista cerrada, para que la encuesta no tenga su propia copia. */
-export const SURVEY_EMOTIONS: readonly string[] = EMOTION_OPTIONS;

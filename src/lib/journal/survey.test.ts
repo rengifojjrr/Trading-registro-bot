@@ -1,21 +1,25 @@
 import { describe, expect, it } from "vitest";
 
+import { primeraSinContestar, resumen } from "@/core/encuesta/pasos";
+
 import { MISTAKE_META } from "./mistakes";
 import {
-  answeredCount,
-  escalaEtiqueta,
-  firstUnanswered,
-  isAnswered,
-  nextStep,
-  previousStep,
+  aRespuestas,
+  deRespuestas,
   RESPUESTAS_VACIAS,
-  stepById,
+  SURVEY_LABELS,
   SURVEY_STEP_IDS,
   SURVEY_STEPS,
   SURVEY_TOTAL,
-  surveySummary,
   type SurveyAnswers,
 } from "./survey";
+
+/**
+ * Lo que se prueba aquí son **las preguntas del diario**, no el recorrido:
+ * cuál está contestada, por dónde se sigue y cómo se resume son del motor
+ * común y se prueban en `core/encuesta/pasos.test.ts`. Duplicar allí y aquí
+ * la misma prueba sólo consigue que un día discrepen.
+ */
 
 function respuestas(parcial: Partial<SurveyAnswers> = {}): SurveyAnswers {
   return { ...RESPUESTAS_VACIAS, ...parcial };
@@ -27,112 +31,75 @@ describe("las preguntas", () => {
     expect(SURVEY_TOTAL).toBe(SURVEY_STEPS.length);
   });
 
+  it("todas tienen una etiqueta corta para el resumen", () => {
+    for (const paso of SURVEY_STEPS) expect(SURVEY_LABELS[paso.id]).toBeTruthy();
+  });
+
   it("las escalas van del 1 al 5 con una etiqueta distinta cada una", () => {
     for (const paso of SURVEY_STEPS) {
       if (paso.tipo !== "escala") continue;
       expect(paso.opciones.map((o) => o.valor)).toEqual([1, 2, 3, 4, 5]);
-      const etiquetas = new Set(paso.opciones.map((o) => o.etiqueta));
-      expect(etiquetas.size).toBe(5);
+      expect(new Set(paso.opciones.map((o) => o.etiqueta)).size).toBe(5);
     }
   });
 
   it("las dos escalas usan palabras distintas, que es el motivo de no compartir una lista", () => {
-    const plan = stepById("plan");
-    const entrada = stepById("entrada");
+    const [plan, entrada] = SURVEY_STEPS;
     if (plan.tipo !== "escala" || entrada.tipo !== "escala") throw new Error("deberían ser escalas");
     expect(plan.opciones.map((o) => o.etiqueta)).not.toEqual(entrada.opciones.map((o) => o.etiqueta));
   });
-});
 
-describe("qué cuenta como contestada", () => {
-  it("una nota puesta cuenta y un cero de nota no existe", () => {
-    expect(isAnswered("plan", respuestas({ plan: 1 }))).toBe(true);
-    expect(isAnswered("plan", respuestas())).toBe(false);
-  });
+  it("los errores salen agrupados y con su definición, para que el mismo fallo reciba la misma etiqueta", () => {
+    const errores = SURVEY_STEPS.find((p) => p.id === "errores");
+    if (errores?.tipo !== "chips" || !errores.grupos) throw new Error("debería ser fichas agrupadas");
 
-  it("una lista vacía no es una respuesta", () => {
-    expect(isAnswered("animo", respuestas({ animo: [] }))).toBe(false);
-    expect(isAnswered("animo", respuestas({ animo: ["Calma"] }))).toBe(true);
-    expect(isAnswered("errores", respuestas({ errores: ["FOMO"] }))).toBe(true);
-  });
-
-  it("una lección de espacios no es una lección", () => {
-    expect(isAnswered("leccion", respuestas({ leccion: "   " }))).toBe(false);
-    expect(isAnswered("leccion", respuestas({ leccion: "no perseguir la vela" }))).toBe(true);
-  });
-
-  it("cuenta las contestadas", () => {
-    expect(answeredCount(respuestas())).toBe(0);
-    expect(answeredCount(respuestas({ plan: 4, entrada: 2, leccion: "algo" }))).toBe(3);
+    const todas = errores.grupos.flatMap((g) => g.opciones);
+    expect(todas.length).toBe(Object.keys(MISTAKE_META).length);
+    for (const opcion of todas) expect(opcion.detalle).toBeTruthy();
   });
 });
 
-describe("por dónde se empieza", () => {
-  it("por la primera cuando no hay nada", () => {
-    expect(firstUnanswered(respuestas())).toBe("plan");
-  });
-
-  it("por la primera sin contestar, para no repetir lo ya escrito a mano", () => {
-    expect(firstUnanswered(respuestas({ plan: 3 }))).toBe("entrada");
-    expect(firstUnanswered(respuestas({ plan: 3, entrada: 5, animo: ["Miedo"] }))).toBe("errores");
-  });
-
-  it("se salta los huecos: si contestaste la última y nada más, empieza por la primera", () => {
-    expect(firstUnanswered(respuestas({ leccion: "algo" }))).toBe("plan");
-  });
-
-  it("vuelve a la primera cuando está todo contestado, que es reabrirla para cambiar algo", () => {
-    const todas = respuestas({
-      plan: 5,
-      entrada: 5,
-      animo: ["Calma"],
-      errores: ["FOMO"],
-      leccion: "ok",
+describe("la frontera entre el tipo cerrado y el diccionario del motor", () => {
+  it("ida y vuelta no pierde nada", () => {
+    const originales = respuestas({
+      plan: 4,
+      entrada: 2,
+      animo: ["Calma", "FOMO"],
+      errores: ["LATE_ENTRY"],
+      leccion: "esperar el cierre",
     });
-    expect(firstUnanswered(todas)).toBe("plan");
+    expect(deRespuestas(aRespuestas(originales))).toEqual(originales);
+  });
+
+  it("un código de error que ya no existe se descarta en vez de romper el guardado entero", () => {
+    const vueltas = deRespuestas({ errores: ["LATE_ENTRY", "ERROR_QUE_YA_NO_EXISTE"] });
+    expect(vueltas.errores).toEqual(["LATE_ENTRY"]);
+  });
+
+  it("un diccionario vacío da respuestas vacías y no un montón de undefined", () => {
+    expect(deRespuestas({})).toEqual(RESPUESTAS_VACIAS);
   });
 });
 
-describe("moverse entre preguntas", () => {
-  it("la última no tiene siguiente y la primera no tiene anterior", () => {
-    expect(nextStep("leccion")).toBeNull();
-    expect(previousStep("plan")).toBeNull();
+describe("cómo se comportan estas preguntas en el motor", () => {
+  it("con las dos primeras contestadas, se sigue por la tercera", () => {
+    const parciales = aRespuestas(respuestas({ plan: 4, entrada: 2 }));
+    expect(primeraSinContestar(SURVEY_STEPS, parciales)).toBe("animo");
   });
 
-  it("ida y vuelta dan el mismo sitio", () => {
-    for (const id of SURVEY_STEP_IDS) {
-      const siguiente = nextStep(id);
-      if (siguiente) expect(previousStep(siguiente)).toBe(id);
-    }
-  });
-
-  it("stepById lanza con un identificador que no existe, en vez de pintar otra pregunta", () => {
-    // @ts-expect-error -- probar justo el caso que el tipo impide
-    expect(() => stepById("inventado")).toThrow();
-  });
-});
-
-describe("el resumen del final", () => {
-  it("no enseña lo que no se contestó: saltar era una opción legítima", () => {
-    expect(surveySummary(respuestas())).toEqual([]);
-    expect(surveySummary(respuestas({ plan: 4 }))).toEqual([{ etiqueta: "Plan", valor: "Casi todo" }]);
-  });
-
-  it("traduce la nota a su palabra, que es lo que significa", () => {
-    expect(escalaEtiqueta("plan", 5)).toBe("Entero");
-    expect(escalaEtiqueta("entrada", 1)).toBe("Mala");
-    expect(escalaEtiqueta("plan", null)).toBeNull();
-  });
-
-  it("recorta los espacios de la lección", () => {
-    const lineas = surveySummary(respuestas({ leccion: "  esperar el cierre  " }));
-    expect(lineas).toEqual([{ etiqueta: "Te llevas", valor: "esperar el cierre" }]);
-  });
-
-  it("los errores salen por su nombre, no como una cuenta: es la última ocasión de ver un mal clic", () => {
-    const lineas = surveySummary(respuestas({ errores: ["FOMO", "LATE_ENTRY"] }));
+  it("el resumen traduce la nota a su palabra y el error a su nombre", () => {
+    const lineas = resumen(
+      SURVEY_STEPS,
+      aRespuestas(respuestas({ plan: 4, errores: ["FOMO"] })),
+      SURVEY_LABELS,
+    );
     expect(lineas).toEqual([
-      { etiqueta: "Errores", valor: `${MISTAKE_META.FOMO.label}, ${MISTAKE_META.LATE_ENTRY.label}` },
+      { etiqueta: "Plan", valor: "Casi todo" },
+      { etiqueta: "Errores", valor: MISTAKE_META.FOMO.label },
     ]);
+  });
+
+  it("no enseña lo que no se contestó: saltar era una opción legítima", () => {
+    expect(resumen(SURVEY_STEPS, aRespuestas(RESPUESTAS_VACIAS), SURVEY_LABELS)).toEqual([]);
   });
 });

@@ -1,6 +1,8 @@
 "use client";
 
-import { CalendarClock } from "lucide-react";
+import { ArrowUpRight, CalendarClock } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { ImpactBars } from "@/components/economic-calendar/impact-bars";
@@ -69,10 +71,18 @@ export function NextEventCard({
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="flex flex-col gap-1">
-            <span className="flex items-center gap-2">
+            {/* El nombre lleva a su ficha, como en la agenda y en las noticias
+                de hoy. Aquí era el único sitio donde el dato más destacado de
+                la pantalla no se podía pulsar, que es justo donde más se
+                intenta. */}
+            <Link
+              href={`/noticias/${event.id}` as Route}
+              className="flex w-fit items-center gap-2 rounded-sm hover:underline hover:underline-offset-4"
+            >
               <ImpactBars importance={event.importance} />
               <span className="text-lg font-semibold">{event.title}</span>
-            </span>
+              <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            </Link>
             <span className="text-xs text-muted-foreground">
               {formatDateTime(event.occursAt, timezone)}
               {event.period ? ` · periodo ${event.period}` : ""}
@@ -123,25 +133,33 @@ export function NextEventCard({
               {history.map((h) => {
                 const sorpresa = surpriseOf(h.actual, h.forecast);
                 return (
-                  <li key={h.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">
-                      {formatDateTime(h.occursAt, timezone)}
-                      {h.period ? ` · ${h.period}` : ""}
-                    </span>
-                    <span className="flex items-center gap-2 tabular-nums">
+                  <li key={h.id}>
+                    {/* Cada publicación anterior tiene su propia ficha, con el
+                        gráfico de lo que hizo el precio aquel día: es justo lo
+                        que se quiere ver desde esta lista. */}
+                    <Link
+                      href={`/noticias/${h.id}` as Route}
+                      className="-mx-2 flex items-center justify-between gap-2 rounded-md px-2 py-0.5 text-sm transition-colors hover:bg-accent/50"
+                    >
                       <span className="text-muted-foreground">
-                        prev. {formatEventValue(h.forecast, h.unit, h.scale)}
+                        {formatDateTime(h.occursAt, timezone)}
+                        {h.period ? ` · ${h.period}` : ""}
                       </span>
-                      <span
-                        className={cn(
-                          "font-medium",
-                          sorpresa?.direction === "ARRIBA" && "text-warning",
-                          sorpresa?.direction === "ABAJO" && "text-warning",
-                        )}
-                      >
-                        {formatEventValue(h.actual, h.unit, h.scale)}
+                      <span className="flex items-center gap-2 tabular-nums">
+                        <span className="text-muted-foreground">
+                          prev. {formatEventValue(h.forecast, h.unit, h.scale)}
+                        </span>
+                        <span
+                          className={cn(
+                            "font-medium",
+                            sorpresa?.direction === "ARRIBA" && "text-warning",
+                            sorpresa?.direction === "ABAJO" && "text-warning",
+                          )}
+                        >
+                          {formatEventValue(h.actual, h.unit, h.scale)}
+                        </span>
                       </span>
-                    </span>
+                    </Link>
                   </li>
                 );
               })}

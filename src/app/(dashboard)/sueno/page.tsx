@@ -11,7 +11,7 @@ import {
 } from "@/modules/sleep/domain/sleep";
 import { fetchSleepEntries } from "@/modules/sleep/queries";
 import { NightPicker } from "@/modules/sleep/ui/night-picker";
-import { SleepWizard } from "@/modules/sleep/ui/sleep-wizard";
+import { SleepSurvey } from "@/modules/sleep/ui/sleep-survey";
 import { NotionImportCard } from "@/core/ui/notion-import-card";
 import { runSleepFromNotion } from "@/modules/sleep/actions";
 import { sleepDatabaseId } from "@/modules/sleep/notion-import";
@@ -52,7 +52,7 @@ export default async function SleepPage({
     <>
       <PageHeader
         title="Registrar sueño"
-        description="Dos momentos: lo de arriba antes de acostarte, lo de abajo al levantarte. Cada mitad se guarda sola."
+        description="Dos momentos y una pregunta a la vez: lo de arriba antes de acostarte, lo de abajo al levantarte. Cada respuesta se guarda sola."
       />
 
       <Card>
@@ -60,7 +60,7 @@ export default async function SleepPage({
           <NightPicker date={date} latest={latest} />
           {/* Remontar al cambiar de noche: si no, los atajos de hora y el
               puntaje se quedarían con los de la noche anterior. */}
-          <SleepWizard key={date} date={date} entry={entry} timezone={timezone} />
+          <SleepSurvey key={date} date={date} entry={entry} timezone={timezone} />
         </CardContent>
       </Card>
 

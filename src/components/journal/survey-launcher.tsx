@@ -1,6 +1,7 @@
 import { SurveyButton, SurveyGate } from "@/components/journal/survey-gate";
 import { Card, CardContent } from "@/components/ui/card";
-import { answeredCount, SURVEY_TOTAL } from "@/lib/journal/survey";
+import { contestadas } from "@/core/encuesta/pasos";
+import { aRespuestas, SURVEY_STEPS, SURVEY_TOTAL } from "@/lib/journal/survey";
 import { fetchSurveyCandidate, fetchSurveyForTrade } from "@/lib/journal/survey-queries";
 
 /**
@@ -38,7 +39,7 @@ export async function SurveyPrompt({ tradeId }: { tradeId: string }) {
 
   if (!trade) return null;
 
-  const hechas = answeredCount(trade.answers);
+  const hechas = contestadas(SURVEY_STEPS, aRespuestas(trade.answers));
 
   return (
     <Card>

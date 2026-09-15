@@ -7,7 +7,7 @@ import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { clockFromTimestamp, formatSleepDuration } from "@/modules/sleep/domain/sleep";
 import { fetchSleepEntry } from "@/modules/sleep/queries";
-import { SleepWizard } from "@/modules/sleep/ui/sleep-wizard";
+import { SleepSurvey } from "@/modules/sleep/ui/sleep-survey";
 
 /**
  * La ficha de una noche.
@@ -68,7 +68,7 @@ export default async function SleepEntryPage({
           <CardTitle className="text-base">La noche</CardTitle>
         </CardHeader>
         <CardContent>
-          <SleepWizard date={entry.sleep_date} entry={entry} timezone={timezone} />
+          <SleepSurvey date={entry.sleep_date} entry={entry} timezone={timezone} />
         </CardContent>
       </Card>
     </DetailShell>

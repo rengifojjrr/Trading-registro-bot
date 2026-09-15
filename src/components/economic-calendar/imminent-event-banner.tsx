@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import type { Route } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -51,8 +52,11 @@ export function ImminentEventBanner({
   if (!cuenta) return null;
 
   return (
+    // A la ficha del dato que nombra, no al calendario entero: quien pulsa
+    // aquí quiere saber de *ése* -- qué mide y qué hizo el precio las veces
+    // anteriores -- y el calendario le obliga a buscarlo otra vez.
     <Link
-      href="/noticias"
+      href={`/noticias/${event.id}` as Route}
       className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm transition-colors hover:border-warning"
     >
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
@@ -63,7 +67,7 @@ export function ImminentEventBanner({
         </span>{" "}
         <span className="text-muted-foreground">
           Un dato que sorprenda mueve el precio en segundos, y el margen se calcula al precio de ese
-          momento. Ver el calendario.
+          momento. Ver la ficha del dato.
         </span>
       </span>
     </Link>
