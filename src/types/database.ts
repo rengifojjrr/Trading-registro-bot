@@ -1929,7 +1929,13 @@ export interface Database {
         {
           id: string;
           user_id: string;
-          trade_id: string;
+          /**
+           * De quién es el dibujo: de una operación o de una publicación
+           * macro. Exactamente uno de los dos, garantizado por la restricción
+           * `chart_drawings_un_solo_dueno` de la tabla.
+           */
+          trade_id: string | null;
+          event_id: string | null;
           /**
            * El catálogo vive en `lib/charts/tools.ts`; aquí se escribe como
            * `string` a propósito. Repetir veintitrés literales en dos sitios
@@ -1948,7 +1954,8 @@ export interface Database {
         {
           id?: string;
           user_id: string;
-          trade_id: string;
+          trade_id?: string | null;
+          event_id?: string | null;
           tool: string;
           points: Json;
           color?: string;
