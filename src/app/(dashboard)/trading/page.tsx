@@ -10,6 +10,7 @@ import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
 import { SurveyLauncher } from "@/components/journal/survey-launcher";
+import { NewsFeed } from "@/components/market-news/news-feed";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { PageHeader } from "@/components/layout/page-header";
@@ -23,6 +24,7 @@ import { computeDailyPnl, computeEquityCurve, computeStats } from "@/lib/analyti
 import type { TradeSortKey } from "@/lib/analytics/trade-sort";
 import { requireUser } from "@/lib/auth/require-user";
 import { fetchEventsBetween, fetchNextKeyEvent } from "@/lib/economic-calendar/queries";
+import { fetchNewsQueMovieron } from "@/lib/market-news/queries";
 import { formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
 import { readSyncStatus } from "@/lib/sync/read-status";
 import { createClient } from "@/lib/supabase/server";
@@ -97,6 +99,9 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
     }).catch(() => []),
   ]);
   const stats = computeStats(trades);
+
+  // Un extra: si falla, el panel se pinta igual sin él.
+  const titularesQueMovieron = await fetchNewsQueMovieron({ days: 3, limit: 4 }).catch(() => []);
 
   // Only meaningful when the user picked an explicit date range -- an
   // open-ended "everything ever" view has no previous period to compare
@@ -202,6 +207,16 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
           decide si hoy conviene estar dentro. El calendario entero está a un
           clic. */}
       <TodayNewsCard events={todayEvents} next={nextEvent} timezone={timezone} />
+
+      {/* Y lo que pasó sin estar en ningún calendario. Sólo los que movieron
+          el precio: aquí no cabe una lista de veinticinco titulares al día, y
+          la pregunta que se hace desde el panel es «¿me he perdido algo?». */}
+      <NewsFeed
+        items={titularesQueMovieron}
+        timezone={timezone}
+        titulo="Me he perdido algo"
+        descripcion="Titulares de los últimos tres días después de los cuales el precio se movió de verdad. No estaban en ningún calendario."
+      />
 
       <FilterBar
         accounts={accounts}

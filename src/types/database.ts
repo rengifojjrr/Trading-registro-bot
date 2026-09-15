@@ -738,6 +738,49 @@ export interface Database {
        * Reserva Federal decida tipos el miércoles es un hecho del mundo, no
        * un dato de nadie. Ver la migración 20260909120000.
        */
+      /**
+       * Los titulares que no están en ningún calendario.
+       *
+       * De referencia, como `economic_events`: sin `user_id`, la escribe la
+       * sincronización con el rol de servicio y la lee cualquiera que haya
+       * entrado. Un titular de Reuters no es de nadie.
+       */
+      market_news: Table<
+        {
+          id: string;
+          source: string;
+          source_news_id: string;
+          published_at: string;
+          title: string;
+          provider: string | null;
+          url: string | null;
+          summary: string | null;
+          symbols: string[];
+          topics: string[];
+          /** Qué hizo el precio después, medido sobre velas de un minuto. */
+          move_pct_1h: string | null;
+          max_move_pct_1h: string | null;
+          measured_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          source?: string;
+          source_news_id: string;
+          published_at: string;
+          title: string;
+          provider?: string | null;
+          url?: string | null;
+          summary?: string | null;
+          symbols?: string[];
+          topics?: string[];
+          move_pct_1h?: string | number | null;
+          max_move_pct_1h?: string | number | null;
+          measured_at?: string | null;
+        }
+      >;
+
       economic_events: Table<
         {
           id: string;

@@ -6,6 +6,8 @@ import Link from "next/link";
 import { EventAgenda } from "@/components/economic-calendar/event-agenda";
 import { NextEventCard } from "@/components/economic-calendar/next-event-card";
 import { RefreshCalendar } from "@/components/economic-calendar/refresh-calendar";
+import { NewsFeed } from "@/components/market-news/news-feed";
+import { RefreshNews } from "@/components/market-news/refresh-news";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { pickSearchParam } from "@/lib/analytics/filter-params";
@@ -19,6 +21,7 @@ import {
 } from "@/lib/economic-calendar/queries";
 import { categoryLabel } from "@/lib/economic-calendar/relevance";
 import type { EventImportance } from "@/lib/economic-calendar/types";
+import { fetchNews } from "@/lib/market-news/queries";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +103,11 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
     fetchCategoriesBetween({ from: desde, to: hasta }).catch(() => []),
   ]);
 
+  // Los titulares son un extra: si fallan, el calendario se pinta igual. Van
+  // en su propia consulta y no en el `Promise.all` de arriba porque ese grupo
+  // decide si la pantalla tiene contenido y éste no.
+  const titulares = await fetchNews({ days: 3, limit: 12 }).catch(() => []);
+
   const history =
     next?.indicator !== undefined && next?.indicator !== null
       ? await fetchIndicatorHistory({ indicator: next.indicator, before: new Date(next.occursAt) })
@@ -132,6 +140,7 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
           que necesita guardado, y esperar a una petición externa para enseñar
           algo es cómo se hace una pantalla que a veces no carga. */}
       <RefreshCalendar />
+      <RefreshNews />
 
       {next ? (
         <NextEventCard
@@ -141,6 +150,10 @@ export default async function NoticiasPage(props: PageProps<"/noticias">) {
           openContracts={openContracts}
         />
       ) : null}
+
+      {/* Debajo de lo próximo y encima de la agenda: primero lo que viene,
+          luego lo que ya pasó sin avisar, y al final el calendario. */}
+      <NewsFeed items={titulares} timezone={timezone} />
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-1.5">

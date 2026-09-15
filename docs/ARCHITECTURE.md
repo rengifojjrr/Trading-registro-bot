@@ -57,6 +57,8 @@ src/lib/economic-calendar/
 
 Mismo patrón que Coinbase y por la misma razón: la fuente es reemplazable y la pantalla no debe saber nada de ella. Detalle completo, incluidas las trampas del endpoint, en `docs/CALENDARIO_ECONOMICO.md`.
 
+`src/lib/market-news/` es el mismo patrón otra vez, para lo que **no** está en ningún calendario: una votación que fracasa, un hackeo, un ETF aprobado. Comparte con el calendario la parte que mide la reacción del precio, y ahí está su decisión de fondo: qué titulares importan no se adivina por sus palabras, se mide sobre velas de un minuto. Ver `docs/TITULARES.md`.
+
 ## El diario se pregunta de dos formas
 
 Las mismas columnas, dos interfaces: el formulario completo de la ficha (`trades/[tradeId]/journal-form.tsx`) y la encuesta de cinco preguntas que sale al cerrar una operación (`components/journal/trade-survey.tsx`). No hay una segunda tabla ni un «diario rápido» aparte -- eso obligaría a consultar dos sitios para saber la verdad sobre una operación. Lo que cambia es cómo se pregunta, y por qué eso importa está en `docs/ENCUESTA_CIERRE.md`.

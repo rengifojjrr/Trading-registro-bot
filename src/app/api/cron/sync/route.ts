@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { syncMarketNews } from "@/lib/market-news/sync";
 import { runPollSync } from "@/lib/sync/orchestrator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCronRequest } from "@/lib/sync/verify-cron-request";
@@ -52,5 +53,16 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ranFor: results.length, results });
+  // Los titulares, una vez y no por cuenta: son datos de referencia y no de
+  // nadie. Al final y dentro de un try porque son un extra -- que la fuente de
+  // noticias esté caída no puede hacer que la sincronización de operaciones
+  // conste como fallida.
+  let titulares: Awaited<ReturnType<typeof syncMarketNews>> | null = null;
+  try {
+    titulares = await syncMarketNews();
+  } catch (error) {
+    console.error("[cron] los titulares fallaron", error);
+  }
+
+  return NextResponse.json({ ranFor: results.length, results, titulares });
 }
