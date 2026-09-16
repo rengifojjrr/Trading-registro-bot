@@ -63,6 +63,8 @@ Mismo patrón que Coinbase y por la misma razón: la fuente es reemplazable y la
 
 Las mismas columnas, dos interfaces: el formulario completo de la ficha (`trades/[tradeId]/journal-form.tsx`) y la encuesta por etapas que sale al cerrar una operación (`components/journal/trade-survey.tsx`). No hay una segunda tabla ni un «diario rápido» aparte -- eso obligaría a consultar dos sitios para saber la verdad sobre una operación. Lo que cambia es cómo se pregunta, y por qué eso importa está en `docs/ENCUESTA_CIERRE.md`.
 
+**`trade_plans` es la excepción, y la excepción tiene motivo.** Lo que se escribe *antes* de entrar sí vive aparte, porque existe sin operación --planificar y no entrar también es un dato-- y porque preguntarlo al cerrar no sirve: para entonces ya sabes cómo acabó y la memoria reescribe el plan para que encaje con el resultado. Se une a una operación cuando una persona lo confirma en la encuesta del cierre, y al confirmarlo el stop, el objetivo y la foto se mudan a las columnas de siempre. Ver `docs/PLAN_PREVIO.md`.
+
 De ahí sale también `lib/journal/written.ts`: el criterio de «esta operación ya está apuntada» lo usaban por separado el aviso de la sincronización y la bandeja del diario, cada uno con su copia. Tres copias son, a la primera corrección, tres criterios distintos, y entonces el aviso dice que hay seis sin apuntar y la bandeja enseña cinco.
 
 ## Server Actions vs. Route Handlers

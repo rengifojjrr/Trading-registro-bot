@@ -42,6 +42,31 @@ export type SurveyStepId = (typeof SURVEY_STEP_IDS)[number];
 
 const GRUPOS_DE_ERROR = ["ENTRADA", "GESTIÓN", "SALIDA", "DISCIPLINA"] as const;
 
+/**
+ * La pregunta que sólo existe cuando dejaste un plan escrito antes de entrar.
+ *
+ * Va la primera de todas, incluso antes del setup, porque de su respuesta
+ * depende qué significan las demás: «¿seguiste tu plan?» es otra pregunta
+ * cuando hay un plan escrito delante que cuando el plan es el que recuerdas
+ * ahora. Y es la única que se puede contestar sin pensar, lo que la convierte
+ * en una buena puerta de entrada.
+ *
+ * No se deduce del producto y la hora a propósito: puedes planear un largo y
+ * acabar entrando corto, o entrar dos veces. Contestarlo tú es lo único que
+ * hace que la cuenta de «cuántos planes cumplo» signifique algo.
+ */
+export const PASO_DEL_PLAN: Paso = {
+  id: "plan_seguido",
+  tipo: "chips",
+  multiple: false,
+  pregunta: "¿Es ésta la que planificaste?",
+  ayuda: "El plan que dejaste escrito antes de entrar.",
+  opciones: [
+    { valor: "SI", etiqueta: "Sí, es ésta", detalle: "La abrí siguiendo ese plan" },
+    { valor: "NO", etiqueta: "No, es otra", detalle: "El plan sigue esperando su momento" },
+  ],
+};
+
 export const SURVEY_STEPS: Paso[] = [
   {
     id: "setup",
@@ -130,8 +155,21 @@ export const SURVEY_STEPS: Paso[] = [
 
 export const SURVEY_TOTAL = SURVEY_STEPS.length;
 
+/**
+ * Las preguntas de esta operación concreta.
+ *
+ * Son las de siempre, y una más delante cuando había un plan esperando. Se
+ * construye por operación y no es una constante porque la lista **depende de
+ * lo que pasó**: enseñar «¿es ésta la que planificaste?» sin ningún plan
+ * escrito sería preguntar por algo que no existe.
+ */
+export function pasosDeLaEncuesta(hayPlan: boolean): Paso[] {
+  return hayPlan ? [PASO_DEL_PLAN, ...SURVEY_STEPS] : SURVEY_STEPS;
+}
+
 /** Cómo se llama cada respuesta en el resumen del final, en una palabra. */
 export const SURVEY_LABELS: Record<string, string> = {
+  plan_seguido: "Planificada",
   setup: "Setup",
   plan: "Plan",
   entrada: "Entrada",
@@ -141,6 +179,15 @@ export const SURVEY_LABELS: Record<string, string> = {
 };
 
 export interface SurveyAnswers {
+  /**
+   * Si esta operación es la que planificaste: «SI», «NO» o sin contestar.
+   *
+   * Sólo se pregunta cuando había un plan esperando, y es lo que lo une a la
+   * operación. Es texto y no un booleano porque el motor trabaja con el mismo
+   * diccionario para todas las preguntas, y «sin contestar» tiene que poder
+   * distinguirse de «no».
+   */
+  plan_seguido: string;
   /** La nota del setup. No es columna del diario sino etiqueta («Setup: A+»). */
   setup: string;
   plan: number | null;
@@ -164,9 +211,17 @@ export interface SurveyTrade {
   closedAt: string;
   netPnl: string | null;
   answers: SurveyAnswers;
+  /**
+   * El plan que estaba esperando cuando se cerró, si lo había.
+   *
+   * Sólo el identificador y una línea de resumen: la encuesta lo enseña para
+   * que la pregunta no sea un test de memoria, y no necesita nada más.
+   */
+  plan: { id: string; resumen: string } | null;
 }
 
 export const RESPUESTAS_VACIAS: SurveyAnswers = {
+  plan_seguido: "",
   setup: "",
   plan: null,
   entrada: null,
@@ -186,6 +241,7 @@ export const RESPUESTAS_VACIAS: SurveyAnswers = {
  */
 export function aRespuestas(answers: SurveyAnswers): Respuestas {
   return {
+    plan_seguido: answers.plan_seguido,
     setup: answers.setup,
     plan: answers.plan,
     entrada: answers.entrada,
@@ -199,7 +255,10 @@ export function deRespuestas(respuestas: Respuestas): SurveyAnswers {
   const lista = (valor: unknown): string[] => (Array.isArray(valor) ? valor.map(String) : []);
   const nota = (valor: unknown): number | null => (typeof valor === "number" ? valor : null);
 
+  const planSeguido = typeof respuestas.plan_seguido === "string" ? respuestas.plan_seguido : "";
+
   return {
+    plan_seguido: planSeguido === "SI" || planSeguido === "NO" ? planSeguido : "",
     setup: typeof respuestas.setup === "string" ? respuestas.setup : "",
     plan: nota(respuestas.plan),
     entrada: nota(respuestas.entrada),

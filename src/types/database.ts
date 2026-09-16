@@ -1826,6 +1826,10 @@ export interface Database {
           lesson_learned: string | null;
           notes: string | null;
           survey_closed_at: string | null;
+          /** El plan que se ofreció para esta operación, se confirmara o no. */
+          plan_id: string | null;
+          /** Si es la operación que ese plan planificaba. Null = sin preguntar. */
+          plan_followed: boolean | null;
           created_at: string;
           updated_at: string;
         },
@@ -1848,6 +1852,49 @@ export interface Database {
           lesson_learned?: string | null;
           notes?: string | null;
           survey_closed_at?: string | null;
+          plan_id?: string | null;
+          plan_followed?: boolean | null;
+        }
+      >;
+
+      /**
+       * Lo que pensabas **antes** de entrar.
+       *
+       * Existe sin operación a propósito: planificar y no entrar también es un
+       * dato, y de los buenos. Lo une a una operación una persona, en la
+       * encuesta del cierre, porque no se puede deducir del producto y la hora.
+       */
+      trade_plans: Table<
+        {
+          id: string;
+          user_id: string;
+          created_at: string;
+          updated_at: string;
+          product_id: string | null;
+          direction: "LONG" | "SHORT" | null;
+          idea: string | null;
+          entry_price: string | null;
+          stop_price: string | null;
+          target_price: string | null;
+          risk_amount: string | null;
+          emotional_state: string | null;
+          screenshot_path: string | null;
+          discarded_at: string | null;
+        },
+        {
+          id?: string;
+          user_id: string;
+          product_id?: string | null;
+          direction?: "LONG" | "SHORT" | null;
+          idea?: string | null;
+          entry_price?: string | number | null;
+          stop_price?: string | number | null;
+          target_price?: string | number | null;
+          risk_amount?: string | number | null;
+          emotional_state?: string | null;
+          screenshot_path?: string | null;
+          discarded_at?: string | null;
+          updated_at?: string;
         }
       >;
 

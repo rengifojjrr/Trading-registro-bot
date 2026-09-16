@@ -37,6 +37,7 @@ import { applySetupGrade } from "./setup-tags";
 const tradeIdSchema = z.uuid();
 
 const stepSchema = z.discriminatedUnion("step", [
+  z.object({ step: z.literal("plan_seguido"), planId: z.uuid(), value: z.enum(["SI", "NO", ""]) }),
   z.object({ step: z.literal("setup"), grade: z.string() }),
   z.object({ step: z.literal("plan"), rating: z.number().int().min(1).max(5) }),
   z.object({ step: z.literal("entrada"), rating: z.number().int().min(1).max(5) }),
@@ -71,6 +72,101 @@ async function esTuya(
   return Boolean(data);
 }
 
+/**
+ * Une --o no-- una operación con el plan que estaba esperando.
+ *
+ * Decir que sí hace algo más que apuntar un enlace: **el plan se muda a la
+ * operación**. Los niveles que escribiste antes de entrar pasan a las columnas
+ * del diario y la foto del gráfico pasa a las capturas, en la fase «antes».
+ *
+ * Eso es todo el sentido de haberlo escrito. Un plan que se queda en su propia
+ * tabla es un papel en un cajón: lo que sirve es que al abrir la ficha de la
+ * operación estén ahí tu stop, tu objetivo y la foto de lo que veías, para
+ * mirarlos al lado de lo que de verdad hiciste.
+ *
+ * **Sin pisar nada.** Si la ficha ya tenía stop --porque lo arrastraste en el
+ * gráfico, o lo escribiste a mano-- ese gana: lo del plan es lo que pensabas,
+ * y lo de la ficha es lo que hiciste; cuando discrepan, la que manda es la
+ * segunda.
+ */
+async function unirAlPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  tradeId: string,
+  planId: string,
+  respuesta: "SI" | "NO" | "",
+): Promise<ResultadoEncuesta> {
+  const seguido = respuesta === "" ? null : respuesta === "SI";
+
+  const { error } = await supabase
+    .from("journal_entries")
+    .upsert({ user_id: userId, trade_id: tradeId, plan_id: planId, plan_followed: seguido }, { onConflict: "trade_id" });
+  if (error) return fallo("No se pudo guardar la respuesta.", 500);
+
+  if (seguido !== true) return ok();
+
+  const { data: plan } = await supabase
+    .from("trade_plans")
+    .select("direction, stop_price, target_price, risk_amount, screenshot_path")
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!plan) return ok();
+
+  const { data: diario } = await supabase
+    .from("journal_entries")
+    .select("planned_direction, stop_loss_price, take_profit_price, risk_amount")
+    .eq("trade_id", tradeId)
+    .maybeSingle();
+
+  const heredado = {
+    ...(diario?.planned_direction == null && plan.direction
+      ? { planned_direction: plan.direction }
+      : {}),
+    ...(diario?.stop_loss_price == null && plan.stop_price != null
+      ? { stop_loss_price: plan.stop_price }
+      : {}),
+    ...(diario?.take_profit_price == null && plan.target_price != null
+      ? { take_profit_price: plan.target_price }
+      : {}),
+    ...(diario?.risk_amount == null && plan.risk_amount != null
+      ? { risk_amount: plan.risk_amount }
+      : {}),
+  };
+
+  if (Object.keys(heredado).length > 0) {
+    await supabase
+      .from("journal_entries")
+      .update(heredado)
+      .eq("trade_id", tradeId)
+      .eq("user_id", userId);
+  }
+
+  if (plan.screenshot_path) {
+    // Una fila más apuntando al mismo objeto, no una copia del archivo: el plan
+    // sigue enseñando su foto y la operación enseña la misma, que es lo
+    // correcto porque *es* la misma.
+    const { data: yaEsta } = await supabase
+      .from("trade_screenshots")
+      .select("id")
+      .eq("trade_id", tradeId)
+      .eq("storage_path", plan.screenshot_path)
+      .maybeSingle();
+
+    if (!yaEsta) {
+      await supabase.from("trade_screenshots").insert({
+        user_id: userId,
+        trade_id: tradeId,
+        storage_path: plan.screenshot_path,
+        caption: "Del plan, antes de entrar",
+        phase: "BEFORE",
+      });
+    }
+  }
+
+  return ok();
+}
+
 export async function guardarPaso(
   tradeId: string,
   input: unknown,
@@ -85,6 +181,10 @@ export async function guardarPaso(
   if (!(await esTuya(supabase, tradeId, user.id))) return fallo("Operación no encontrada.", 404);
 
   const paso = parsed.data;
+
+  if (paso.step === "plan_seguido") {
+    return unirAlPlan(supabase, user.id, tradeId, paso.planId, paso.value);
+  }
 
   if (paso.step === "setup") {
     // La nota del setup no es una columna del diario sino una etiqueta

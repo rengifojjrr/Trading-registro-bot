@@ -6,10 +6,11 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 
 | Dónde | Preguntas |
 |---|---|
+| `lib/journal/plan.ts` | **Antes** de entrar en una operación (`docs/PLAN_PREVIO.md`) |
 | `lib/journal/survey.ts` | Al cerrar una operación |
 | `modules/sleep/domain/encuesta.ts` | Antes de dormir, y al despertar |
 
-El resto de este documento describe la de trading, que es la primera y la que fijó las decisiones.
+El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
 ## El problema que resuelve
 
@@ -23,6 +24,7 @@ Así que **no se añade ni un dato nuevo**. Se escribe en las mismas columnas de
 
 | # | Pregunta | Dónde acaba |
 |---|---|---|
+| 0 | ¿Es ésta la que planificaste? | `journal_entries.plan_id` y `plan_followed` |
 | 1 | ¿Qué tal era el setup? | Etiqueta `Setup: A+` (`trade_tags`) |
 | 2 | ¿Seguiste tu plan? | `journal_entries.plan_adherence` (1-5) |
 | 3 | ¿Qué tal estuvo la entrada? | `journal_entries.entry_quality` (1-5) |
@@ -30,7 +32,9 @@ Así que **no se añade ni un dato nuevo**. Se escribe en las mismas columnas de
 | 5 | ¿Se coló algún error? | `trade_mistakes` (una fila por error) |
 | 6 | ¿Qué te llevas de ésta? | `journal_entries.lesson_learned` |
 
-El setup va **primero porque es lo primero que pasó**: la entrada se decide mirando el setup, y preguntarlo después de «¿cómo estabas?» obliga a rebobinar. Cada nota lleva escrito al lado qué cuenta como esa nota («B: aceptable, algo forzado»), que es lo que hace que un B de marzo y uno de octubre signifiquen lo mismo y que contar cuánto rinde cada nota diga algo. No es columna del diario sino etiqueta, porque así la dejó la importación de Notion y una operación no puede tener dos sitios distintos para lo mismo; se lee de ahí al abrir (`setupPorOperacion`) para no volver a preguntar lo que ya estaba puesto.
+La cero **sólo aparece cuando dejaste un plan escrito antes de entrar**, y entonces va delante de todo: de su respuesta depende qué significan las demás, porque «¿seguiste tu plan?» es otra pregunta cuando hay un plan escrito delante que cuando el plan es el que recuerdas ahora. Decir que sí muda el stop, el objetivo y la foto del plan a la operación. Está entero en `docs/PLAN_PREVIO.md`.
+
+El setup va **primero de las de siempre porque es lo primero que pasó**: la entrada se decide mirando el setup, y preguntarlo después de «¿cómo estabas?» obliga a rebobinar. Cada nota lleva escrito al lado qué cuenta como esa nota («B: aceptable, algo forzado»), que es lo que hace que un B de marzo y uno de octubre signifiquen lo mismo y que contar cuánto rinde cada nota diga algo. No es columna del diario sino etiqueta, porque así la dejó la importación de Notion y una operación no puede tener dos sitios distintos para lo mismo; se lee de ahí al abrir (`setupPorOperacion`) para no volver a preguntar lo que ya estaba puesto.
 
 Tres criterios para esta lista y no otra:
 
@@ -98,7 +102,7 @@ No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastr
 |---|---|
 | `core/encuesta/pasos.ts` | El recorrido, sin pantalla y sin red: qué preguntas hay, cuál está contestada, por dónde se sigue, qué resumen se enseña. Puro, probado entero. |
 | `core/encuesta/encuesta.tsx` | El componente: una pregunta, la barra de avance y el pie. Sirve en un cuadro que sale solo (trading) y en línea dentro de una página (sueño). |
-| `lib/journal/survey.ts` | Las seis preguntas del diario y la frontera entre el diccionario del motor y el tipo cerrado del módulo. |
+| `lib/journal/survey.ts` | Las seis preguntas del diario --siete con la del plan-- y la frontera entre el diccionario del motor y el tipo cerrado del módulo. |
 | `lib/journal/survey-queries.ts` | A qué operación toca preguntarle, y con qué viene ya contestado. |
 | `lib/journal/survey-store.ts` | Dónde acaba cada respuesta. Sin pantalla y sin HTTP, para que la ruta y la acción escriban lo mismo. |
 | `lib/journal/written.ts` | Cuándo cuenta una operación como apuntada. Un solo criterio para el aviso, la bandeja y la encuesta. |

@@ -54,6 +54,7 @@ function operacion(answers: Partial<SurveyAnswers> = {}): SurveyTrade {
     closedAt: "2026-09-11T14:30:00Z",
     netPnl: "124.5",
     answers: { ...RESPUESTAS_VACIAS, ...answers },
+    plan: null,
   };
 }
 
@@ -210,6 +211,69 @@ describe("empieza donde lo dejaste", () => {
   it("la nota de setup que ya tuviera puesta no se vuelve a preguntar", () => {
     abrir(conSetup());
     expect(screen.getByRole("heading", { name: "¿Seguiste tu plan?" })).toBeTruthy();
+  });
+});
+
+describe("cuando había un plan escrito antes de entrar", () => {
+  const PLAN_ID = "55555555-5555-4555-8555-555555555555";
+
+  function conPlan(answers: Partial<SurveyAnswers> = {}): SurveyTrade {
+    return {
+      ...operacion(answers),
+      plan: { id: PLAN_ID, resumen: "Largo · entrada 68.450 · stop 68.100" },
+    };
+  }
+
+  it("lo primero que se pregunta es si ésta es la que planificaste", () => {
+    abrir(conPlan());
+    expect(screen.getByRole("heading", { name: "¿Es ésta la que planificaste?" })).toBeTruthy();
+    // Una pregunta más que de costumbre, y se dice.
+    expect(screen.getByText(`1 de ${SURVEY_TOTAL + 1}`)).toBeTruthy();
+  });
+
+  it("y el plan se enseña debajo, para no convertirlo en un test de memoria", () => {
+    abrir(conPlan());
+    expect(screen.getByText("Largo · entrada 68.450 · stop 68.100")).toBeTruthy();
+  });
+
+  it("la respuesta viaja con el plan al que se refiere", async () => {
+    const user = userEvent.setup();
+    abrir(conPlan());
+
+    await user.click(screen.getByRole("button", { name: /Sí, es ésta/ }));
+
+    await waitFor(() =>
+      expect(guardado()).toContainEqual({ step: "plan_seguido", planId: PLAN_ID, value: "SI" }),
+    );
+  });
+
+  it("decir que no también se guarda: es lo que impide volver a preguntarlo", async () => {
+    const user = userEvent.setup();
+    abrir(conPlan());
+
+    await user.click(screen.getByRole("button", { name: /No, es otra/ }));
+
+    await waitFor(() =>
+      expect(guardado()).toContainEqual({ step: "plan_seguido", planId: PLAN_ID, value: "NO" }),
+    );
+  });
+
+  it("contestada, el plan deja de ocupar sitio en las demás preguntas", async () => {
+    const user = userEvent.setup();
+    abrir(conPlan());
+
+    await user.click(screen.getByRole("button", { name: /Sí, es ésta/ }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "¿Qué tal era el setup?" })).toBeTruthy(),
+    );
+    expect(screen.queryByText("Largo · entrada 68.450 · stop 68.100")).toBeNull();
+  });
+
+  it("sin plan no se pregunta por uno que no existe", () => {
+    abrir(operacion());
+    expect(screen.queryByRole("heading", { name: "¿Es ésta la que planificaste?" })).toBeNull();
+    expect(screen.getByText(`1 de ${SURVEY_TOTAL}`)).toBeTruthy();
   });
 });
 

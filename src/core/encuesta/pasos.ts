@@ -92,7 +92,45 @@ export interface PasoLinea extends PasoBase {
   maximo?: number;
 }
 
-export type Paso = PasoEscala | PasoChips | PasoHora | PasoTexto | PasoLinea;
+/**
+ * Un número suelto: un precio, un peso, cuánto estás dispuesto a perder.
+ *
+ * Distinto de una escala, que es elegir entre opciones contadas. Aquí el valor
+ * lo escribes tú y puede ser cualquiera, así que hace falta teclado -- pero un
+ * teclado **numérico**, que en un móvil es la diferencia entre teclear 68.450
+ * de una vez y buscar los dígitos entre las letras.
+ */
+export interface PasoNumero extends PasoBase {
+  tipo: "numero";
+  marcador?: string;
+  /** Lo que va delante, dentro del recuadro: «$». */
+  prefijo?: string;
+  /** Cuántos decimales admite. Un precio no es un número de contratos. */
+  decimales?: number;
+}
+
+/**
+ * Una foto.
+ *
+ * El valor que se guarda no es la imagen sino dónde quedó -- la ruta en el
+ * almacén --, porque una imagen en el diccionario de respuestas viajaría
+ * entera en cada tecla que se pulse en cualquier otra pregunta. Subirla es
+ * cosa de quien llama (`onSubirImagen`): el motor no sabe de red.
+ */
+export interface PasoImagen extends PasoBase {
+  tipo: "imagen";
+  /** Qué se espera ver. «El gráfico con tus líneas», no «adjunta un archivo». */
+  pista?: string;
+}
+
+export type Paso =
+  | PasoEscala
+  | PasoChips
+  | PasoHora
+  | PasoTexto
+  | PasoLinea
+  | PasoNumero
+  | PasoImagen;
 
 export function pasoPorId(pasos: Paso[], id: string): Paso {
   const paso = pasos.find((p) => p.id === id);
@@ -151,7 +189,7 @@ export function pasoAnterior(pasos: Paso[], id: string): string | null {
 /** La respuesta vacía que corresponde a cada tipo de pregunta. */
 export function respuestaVacia(paso: Paso): Respuesta {
   if (paso.tipo === "chips" && paso.multiple) return [];
-  if (paso.tipo === "escala") return null;
+  if (paso.tipo === "escala" || paso.tipo === "numero") return null;
   return "";
 }
 
@@ -175,6 +213,18 @@ export function textoDeRespuesta(paso: Paso, respuestas: Respuestas): string | n
     const marcadas = Array.isArray(valor) ? valor.map(String) : [String(valor)];
     return marcadas.map((v) => todas.find((o) => o.valor === v)?.etiqueta ?? v).join(", ");
   }
+
+  if (paso.tipo === "numero" && typeof valor === "number") {
+    // Con separador de miles: 68.450 se lee de un vistazo y 68450 hay que
+    // contarlo. Es la misma razón por la que el eje del gráfico los lleva.
+    return `${paso.prefijo ?? ""}${valor.toLocaleString("es-ES", {
+      maximumFractionDigits: paso.decimales ?? 2,
+    })}`;
+  }
+
+  // Una imagen en el resumen se enseña, no se describe: lo que hay guardado es
+  // una ruta, y «planes/3f2a…png» no le dice nada a nadie.
+  if (paso.tipo === "imagen") return "Una foto";
 
   if (Array.isArray(valor)) return valor.join(", ");
 

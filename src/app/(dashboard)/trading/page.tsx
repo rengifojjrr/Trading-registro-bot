@@ -9,6 +9,7 @@ import { TodayNewsCard } from "@/components/economic-calendar/today-news-card";
 import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { OpenPositionsPanel } from "@/components/dashboard/open-positions-panel";
+import { PlanPanel } from "@/components/journal/plan-panel";
 import { SurveyLauncher } from "@/components/journal/survey-launcher";
 import { NewsFeed } from "@/components/market-news/news-feed";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
@@ -194,6 +195,13 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
           cifras del panel no pueden esperar por ellas: aparece cuando esté. */}
       <Suspense fallback={null}>
         <SurveyLauncher />
+      </Suspense>
+
+      {/* Lo único de este panel que se hace **antes** de operar, y por eso va
+          arriba del todo: cuando abras esto ya con una posición encima, lo
+          primero que verás es lo que te tocaba haber escrito antes. */}
+      <Suspense fallback={null}>
+        <PlanPanel />
       </Suspense>
 
       {/* Encima de las posiciones, no debajo: si los datos son de hace cinco

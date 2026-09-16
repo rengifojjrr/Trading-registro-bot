@@ -1,23 +1,23 @@
 "use client";
 
-import { ArrowUpRight, PartyPopper, X } from "lucide-react";
+import { ArrowUpRight, PartyPopper, Target, X } from "lucide-react";
 import { DateTime } from "luxon";
 import Link from "next/link";
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { closeSurvey } from "@/app/(dashboard)/trades/survey-actions";
 import { Button } from "@/components/ui/button";
 import { Encuesta } from "@/core/encuesta/encuesta";
-import { resumen, type Respuesta, type Respuestas } from "@/core/encuesta/pasos";
+import { resumen, type Paso, type Respuesta, type Respuestas } from "@/core/encuesta/pasos";
 import { formatSignedMoney, pnlColorClass } from "@/lib/format";
 import type { MistakeCode } from "@/lib/journal/mistakes";
 import type { SurveyStepInput } from "@/lib/journal/survey-store";
 import {
   aRespuestas,
   deRespuestas,
+  pasosDeLaEncuesta,
   SURVEY_LABELS,
-  SURVEY_STEPS,
   type SurveyTrade,
 } from "@/lib/journal/survey";
 import { cn } from "@/lib/utils";
@@ -48,13 +48,18 @@ export function TradeSurvey({
   const [guardando, startSaving] = useTransition();
   const terminadaRef = useRef(false);
 
+  // Las preguntas de *esta* operación: las de siempre, con la del plan delante
+  // cuando había uno esperando. Memorizadas porque la encuesta las usa como
+  // identidad para saber por dónde ibas.
+  const pasos = useMemo(() => pasosDeLaEncuesta(trade.plan !== null), [trade.plan]);
+
   const cambiar = useCallback((id: string, valor: Respuesta) => {
     setRespuestas((previas) => ({ ...previas, [id]: valor }));
   }, []);
 
   const guardar = useCallback(
     (id: string, valor: Respuesta) => {
-      const entrada = entradaDelPaso(id, valor);
+      const entrada = entradaDelPaso(id, valor, trade.plan?.id ?? null);
       if (!entrada) return;
       startSaving(async () => {
         try {
@@ -77,7 +82,7 @@ export function TradeSurvey({
         }
       });
     },
-    [trade.id],
+    [trade.id, trade.plan?.id],
   );
 
   const cerrar = useCallback(() => {
@@ -119,7 +124,7 @@ export function TradeSurvey({
 
         <div className="px-5 pb-5 pt-4">
           <Encuesta
-            pasos={SURVEY_STEPS}
+            pasos={pasos}
             respuestas={respuestas}
             onCambio={cambiar}
             onGuardar={guardar}
@@ -128,8 +133,14 @@ export function TradeSurvey({
             }}
             guardando={guardando}
             pie={verLaOperacion}
+            bajoLaPregunta={<ElPlan plan={trade.plan} respuestas={respuestas} />}
             final={
-              <Final respuestas={respuestas} verLaOperacion={verLaOperacion} onCerrar={cerrar} />
+              <Final
+                pasos={pasos}
+                respuestas={respuestas}
+                verLaOperacion={verLaOperacion}
+                onCerrar={cerrar}
+              />
             }
           />
         </div>
@@ -139,7 +150,13 @@ export function TradeSurvey({
 }
 
 /** Qué mandarle al servidor por cada respuesta, ya en el tipo que espera. */
-function entradaDelPaso(id: string, valor: Respuesta): SurveyStepInput | null {
+function entradaDelPaso(id: string, valor: Respuesta, planId: string | null): SurveyStepInput | null {
+  if (id === "plan_seguido") {
+    // Sin plan no hay nada que unir, y mandarlo sería inventarse un enlace.
+    if (!planId) return null;
+    const texto = typeof valor === "string" ? valor : "";
+    return { step: "plan_seguido", planId, value: texto === "SI" || texto === "NO" ? texto : "" };
+  }
   if (id === "setup") return { step: "setup", grade: typeof valor === "string" ? valor : "" };
   if (id === "plan" && typeof valor === "number") return { step: "plan", rating: valor };
   if (id === "entrada" && typeof valor === "number") return { step: "entrada", rating: valor };
@@ -152,6 +169,38 @@ function entradaDelPaso(id: string, valor: Respuesta): SurveyStepInput | null {
   }
   if (id === "leccion") return { step: "leccion", text: typeof valor === "string" ? valor : "" };
   return null;
+}
+
+/**
+ * El plan que había escrito, debajo de la pregunta que pregunta por él.
+ *
+ * Sin esto, «¿es ésta la que planificaste?» es un test de memoria, que es
+ * exactamente el problema que planificar por escrito venía a resolver. Con el
+ * plan delante la pregunta se contesta mirando, no recordando.
+ *
+ * Desaparece en cuanto se pasa de pregunta: en «¿qué tal era el setup?» ya no
+ * pinta nada, y dejarlo sería una caja fija ocupando sitio en todas.
+ */
+function ElPlan({
+  plan,
+  respuestas,
+}: {
+  plan: SurveyTrade["plan"];
+  respuestas: Respuestas;
+}) {
+  if (!plan || !plan.resumen) return null;
+  // Contestada la pregunta, el plan deja de hacer falta.
+  if (respuestas.plan_seguido) return null;
+
+  return (
+    <p className="flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
+      <Target className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
+      <span className="min-w-0">
+        <span className="text-muted-foreground">Lo que escribiste: </span>
+        <span className="font-medium">{plan.resumen}</span>
+      </span>
+    </p>
+  );
 }
 
 function Cabecera({
@@ -206,15 +255,17 @@ function Cabecera({
  * corrige y donde está todo lo demás.
  */
 function Final({
+  pasos,
   respuestas,
   verLaOperacion,
   onCerrar,
 }: {
+  pasos: Paso[];
   respuestas: Respuestas;
   verLaOperacion: React.ReactNode;
   onCerrar: () => void;
 }) {
-  const lineas = resumen(SURVEY_STEPS, respuestas, SURVEY_LABELS);
+  const lineas = resumen(pasos, respuestas, SURVEY_LABELS);
 
   return (
     <div className="flex flex-col gap-4 py-1">

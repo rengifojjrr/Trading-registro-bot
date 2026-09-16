@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
 import { isMistakeCode, type MistakeCode } from "./mistakes";
+import { planPendiente } from "./plan-store";
+import { resumenCorto, type TradePlan } from "./plan";
 import { gradeFromTagName } from "./setup-grade";
 import { RESPUESTAS_VACIAS, type SurveyAnswers, type SurveyTrade } from "./survey";
 import { hasJournalContent } from "./written";
@@ -48,10 +50,12 @@ interface FilaDiario {
   plan_adherence: number | null;
   entry_quality: number | null;
   survey_closed_at: string | null;
+  plan_id: string | null;
+  plan_followed: boolean | null;
 }
 
 const COLUMNAS =
-  "trade_id, notes, lesson_learned, emotional_state, mistake_tag, strategy_id, plan_adherence, entry_quality, survey_closed_at";
+  "trade_id, notes, lesson_learned, emotional_state, mistake_tag, strategy_id, plan_adherence, entry_quality, survey_closed_at, plan_id, plan_followed";
 
 function respuestasDe(
   fila: FilaDiario | undefined,
@@ -59,7 +63,13 @@ function respuestasDe(
   setup: string,
 ): SurveyAnswers {
   if (!fila) return { ...RESPUESTAS_VACIAS, errores, setup };
+
+  // Tres estados y no dos: null es «todavía no se ha preguntado», y eso es lo
+  // que hace que la pregunta salga la primera vez y no vuelva a salir después.
+  const planSeguido = fila.plan_followed === null ? "" : fila.plan_followed ? "SI" : "NO";
+
   return {
+    plan_seguido: planSeguido,
     setup,
     plan: fila.plan_adherence,
     entrada: fila.entry_quality,
@@ -152,10 +162,13 @@ export async function fetchSurveyCandidate(): Promise<SurveyTrade | null> {
   if (!trades || trades.length === 0) return null;
 
   const ids = trades.map((t) => t.id);
-  const [{ data: journals }, errores, setups] = await Promise.all([
+  const [{ data: journals }, errores, setups, pendiente] = await Promise.all([
     supabase.from("journal_entries").select(COLUMNAS).eq("user_id", user.id).in("trade_id", ids),
     erroresPorOperacion(supabase, user.id, ids),
     setupPorOperacion(supabase, user.id, ids),
+    // El plan que estaba esperando. Un extra: si falla, la encuesta sale sin la
+    // pregunta del plan en vez de no salir.
+    planPendiente().catch(() => null),
   ]);
 
   const porOperacion = new Map((journals ?? []).map((j) => [j.trade_id, j as FilaDiario]));
@@ -173,10 +186,44 @@ export async function fetchSurveyCandidate(): Promise<SurveyTrade | null> {
       closedAt: trade.closed_at as string,
       netPnl: trade.net_pnl,
       answers: respuestasDe(fila, errores.get(trade.id) ?? [], setups.get(trade.id) ?? ""),
+      plan: planParaLaOperacion(pendiente, fila, trade.closed_at as string),
     };
   }
 
   return null;
+}
+
+/**
+ * Qué plan enseñarle a esta operación, si alguno.
+ *
+ * Dos reglas, y las dos son sobre no preguntar de más:
+ *
+ * 1. **Ya contestado, ya está.** Si el diario tiene un `plan_id`, la pregunta
+ *    se hizo; reabrir la encuesta enseña ese mismo plan con la respuesta
+ *    puesta, no uno nuevo.
+ * 2. **El plan es anterior a la operación.** Un plan escrito *después* de
+ *    cerrar no puede ser el de esa operación, y ofrecerlo sería invitar a
+ *    decir que sí a algo imposible -- que es como una cuenta de «cuántos
+ *    planes cumplo» acaba siendo una cuenta de nada.
+ */
+function planParaLaOperacion(
+  pendiente: TradePlan | null,
+  fila: FilaDiario | undefined,
+  cerradaEn: string,
+): { id: string; resumen: string } | null {
+  if (fila?.plan_id) {
+    // El que ya se ofreció. Si es el mismo que sigue pendiente se enseña con su
+    // resumen; si no, basta con el identificador para no volver a preguntar.
+    if (pendiente && pendiente.id === fila.plan_id) {
+      return { id: pendiente.id, resumen: resumenCorto(pendiente.answers) };
+    }
+    return { id: fila.plan_id, resumen: "" };
+  }
+
+  if (!pendiente) return null;
+  if (new Date(pendiente.createdAt).getTime() > new Date(cerradaEn).getTime()) return null;
+
+  return { id: pendiente.id, resumen: resumenCorto(pendiente.answers) };
 }
 
 /**
@@ -199,10 +246,11 @@ export async function fetchSurveyForTrade(tradeId: string): Promise<SurveyTrade 
 
   if (!trade || !trade.closed_at) return null;
 
-  const [{ data: fila }, errores, setups] = await Promise.all([
+  const [{ data: fila }, errores, setups, pendiente] = await Promise.all([
     supabase.from("journal_entries").select(COLUMNAS).eq("trade_id", tradeId).maybeSingle(),
     erroresPorOperacion(supabase, user.id, [tradeId]),
     setupPorOperacion(supabase, user.id, [tradeId]),
+    planPendiente().catch(() => null),
   ]);
 
   return {
@@ -211,6 +259,7 @@ export async function fetchSurveyForTrade(tradeId: string): Promise<SurveyTrade 
     direction: trade.direction,
     closedAt: trade.closed_at,
     netPnl: trade.net_pnl,
+    plan: planParaLaOperacion(pendiente, (fila as FilaDiario | null) ?? undefined, trade.closed_at),
     answers: respuestasDe(
       (fila as FilaDiario | null) ?? undefined,
       errores.get(tradeId) ?? [],

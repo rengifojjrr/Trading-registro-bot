@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, ImagePlus, Loader2 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,9 @@ export function Encuesta({
   pie,
   final,
   pasoInicial,
+  onSubirImagen,
+  imagenes,
+  subiendoImagen = false,
 }: {
   pasos: Paso[];
   respuestas: Respuestas;
@@ -90,6 +93,17 @@ export function Encuesta({
   final?: ReactNode;
   /** Por dónde abrir. Por defecto, la primera sin contestar. */
   pasoInicial?: string;
+  /**
+   * Qué hacer con la foto que se acaba de elegir.
+   *
+   * El motor pinta el selector, la miniatura y el botón de quitar; subirla es
+   * de quien llama, igual que guardar cualquier otra respuesta. Devuelve la
+   * dirección con la que enseñarla, o null si no se pudo.
+   */
+  onSubirImagen?: (paso: string, file: File) => void;
+  /** Con qué enseñar lo ya subido: paso → dirección de la imagen. */
+  imagenes?: Record<string, string>;
+  subiendoImagen?: boolean;
 }) {
   const [pantalla, setPantalla] = useState<string>(
     () => pasoInicial ?? primeraSinContestar(pasos, respuestas),
@@ -199,10 +213,14 @@ export function Encuesta({
           respuestas={respuestas}
           acento={acento}
           bajoLaPregunta={bajoLaPregunta}
+          vistaPrevia={imagenes?.[pantalla]}
+          subiendoImagen={subiendoImagen}
+          onSubirImagen={onSubirImagen}
           pie={pie}
           hayAnterior={pasoAnterior(pasos, pantalla) !== null}
           esUltima={siguientePaso(pasos, pantalla) === null}
           onCambio={onCambio}
+          onGuardarAhora={onGuardar}
           onResponderYAvanzar={responderYAvanzar}
           onNinguno={responderNinguno}
           onAtras={() => {
@@ -263,10 +281,14 @@ function Pregunta({
   respuestas,
   acento,
   bajoLaPregunta,
+  vistaPrevia,
+  subiendoImagen,
+  onSubirImagen,
   pie,
   hayAnterior,
   esUltima,
   onCambio,
+  onGuardarAhora,
   onResponderYAvanzar,
   onNinguno,
   onAtras,
@@ -276,10 +298,22 @@ function Pregunta({
   respuestas: Respuestas;
   acento?: string;
   bajoLaPregunta?: ReactNode;
+  vistaPrevia?: string;
+  subiendoImagen?: boolean;
+  onSubirImagen?: (paso: string, file: File) => void;
   pie?: ReactNode;
   hayAnterior: boolean;
   esUltima: boolean;
   onCambio: (id: string, valor: Respuesta) => void;
+  /**
+   * Guardar sin pasar de pregunta.
+   *
+   * Lo normal es que una respuesta se guarde al avanzar, pero quitar una foto
+   * tiene que llegar al servidor en el momento: la subida ya escribió la ruta
+   * allí, y quitarla y cerrar el cuadro dejaría una foto que en la pantalla ya
+   * no está y en la base de datos sí.
+   */
+  onGuardarAhora: (id: string, valor: Respuesta) => void;
   onResponderYAvanzar: (id: string, valor: Respuesta) => void;
   onNinguno: (paso: Paso) => void;
   onAtras: () => void;
@@ -346,6 +380,27 @@ function Pregunta({
           maxLength={paso.maximo}
           autoComplete="off"
           autoFocus
+        />
+      ) : null}
+
+      {paso.tipo === "numero" ? (
+        <Numero
+          paso={paso}
+          valor={typeof valor === "number" ? valor : null}
+          onCambio={(v) => onCambio(paso.id, v)}
+        />
+      ) : null}
+
+      {paso.tipo === "imagen" ? (
+        <Imagen
+          paso={paso}
+          vistaPrevia={vistaPrevia ?? null}
+          subiendo={subiendoImagen}
+          onElegir={(file) => onSubirImagen?.(paso.id, file)}
+          onQuitar={() => {
+            onCambio(paso.id, "");
+            onGuardarAhora(paso.id, "");
+          }}
         />
       ) : null}
 
@@ -555,6 +610,135 @@ function Chips({
 
   return (
     <div className="flex flex-wrap gap-1.5">{sueltas.map((o) => chip(o.valor, o.etiqueta))}</div>
+  );
+}
+
+/**
+ * Un número, con teclado numérico.
+ *
+ * `inputMode="decimal"` y no `type="number"`: el segundo trae flechitas que
+ * nadie usa, cambia el valor al pasar la rueda del ratón por encima -- que es
+ * una forma estupenda de que un precio de 68.450 se convierta en 68.449 sin
+ * que nadie lo toque -- y en algunos navegadores rechaza la coma decimal.
+ */
+function Numero({
+  paso,
+  valor,
+  onCambio,
+}: {
+  paso: Extract<Paso, { tipo: "numero" }>;
+  valor: number | null;
+  onCambio: (valor: number | null) => void;
+}) {
+  // El texto tal cual se escribe, aparte del número: sin esto, teclear «68.» se
+  // convierte en 68 al instante y el punto desaparece bajo los dedos.
+  const [texto, setTexto] = useState(valor === null ? "" : String(valor));
+
+  return (
+    <div className="relative">
+      {paso.prefijo ? (
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">
+          {paso.prefijo}
+        </span>
+      ) : null}
+      <Input
+        value={texto}
+        onChange={(event) => {
+          const crudo = event.target.value;
+          setTexto(crudo);
+          const limpio = crudo.replace(",", ".").trim();
+          const n = Number(limpio);
+          onCambio(limpio === "" || !Number.isFinite(n) ? null : n);
+        }}
+        placeholder={paso.marcador}
+        inputMode="decimal"
+        autoComplete="off"
+        autoFocus
+        className={cn("text-lg tabular-nums", paso.prefijo && "pl-7")}
+      />
+    </div>
+  );
+}
+
+/**
+ * Una foto.
+ *
+ * Un recuadro grande y no un «Examinar…» diminuto: en un móvil se toca, y lo
+ * que se toca tiene que ser del tamaño de un dedo. Con la foto puesta, el
+ * recuadro *es* la foto -- verla es la única forma de saber que subiste la que
+ * querías.
+ */
+function Imagen({
+  paso,
+  vistaPrevia,
+  subiendo,
+  onElegir,
+  onQuitar,
+}: {
+  paso: Extract<Paso, { tipo: "imagen" }>;
+  vistaPrevia: string | null;
+  subiendo?: boolean;
+  onElegir: (file: File) => void;
+  onQuitar: () => void;
+}) {
+  const entradaRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        ref={entradaRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="sr-only"
+        aria-label={paso.pregunta}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onElegir(file);
+          // Se limpia para que volver a elegir el mismo archivo dispare el
+          // evento: sin esto, quitar la foto y volver a poner la misma no hace
+          // nada y parece que la aplicación se ha quedado colgada.
+          event.target.value = "";
+        }}
+      />
+
+      <button
+        type="button"
+        onClick={() => entradaRef.current?.click()}
+        className={cn(
+          "relative flex min-h-32 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-accent/40",
+          vistaPrevia && "border-solid",
+        )}
+      >
+        {vistaPrevia ? (
+          // Una imagen de tamaño desconocido que el usuario acaba de elegir:
+          // `next/image` pide dimensiones o un dominio configurado y aquí no
+          // hay ninguno de los dos.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={vistaPrevia} alt="" className="max-h-64 w-full object-contain" />
+        ) : (
+          <span className="flex flex-col items-center gap-1 px-4 py-6 text-center">
+            {subiendo ? (
+              <Loader2 className="size-5 animate-spin" aria-hidden />
+            ) : (
+              <ImagePlus className="size-5" aria-hidden />
+            )}
+            <span>{subiendo ? "Subiendo…" : "Toca para elegir una imagen"}</span>
+            {paso.pista ? <span className="text-xs">{paso.pista}</span> : null}
+          </span>
+        )}
+      </button>
+
+      {vistaPrevia ? (
+        <div className="flex gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => entradaRef.current?.click()}>
+            Cambiarla
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onQuitar}>
+            Quitarla
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -31,6 +31,7 @@ function operacion(id: string): SurveyTrade {
     closedAt: "2026-09-11T14:30:00Z",
     netPnl: "124.5",
     answers: { ...RESPUESTAS_VACIAS },
+    plan: null,
   };
 }
 
