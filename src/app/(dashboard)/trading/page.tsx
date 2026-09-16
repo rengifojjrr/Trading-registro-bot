@@ -86,16 +86,22 @@ export default async function TradingDashboardPage(props: PageProps<"/trading">)
   const currency = accounts[0]?.currency ?? "USD";
   const filters = parseTradeFilters(searchParams, timezone);
 
-  // Lo que se publica hoy, para el acceso directo del panel. Sólo impacto
-  // alto y medio: la lista entera de un día trae subastas de letras que aquí
-  // no aportan nada. En paralelo con las operaciones, que es la consulta que
-  // manda; si el calendario falla, el panel se pinta igual sin él.
+  // Lo que se publica hoy, para el acceso directo del panel. **Sólo alto
+  // impacto**: con el medio incluido, un miércoles normal salían catorce
+  // líneas -- precios de importación, inventarios de negocio, existencias de
+  // gasolina -- y entre ellas se perdía la decisión de tipos de la Fed, que
+  // era la única que iba a mover el precio. Una lista en la que hay que
+  // buscar no es un aviso. El calendario entero, con todos los niveles, está
+  // a un clic en Noticias.
+  //
+  // En paralelo con las operaciones, que es la consulta que manda; si el
+  // calendario falla, el panel se pinta igual sin él.
   const [trades, todayEvents] = await Promise.all([
     fetchTradesForStats(filters),
     fetchEventsBetween({
       from: DateTime.now().setZone(timezone).startOf("day").toJSDate(),
       to: DateTime.now().setZone(timezone).endOf("day").toJSDate(),
-      minImportance: 0,
+      minImportance: 1,
     }).catch(() => []),
   ]);
   const stats = computeStats(trades);

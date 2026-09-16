@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { PPI_2026_08_13 } from "./fixtures/ppi-2026-08-13";
 import {
+  aggregateCandles,
   formatAbsPct,
   formatHorizonLabel,
   formatSignedPct,
@@ -12,6 +14,8 @@ import {
 /** 2026-08-13T12:30:00Z, la publicación real del PPI de julio. */
 const EVENTO = new Date("2026-08-13T12:30:00.000Z");
 const T0 = Math.floor(EVENTO.getTime() / 1000);
+/** El mismo instante, para las pruebas que usan las velas reales guardadas. */
+const PPI_T0 = T0;
 
 function vela(offsetMin: number, precios: Partial<ReactionCandle> = {}): ReactionCandle {
   const base = 100;
@@ -118,5 +122,77 @@ describe("formato", () => {
     expect(formatHorizonLabel(15)).toBe("15 min");
     expect(formatHorizonLabel(60)).toBe("1 h");
     expect(formatHorizonLabel(240)).toBe("4 h");
+  });
+});
+
+describe("aggregateCandles", () => {
+  /** Cinco velas de un minuto desde las 12:28, para que el dato de las 12:30 parta un tramo. */
+  const T = Math.floor(Date.UTC(2026, 7, 13, 12, 28, 0) / 1000);
+  const unMinuto: ReactionCandle[] = [
+    { time: T, open: 100, high: 105, low: 99, close: 101, volume: 1 },
+    { time: T + 60, open: 101, high: 102, low: 95, close: 96, volume: 2 },
+    { time: T + 120, open: 96, high: 110, low: 96, close: 108, volume: 4 },
+    { time: T + 180, open: 108, high: 109, low: 107, close: 107, volume: 8 },
+    { time: T + 240, open: 107, high: 120, low: 106, close: 118, volume: 16 },
+  ];
+
+  it("con factor uno devuelve lo mismo, ordenado", () => {
+    expect(aggregateCandles(unMinuto, 1)).toEqual(unMinuto);
+  });
+
+  it("alinea con el reloj y no con la primera vela recibida", () => {
+    // 12:28 y 12:29 caen en el tramo de 12:25; el dato de 12:30 abre uno nuevo.
+    const cinco = aggregateCandles(unMinuto, 5);
+    expect(cinco.map((c) => new Date(c.time * 1000).toISOString().slice(11, 16))).toEqual([
+      "12:25",
+      "12:30",
+    ]);
+  });
+
+  it("la apertura es la primera, el cierre la última, y los extremos los de todo el tramo", () => {
+    const [primero, segundo] = aggregateCandles(unMinuto, 5);
+
+    expect(primero.open).toBe(100);
+    expect(primero.close).toBe(96);
+    expect(primero.high).toBe(105);
+    expect(primero.low).toBe(95);
+
+    expect(segundo.open).toBe(96);
+    expect(segundo.close).toBe(118);
+    expect(segundo.high).toBe(120);
+    expect(segundo.low).toBe(96);
+  });
+
+  it("suma el volumen del tramo", () => {
+    const [primero, segundo] = aggregateCandles(unMinuto, 5);
+    expect(primero.volume).toBe(3);
+    expect(segundo.volume).toBe(28);
+  });
+
+  it("no toca las velas que recibe", () => {
+    const copia = structuredClone(unMinuto);
+    aggregateCandles(unMinuto, 5);
+    expect(unMinuto).toEqual(copia);
+  });
+
+  it("una lista vacía da una lista vacía, no un tramo inventado", () => {
+    expect(aggregateCandles([], 5)).toEqual([]);
+  });
+
+  it("sobre las velas reales del PPI, las de cinco minutos cubren lo mismo que las de uno", () => {
+    const reales = PPI_2026_08_13.map(([minuto, o, h, l, c]) => ({
+      time: PPI_T0 + minuto * 60,
+      open: o,
+      high: h,
+      low: l,
+      close: c,
+    }));
+    const cinco = aggregateCandles(reales, 5);
+
+    // El máximo y el mínimo del conjunto no pueden cambiar al agrupar: si
+    // cambiaran, el gráfico enseñaría un recorrido distinto del medido.
+    expect(Math.max(...cinco.map((c) => c.high))).toBe(Math.max(...reales.map((c) => c.high)));
+    expect(Math.min(...cinco.map((c) => c.low))).toBe(Math.min(...reales.map((c) => c.low)));
+    expect(cinco.length).toBeLessThan(reales.length / 4);
   });
 });

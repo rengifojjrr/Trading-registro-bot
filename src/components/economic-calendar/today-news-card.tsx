@@ -16,8 +16,12 @@ import { cn } from "@/lib/utils";
  * existe, puesto donde se entra cada día. Un dato que sale en dos horas no
  * sirve de nada en una pantalla a la que hay que acordarse de ir.
  *
- * Sólo impacto alto y medio: la lista completa de un día trae subastas de
- * letras e inventarios de crudo, y aquí no hay sitio ni motivo.
+ * **Sólo alto impacto.** Con el medio incluido, un miércoles normal daba
+ * catorce líneas -- precios de importación, inventarios de negocio,
+ * existencias de gasolina -- y entre ellas se perdía la decisión de tipos de
+ * la Fed, que era la única que iba a mover el precio. Una lista en la que hay
+ * que buscar no es un aviso. El calendario entero, con todos los niveles,
+ * está a un clic.
  */
 export function TodayNewsCard({
   events,
@@ -44,7 +48,7 @@ export function TodayNewsCard({
           <CardTitle className="text-foreground">Noticias de hoy</CardTitle>
           <CardDescription>
             {events.length > 0
-              ? "Datos macro de impacto alto y medio que se publican hoy."
+              ? "Los datos macro de alto impacto que se publican hoy. El resto, en el calendario."
               : "Hoy no se publica nada de impacto. Esto es lo siguiente que viene."}
           </CardDescription>
         </div>

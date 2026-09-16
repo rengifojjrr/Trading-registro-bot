@@ -23,6 +23,7 @@ import { GRANULARITY_LABELS, GRANULARITY_SECONDS } from "@/lib/analytics/chart-w
 import { conAlfa, resolverTemaCanvas, type TemaCanvas } from "@/lib/charts/tema-canvas";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import {
+  aggregateCandles,
   formatHorizonLabel,
   formatSignedPct,
   type ReactionCandle,
@@ -88,6 +89,40 @@ const MARGEN_VELAS = 15;
 const VELAS_ANTES = 30;
 const VELAS_DESPUES = 70;
 
+/**
+ * En qué temporalidad se abre.
+ *
+ * **No en un minuto**, que es como estaba y era el problema: treinta velas
+ * antes y setenta después son hora y media de gráfico, y en hora y media de
+ * velas de un minuto no se aprecia la reacción a una noticia -- se ve el
+ * ruido de dentro del movimiento, no el movimiento. En cinco minutos la misma
+ * cantidad de velas cubre ocho horas, así que entran los cuatro plazos que se
+ * miden (hasta cuatro horas) y se ve la forma entera: el golpe, si se
+ * deshizo, y dónde acabó.
+ *
+ * No cuesta una petición. El servidor ya trae trescientas velas de un minuto
+ * --las necesita para medir con precisión-- y de ellas salen las de cinco
+ * juntándolas aquí.
+ */
+const TEMPORALIDAD_INICIAL: CoinbaseCandleGranularity = "FIVE_MINUTE";
+
+/**
+ * Hasta dónde se traen velas alrededor de la publicación.
+ *
+ * **Esto era el gráfico corriéndose solo hacia la derecha al alejar el zoom**,
+ * y el motivo es más tonto de lo que parecía. El cargador del borde derecho
+ * pedía hasta *ahora mismo*; para una noticia de junio eso son tres meses de
+ * velas disponibles. Alejar el zoom dejaba hueco a la derecha, el cargador
+ * traía trescientas velas para llenarlo, seguía habiendo hueco, y vuelta a
+ * empezar: el contenido crecía hacia la derecha mientras mirabas.
+ *
+ * Con un tope deja de perseguir. Y el tope no es una cifra arbitraria: pasadas
+ * cuarenta y ocho horas lo que se ve ya no es la reacción a ese dato sino el
+ * mercado haciendo su vida, que es otra pregunta y tiene otra pantalla.
+ */
+const HORAS_ANTES = 24;
+const HORAS_DESPUES = 48;
+
 const PRECIO = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
 
 interface Vela extends ReactionCandle {
@@ -133,8 +168,14 @@ export function ReactionChart({
   const priceLineRef = useRef<IPriceLine | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
-  const [granularity, setGranularity] = useState<CoinbaseCandleGranularity>("ONE_MINUTE");
-  const [velas, setVelas] = useState<Vela[]>(() => [...initialCandles].sort((a, b) => a.time - b.time));
+  const [granularity, setGranularity] = useState<CoinbaseCandleGranularity>(TEMPORALIDAD_INICIAL);
+  // Las que llegan del servidor son siempre de un minuto; se juntan al tamaño
+  // con el que se abre. Volver a un minuto las pide otra vez, que es correcto:
+  // el servidor sólo manda la ventana que hacía falta para medir, y quien baja
+  // a un minuto normalmente quiere mirar más allá de ella.
+  const [velas, setVelas] = useState<Vela[]>(() =>
+    aggregateCandles(initialCandles, GRANULARITY_SECONDS[TEMPORALIDAD_INICIAL] / 60),
+  );
   const [cargando, setCargando] = useState(false);
   const [cursor, setCursor] = useState<Vela | null>(null);
 
@@ -225,14 +266,31 @@ export function ReactionChart({
     [granularity, productId, t0],
   );
 
+  /**
+   * El encuadre de apertura, recortado a las velas que de verdad hay.
+   *
+   * Sin el recorte, pedir treinta velas antes y setenta después de lo que hay
+   * deja franjas vacías a los lados -- y el cargador del borde se lanza a
+   * llenarlas nada más abrir, que es como empezaba el desfile hacia la
+   * derecha.
+   */
+  const encuadre = useCallback(
+    (disponibles: Vela[]) => {
+      const primera = disponibles[0]?.time ?? t0;
+      const ultima = disponibles.at(-1)?.time ?? t0;
+      return {
+        from: Math.max(t0 - VELAS_ANTES * segundos, primera) as UTCTimestamp,
+        to: Math.min(t0 + VELAS_DESPUES * segundos, ultima + segundos) as UTCTimestamp,
+      };
+    },
+    [t0, segundos],
+  );
+
   const volverAlMomento = useCallback(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    chart.timeScale().setVisibleRange({
-      from: (t0 - VELAS_ANTES * segundos) as UTCTimestamp,
-      to: (t0 + VELAS_DESPUES * segundos) as UTCTimestamp,
-    });
-  }, [t0, segundos]);
+    chart.timeScale().setVisibleRange(encuadre(velasRef.current));
+  }, [encuadre]);
 
   // Crear el gráfico. Se rehace cuando cambia la temporalidad o el tema,
   // nunca cuando llegan velas: recrearlo al recibir datos tiraría el zoom y
@@ -326,15 +384,19 @@ export function ReactionChart({
       if (!rango || actuales.length === 0 || cargandoRef.current) return;
 
       const paso = GRANULARITY_SECONDS[granularity];
+      // Los dos topes son de la publicación, no del reloj. Sin ellos, alejar
+      // el zoom sobre una noticia de hace tres meses dejaba hueco a la
+      // derecha, el cargador traía trescientas velas, seguía habiendo hueco, y
+      // el gráfico se corría solo mientras lo mirabas.
+      const suelo = t0 - HORAS_ANTES * 3600;
+      const techo = Math.min(t0 + HORAS_DESPUES * 3600, Math.floor(Date.now() / 1000));
+
       if (rango.from < MARGEN_VELAS) {
         const primera = actuales[0].time;
-        void traerTramo(primera - 300 * paso, primera - paso);
+        if (primera > suelo) void traerTramo(Math.max(primera - 300 * paso, suelo), primera - paso);
       } else if (rango.to > actuales.length - MARGEN_VELAS) {
         const ultima = actuales[actuales.length - 1].time;
-        // Nunca más allá de ahora: pedir el futuro devuelve vacío y volvería
-        // a pedirlo en cada desplazamiento.
-        const tope = Math.floor(Date.now() / 1000);
-        if (ultima < tope) void traerTramo(ultima + paso, Math.min(ultima + 300 * paso, tope));
+        if (ultima < techo) void traerTramo(ultima + paso, Math.min(ultima + 300 * paso, techo));
       }
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(alDesplazar);
@@ -359,7 +421,7 @@ export function ReactionChart({
       priceLineRef.current = null;
       markersRef.current = null;
     };
-  }, [granularity, formatearHora, traerTramo]);
+  }, [granularity, formatearHora, traerTramo, t0]);
 
   // Los datos van aparte de la creación, por lo mismo: llegan velas nuevas
   // cada vez que alguien se desplaza, y rehacer el gráfico entonces sería
@@ -462,11 +524,8 @@ export function ReactionChart({
     const chart = chartRef.current;
     if (!chart || velas.length === 0 || encuadradoRef.current === granularity) return;
     encuadradoRef.current = granularity;
-    chart.timeScale().setVisibleRange({
-      from: (t0 - VELAS_ANTES * segundos) as UTCTimestamp,
-      to: (t0 + VELAS_DESPUES * segundos) as UTCTimestamp,
-    });
-  }, [velas, granularity, t0, segundos]);
+    chart.timeScale().setVisibleRange(encuadre(velas));
+  }, [velas, granularity, encuadre]);
 
   const mostrada = cursor ?? velas.at(-1) ?? null;
   const referencia = precioAntes(velas, t0);

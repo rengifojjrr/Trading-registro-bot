@@ -26,6 +26,58 @@ export interface ReactionCandle {
   volume?: number;
 }
 
+/**
+ * Junta velas de un minuto en velas más grandes.
+ *
+ * Existe para que el gráfico pueda abrir en cinco minutos sin pedir nada: el
+ * servidor ya trae trescientas velas de un minuto -- las necesita para medir
+ * la reacción con precisión -- y de ellas salen sesenta de cinco minutos que
+ * cubren las mismas cinco horas. Abrir en un minuto enseñaba hora y media de
+ * ruido donde hacía falta ver la forma entera del movimiento.
+ *
+ * Los tramos se alinean con el reloj (múltiplos del epoch) y no con la
+ * primera vela recibida. Es lo que hace que la vela del dato empiece
+ * exactamente a las 12:30 y no a las 12:27, que es donde caería si el tramo
+ * dependiera de dónde empezara la petición. Las publicaciones macro salen en
+ * punto o y media, así que caen siempre en el borde de un tramo de cinco o de
+ * quince.
+ *
+ * Puro.
+ */
+export function aggregateCandles(candles: ReactionCandle[], factorMinutos: number): ReactionCandle[] {
+  if (factorMinutos <= 1) return [...candles].sort((a, b) => a.time - b.time);
+
+  const tramo = factorMinutos * 60;
+  const ordenadas = [...candles].sort((a, b) => a.time - b.time);
+  const salida: ReactionCandle[] = [];
+
+  for (const vela of ordenadas) {
+    const inicio = Math.floor(vela.time / tramo) * tramo;
+    const ultima = salida.at(-1);
+
+    if (!ultima || ultima.time !== inicio) {
+      salida.push({
+        time: inicio,
+        open: vela.open,
+        high: vela.high,
+        low: vela.low,
+        close: vela.close,
+        volume: vela.volume ?? 0,
+      });
+      continue;
+    }
+
+    // La apertura es la de la primera vela del tramo y no se toca; el cierre
+    // es siempre el de la última que entra.
+    ultima.high = Math.max(ultima.high, vela.high);
+    ultima.low = Math.min(ultima.low, vela.low);
+    ultima.close = vela.close;
+    ultima.volume = (ultima.volume ?? 0) + (vela.volume ?? 0);
+  }
+
+  return salida;
+}
+
 /** Los plazos que se miden. Cuatro: más columnas se leen peor de lo que informan. */
 export const HORIZONS = [15, 60, 120, 240] as const;
 export type HorizonMinutes = (typeof HORIZONS)[number];
