@@ -202,9 +202,10 @@ export function MarketReactionSection({
 
           <ReactionChart
             key={dibujada.id}
+            eventId={mostrada.event.id}
             eventAt={mostrada.event.occursAt}
-            timezone={timezone}
             productId={productId}
+            timezone={timezone}
             initialCandles={dibujada.candles}
             horizonMinutes={horizon}
           />

@@ -13,10 +13,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const priceScale = { applyOptions: vi.fn() };
 const timeScale = {
   fitContent: vi.fn(),
+  setVisibleRange: vi.fn(),
+  getVisibleRange: vi.fn(() => null),
+  getVisibleLogicalRange: vi.fn(() => null),
   timeToCoordinate: vi.fn(() => 0),
   coordinateToTime: vi.fn(() => 0),
   subscribeVisibleTimeRangeChange: vi.fn(),
   unsubscribeVisibleTimeRangeChange: vi.fn(),
+  // El cargador de los bordes, que sólo trabaja para una publicación macro:
+  // una operación tiene ventana fija y `topesDeVelas` le devuelve null.
+  subscribeVisibleLogicalRangeChange: vi.fn(),
+  unsubscribeVisibleLogicalRangeChange: vi.fn(),
 };
 
 function nuevaSerie() {

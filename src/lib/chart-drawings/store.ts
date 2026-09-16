@@ -85,6 +85,40 @@ interface CuerpoDibujo {
   style?: unknown;
 }
 
+/** Un dibujo ya guardado, listo para pintarse. */
+export interface DibujoGuardado {
+  id: string;
+  tool: string;
+  points: unknown;
+  style: unknown;
+  color: string;
+}
+
+/**
+ * Los dibujos de un dueño.
+ *
+ * La ficha de una operación los trae desde el servidor al renderizar, así que
+ * esto es para el otro caso: la sección de noticias es de cliente y cambia de
+ * publicación sin recargar, de modo que los suyos hay que pedirlos al elegir.
+ *
+ * Sin sanear: lo que se guardó ya pasó por la validación al entrar, y quien
+ * pinta vuelve a filtrar lo que no sepa dibujar. Devolverlo crudo es lo que
+ * permite que el cliente use exactamente el mismo lector que la ficha.
+ */
+export async function leerDibujos(dueno: DuenoDelDibujo): Promise<DibujoGuardado[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("chart_drawings")
+    .select("id, tool, points, style, color")
+    .eq("user_id", user.id)
+    .match(columnaDueno(dueno))
+    .order("created_at", { ascending: true });
+
+  return (data ?? []) as DibujoGuardado[];
+}
+
 export async function crearDibujo(
   dueno: DuenoDelDibujo,
   cuerpo: CuerpoDibujo,

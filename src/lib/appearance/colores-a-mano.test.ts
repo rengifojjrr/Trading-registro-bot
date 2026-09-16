@@ -31,7 +31,7 @@ const PERMITIDOS = new Map<string, string>([
       "ningún componente de gráfico los copie.",
   ],
   [
-    "components/trades/trade-chart.tsx",
+    "components/charts/grafico.tsx",
     "Un <canvas> no puede leer variables CSS. Lee los tokens computados del " +
       "DOM y sólo cae a estos literales si no hay hoja de estilo, cosa que en " +
       "un navegador de verdad no pasa. Aparte, los dos colores de dibujo son " +
