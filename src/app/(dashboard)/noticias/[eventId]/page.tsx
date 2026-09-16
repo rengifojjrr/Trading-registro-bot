@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,7 +19,11 @@ import {
   IMPORTANCE_LABELS,
   surpriseOf,
 } from "@/lib/economic-calendar/format";
-import { guideFor } from "@/lib/economic-calendar/indicator-guide";
+import {
+  guideFor,
+  SESGO_LABELS,
+  type SesgoParaBitcoin,
+} from "@/lib/economic-calendar/indicator-guide";
 import { measureReaction } from "@/lib/economic-calendar/market-reaction";
 import { fetchEventById, fetchIndicatorHistory, type CalendarEvent } from "@/lib/economic-calendar/queries";
 import { categoryLabel } from "@/lib/economic-calendar/relevance";
@@ -164,20 +168,24 @@ export default async function EventoPage(props: PageProps<"/noticias/[eventId]">
           <CardHeader>
             <CardTitle>Cómo se suele leer</CardTitle>
             <CardDescription>
-              La lectura habitual del mercado, no una predicción. Lo que mueve el precio suele ser la
-              sorpresa -- la diferencia con lo previsto -- y no el nivel; y cuando el dato ya venía
-              descontado, a veces pasa justo lo contrario.
+              Los dos escenarios, y de qué lado cae cada uno para Bitcoin. Es la lectura habitual
+              del mercado, no una predicción: lo que mueve el precio suele ser la sorpresa -- la
+              diferencia con lo previsto -- y no el nivel, y cuando el dato ya venía descontado a
+              veces pasa justo lo contrario. Debajo está lo que de hecho hizo el precio las últimas
+              veces, que es la comprobación.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <Lectura
               titulo="Si sale por encima de lo previsto"
               texto={guide.porEncima}
+              sesgo={guide.sesgoEncima}
               activa={sorpresa?.direction === "ARRIBA"}
             />
             <Lectura
               titulo="Si sale por debajo de lo previsto"
               texto={guide.porDebajo}
+              sesgo={guide.sesgoDebajo}
               activa={sorpresa?.direction === "ABAJO"}
             />
             {guide.nota ? (
@@ -187,7 +195,15 @@ export default async function EventoPage(props: PageProps<"/noticias/[eventId]">
             ) : null}
             {sorpresa && event.actual !== null && event.forecast !== null ? (
               <p className="rounded-md border border-border bg-secondary/40 px-3 py-2">
-                Este dato ya salió: {describeSurprise(sorpresa, event.actual, event.forecast, event.unit, event.scale)}.
+                Este dato ya salió: {describeSurprise(sorpresa, event.actual, event.forecast, event.unit, event.scale)}
+                {sorpresa.direction !== "EN_LINEA"
+                  ? `, o sea el escenario ${
+                      SESGO_ESCENARIO[
+                        sorpresa.direction === "ARRIBA" ? guide.sesgoEncima : guide.sesgoDebajo
+                      ]
+                    }`
+                  : ""}
+                .
               </p>
             ) : null}
           </CardContent>
@@ -220,7 +236,24 @@ export default async function EventoPage(props: PageProps<"/noticias/[eventId]">
   );
 }
 
-function Lectura({ titulo, texto, activa }: { titulo: string; texto: string; activa: boolean }) {
+/** Cómo se nombra cada sesgo dentro de una frase: «el escenario alcista». */
+const SESGO_ESCENARIO: Record<SesgoParaBitcoin, string> = {
+  ALCISTA: "alcista",
+  BAJISTA: "bajista",
+  MIXTO: "de doble lectura",
+};
+
+function Lectura({
+  titulo,
+  texto,
+  sesgo,
+  activa,
+}: {
+  titulo: string;
+  texto: string;
+  sesgo: SesgoParaBitcoin;
+  activa: boolean;
+}) {
   return (
     <div
       className={cn(
@@ -230,8 +263,27 @@ function Lectura({ titulo, texto, activa }: { titulo: string; texto: string; act
         activa ? "border-warning/40 bg-warning/10" : "border-border",
       )}
     >
-      <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
-      <p className="mt-0.5 leading-relaxed">{texto}</p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
+        {/* El lado al que cae, arriba y con color. El texto lo explica, pero
+            con una posición abierta no se lee un párrafo para deducirlo: lo
+            que hace falta saber en tres segundos es si el escenario que acaba
+            de ocurrir es el bueno o el malo para lo que tienes puesto. */}
+        <span
+          className={cn(
+            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+            sesgo === "ALCISTA" && "bg-positive/10 text-positive",
+            sesgo === "BAJISTA" && "bg-negative/10 text-negative",
+            sesgo === "MIXTO" && "bg-secondary text-muted-foreground",
+          )}
+        >
+          {sesgo === "ALCISTA" ? <TrendingUp className="size-3" aria-hidden /> : null}
+          {sesgo === "BAJISTA" ? <TrendingDown className="size-3" aria-hidden /> : null}
+          {sesgo === "MIXTO" ? <Scale className="size-3" aria-hidden /> : null}
+          {SESGO_LABELS[sesgo]}
+        </span>
+      </div>
+      <p className="mt-1 leading-relaxed">{texto}</p>
     </div>
   );
 }

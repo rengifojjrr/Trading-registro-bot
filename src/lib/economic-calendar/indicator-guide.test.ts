@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { guideFor } from "./indicator-guide";
+import { guideFor, SESGO_LABELS } from "./indicator-guide";
 
 /** Como los devuelve la fuente: título corto e indicador largo. */
 const ev = (title: string, indicator: string | null = null) => ({ title, indicator });
@@ -61,5 +61,47 @@ describe("guideFor", () => {
 
   it("no distingue mayúsculas", () => {
     expect(guideFor(ev("NON FARM PAYROLLS"))).not.toBeNull();
+  });
+});
+
+describe("de qué lado cae cada escenario", () => {
+  const CASOS = [
+    { titulo: "Retail Sales MoM", encima: "BAJISTA", debajo: "ALCISTA" },
+    { titulo: "Core Inflation Rate MoM", encima: "BAJISTA", debajo: "ALCISTA" },
+    { titulo: "Fed Interest Rate Decision", encima: "BAJISTA", debajo: "ALCISTA" },
+    // Los datos de empleo y crecimiento tienen las dos lecturas a la vez, y
+    // fingir una sola sería el error que este campo existe para evitar.
+    { titulo: "Non Farm Payrolls", encima: "MIXTO", debajo: "MIXTO" },
+    { titulo: "GDP Growth Rate QoQ", encima: "MIXTO", debajo: "MIXTO" },
+    // Más paro es ambiguo (recortes, pero miedo a recesión); menos paro no lo
+    // es: economía fuerte y tipos altos más tiempo.
+    { titulo: "Unemployment Rate", encima: "MIXTO", debajo: "BAJISTA" },
+    // Más subsidios es enfriamiento: acerca los recortes.
+    { titulo: "Initial Jobless Claims", encima: "ALCISTA", debajo: "BAJISTA" },
+  ] as const;
+
+  for (const caso of CASOS) {
+    it(`«${caso.titulo}»: por encima ${caso.encima}, por debajo ${caso.debajo}`, () => {
+      const guide = guideFor({ title: caso.titulo, indicator: null });
+      expect(guide).not.toBeNull();
+      expect(guide?.sesgoEncima).toBe(caso.encima);
+      expect(guide?.sesgoDebajo).toBe(caso.debajo);
+    });
+  }
+
+  it("cada rama tiene sesgo y cada sesgo tiene etiqueta", () => {
+    for (const caso of CASOS) {
+      const guide = guideFor({ title: caso.titulo, indicator: null });
+      if (!guide) throw new Error(`sin ficha: ${caso.titulo}`);
+      expect(SESGO_LABELS[guide.sesgoEncima]).toBeTruthy();
+      expect(SESGO_LABELS[guide.sesgoDebajo]).toBeTruthy();
+    }
+  });
+
+  it("cuando el sesgo es mixto, el texto explica las dos lecturas", () => {
+    const guide = guideFor({ title: "Non Farm Payrolls", indicator: null });
+    // Sin esa explicación, «Tiene dos lecturas opuestas» sería una etiqueta
+    // que deja al lector peor de como estaba.
+    expect(guide?.porEncima.toLowerCase()).toMatch(/dos lecturas|tensión|depende/);
   });
 });

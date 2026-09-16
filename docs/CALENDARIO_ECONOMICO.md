@@ -56,6 +56,10 @@ Tres bloques, en este orden:
 
 **Cómo se suele leer.** Qué significa que salga por encima o por debajo de lo previsto, explicado por el mecanismo: un IPC alto empuja a la Reserva Federal a mantener los tipos altos, y el dinero caro resta apetito por activos de riesgo. Cuando el dato ya salió, se resalta la lectura que de hecho aplica.
 
+Cada escenario lleva además **de qué lado cae para Bitcoin**: alcista, bajista, o «tiene dos lecturas opuestas». Va aparte del texto y con color porque el texto explica el mecanismo --tipos, consumo, empleo-- y hay que leerlo entero para deducir el lado; con una posición abierta eso no se hace, y lo que hace falta saber en tres segundos es si el escenario que acaba de ocurrir es el bueno o el malo para lo que tienes puesto. Cuando el dato ya salió, la línea de cierre lo dice en voz alta: «salió por encima de lo previsto (1,2 % frente a 0,8 %), o sea el escenario bajista».
+
+`MIXTO` no es escurrir el bulto: es el caso real del empleo y el crecimiento, donde la economía fuerte es buena por un lado y mala por otro --aleja las bajadas de tipos-- y cuál manda depende del momento del ciclo. Donde se usa, el texto de al lado explica las dos lecturas, y hay una prueba que lo exige.
+
 Esto es lo más delicado de todo el módulo, así que el encuadre es explícito en la propia pantalla: es la lectura habitual, no una predicción; lo que mueve el precio suele ser la sorpresa y no el nivel; y cuando el dato venía descontado, a veces pasa lo contrario. **Un indicador que no esté en el catálogo no recibe interpretación inventada** — es preferible callar a improvisar una explicación macro plausible.
 
 **Cómo reaccionó el mercado.** Lo que hizo el precio después de cada una de las últimas seis publicaciones del mismo indicador: la lista comparativa, el gráfico de velas con el instante exacto marcado, y la tabla de plazos.
