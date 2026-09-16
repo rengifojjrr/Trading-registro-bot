@@ -61,7 +61,7 @@ Mismo patrón que Coinbase y por la misma razón: la fuente es reemplazable y la
 
 ## El diario se pregunta de dos formas
 
-Las mismas columnas, dos interfaces: el formulario completo de la ficha (`trades/[tradeId]/journal-form.tsx`) y la encuesta de cinco preguntas que sale al cerrar una operación (`components/journal/trade-survey.tsx`). No hay una segunda tabla ni un «diario rápido» aparte -- eso obligaría a consultar dos sitios para saber la verdad sobre una operación. Lo que cambia es cómo se pregunta, y por qué eso importa está en `docs/ENCUESTA_CIERRE.md`.
+Las mismas columnas, dos interfaces: el formulario completo de la ficha (`trades/[tradeId]/journal-form.tsx`) y la encuesta por etapas que sale al cerrar una operación (`components/journal/trade-survey.tsx`). No hay una segunda tabla ni un «diario rápido» aparte -- eso obligaría a consultar dos sitios para saber la verdad sobre una operación. Lo que cambia es cómo se pregunta, y por qué eso importa está en `docs/ENCUESTA_CIERRE.md`.
 
 De ahí sale también `lib/journal/written.ts`: el criterio de «esta operación ya está apuntada» lo usaban por separado el aviso de la sincronización y la bandeja del diario, cada uno con su copia. Tres copias son, a la primera corrección, tres criterios distintos, y entonces el aviso dice que hay seis sin apuntar y la bandeja enseña cinco.
 

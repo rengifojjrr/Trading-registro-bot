@@ -4,7 +4,7 @@ import { MISTAKE_CODES, MISTAKE_META, type MistakeCode } from "./mistakes";
 import { EMOTION_OPTIONS } from "./options";
 
 /**
- * Las cinco preguntas que se hacen al cerrar una operación.
+ * Las seis preguntas que se hacen al cerrar una operación.
  *
  * El recorrido -- cuál está contestada, por dónde se sigue, qué resumen se
  * enseña -- vive en `core/encuesta`, que es el mismo motor que usan el resto
@@ -36,13 +36,30 @@ import { EMOTION_OPTIONS } from "./options";
  * («Muy bien») hace que cada uno acabe puntuando con su vara.
  */
 
-export const SURVEY_STEP_IDS = ["plan", "entrada", "animo", "errores", "leccion"] as const;
+export const SURVEY_STEP_IDS = ["setup", "plan", "entrada", "animo", "errores", "leccion"] as const;
 
 export type SurveyStepId = (typeof SURVEY_STEP_IDS)[number];
 
 const GRUPOS_DE_ERROR = ["ENTRADA", "GESTIÓN", "SALIDA", "DISCIPLINA"] as const;
 
 export const SURVEY_STEPS: Paso[] = [
+  {
+    id: "setup",
+    tipo: "chips",
+    multiple: false,
+    // Primero y no al final porque es lo primero que pasó: la entrada se
+    // decide mirando el setup, y preguntarlo después de «¿cómo estabas?»
+    // obliga a rebobinar.
+    pregunta: "¿Qué tal era el setup?",
+    ayuda: "La calidad de lo que viste antes de entrar, no la de la entrada ni la del resultado.",
+    opciones: [
+      { valor: "A+", etiqueta: "A+", detalle: "De manual: todo lo que pides, alineado" },
+      { valor: "A", etiqueta: "A", detalle: "Bueno, con algún pero" },
+      { valor: "B", etiqueta: "B", detalle: "Aceptable, algo forzado" },
+      { valor: "C", etiqueta: "C", detalle: "Flojo: no era de los que busco" },
+    ],
+    ninguno: "No lo tengo claro",
+  },
   {
     id: "plan",
     tipo: "escala",
@@ -115,6 +132,7 @@ export const SURVEY_TOTAL = SURVEY_STEPS.length;
 
 /** Cómo se llama cada respuesta en el resumen del final, en una palabra. */
 export const SURVEY_LABELS: Record<string, string> = {
+  setup: "Setup",
   plan: "Plan",
   entrada: "Entrada",
   animo: "Ánimo",
@@ -123,6 +141,8 @@ export const SURVEY_LABELS: Record<string, string> = {
 };
 
 export interface SurveyAnswers {
+  /** La nota del setup. No es columna del diario sino etiqueta («Setup: A+»). */
+  setup: string;
   plan: number | null;
   entrada: number | null;
   animo: string[];
@@ -147,6 +167,7 @@ export interface SurveyTrade {
 }
 
 export const RESPUESTAS_VACIAS: SurveyAnswers = {
+  setup: "",
   plan: null,
   entrada: null,
   animo: [],
@@ -165,6 +186,7 @@ export const RESPUESTAS_VACIAS: SurveyAnswers = {
  */
 export function aRespuestas(answers: SurveyAnswers): Respuestas {
   return {
+    setup: answers.setup,
     plan: answers.plan,
     entrada: answers.entrada,
     animo: answers.animo,
@@ -178,6 +200,7 @@ export function deRespuestas(respuestas: Respuestas): SurveyAnswers {
   const nota = (valor: unknown): number | null => (typeof valor === "number" ? valor : null);
 
   return {
+    setup: typeof respuestas.setup === "string" ? respuestas.setup : "",
     plan: nota(respuestas.plan),
     entrada: nota(respuestas.entrada),
     animo: lista(respuestas.animo),

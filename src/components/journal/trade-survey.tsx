@@ -6,16 +6,13 @@ import Link from "next/link";
 import { useCallback, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import {
-  closeSurvey,
-  saveSurveyStep,
-  type SurveyStepInput,
-} from "@/app/(dashboard)/trades/survey-actions";
+import { closeSurvey } from "@/app/(dashboard)/trades/survey-actions";
 import { Button } from "@/components/ui/button";
 import { Encuesta } from "@/core/encuesta/encuesta";
 import { resumen, type Respuesta, type Respuestas } from "@/core/encuesta/pasos";
 import { formatSignedMoney, pnlColorClass } from "@/lib/format";
 import type { MistakeCode } from "@/lib/journal/mistakes";
+import type { SurveyStepInput } from "@/lib/journal/survey-store";
 import {
   aRespuestas,
   deRespuestas,
@@ -60,11 +57,24 @@ export function TradeSurvey({
       const entrada = entradaDelPaso(id, valor);
       if (!entrada) return;
       startSaving(async () => {
-        const { error } = await saveSurveyStep(trade.id, entrada);
-        // Se avisa pero no se revierte: lo contestado sigue en pantalla y se
-        // vuelve a mandar al pasar de pregunta. Borrar la respuesta de alguien
-        // porque falló la red es peor que guardarla tarde.
-        if (error) toast.error(error);
+        try {
+          // Un `fetch` y no una Server Action: una acción refresca la ruta
+          // actual al terminar, el panel vuelve a buscar qué operación
+          // encuestar, y al contestar «¿cómo estabas?» ésta ya cuenta como
+          // apuntada -- así que el cuadro se desmontaba a media encuesta.
+          const res = await fetch(`/api/trades/${trade.id}/survey`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(entrada),
+          });
+          const data = (await res.json()) as { error: string | null };
+          // Se avisa pero no se revierte: lo contestado sigue en pantalla y se
+          // vuelve a mandar al pasar de pregunta. Borrar la respuesta de
+          // alguien porque falló la red es peor que guardarla tarde.
+          if (data.error) toast.error(data.error);
+        } catch {
+          toast.error("No se pudo guardar la respuesta.");
+        }
       });
     },
     [trade.id],
@@ -130,6 +140,7 @@ export function TradeSurvey({
 
 /** Qué mandarle al servidor por cada respuesta, ya en el tipo que espera. */
 function entradaDelPaso(id: string, valor: Respuesta): SurveyStepInput | null {
+  if (id === "setup") return { step: "setup", grade: typeof valor === "string" ? valor : "" };
   if (id === "plan" && typeof valor === "number") return { step: "plan", rating: valor };
   if (id === "entrada" && typeof valor === "number") return { step: "entrada", rating: valor };
   if (id === "animo") {
@@ -189,8 +200,8 @@ function Cabecera({
 /**
  * Lo contestado, al acabar.
  *
- * No es una celebración vacía: convierte cinco toques en algo que se ha
- * dicho, y es la última oportunidad de ver que el 2 que pusiste en «plan»
+ * No es una celebración vacía: convierte media docena de toques en algo que se
+ * ha dicho, y es la última oportunidad de ver que el 2 que pusiste en «plan»
  * querías que fuera un 4. Desde aquí se va a la ficha, que es donde se
  * corrige y donde está todo lo demás.
  */

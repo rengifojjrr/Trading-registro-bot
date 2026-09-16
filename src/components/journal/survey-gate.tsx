@@ -20,10 +20,40 @@ import type { SurveyTrade } from "@/lib/journal/survey";
  * botón que hay que pulsar.
  */
 
-export function SurveyGate({ trade }: { trade: SurveyTrade }) {
-  const [abierta, setAbierta] = useState(true);
+/**
+ * La que sale sola.
+ *
+ * **Echa el pestillo a la operación en cuanto la ve, y ahí está lo importante.**
+ * Antes recibía la candidata del servidor y la seguía: cualquier cosa que
+ * volviera a renderizar el panel --y contestar una pregunta lo hacía-- podía
+ * traer `null`, porque al contestar la operación pasa a contar como apuntada
+ * y deja de ser candidata. El cuadro se desmontaba a media encuesta y parecía
+ * que se cerraba solo.
+ *
+ * Ahora la primera operación que llega se queda en el estado de aquí, y sólo
+ * la cierra quien la está contestando. El servidor propone; una vez abierta,
+ * manda esta pantalla.
+ */
+export function SurveyGate({ trade }: { trade: SurveyTrade | null }) {
+  const [abierta, setAbierta] = useState<SurveyTrade | null>(trade);
+  const [cerradaId, setCerradaId] = useState<string | null>(null);
+
+  // Si no hay ninguna abierta y llega una candidata nueva, se abre. Lo que no
+  // puede pasar es lo contrario -- que desaparezca la que se está
+  // contestando -- y por eso no se lee `trade` directamente al pintar.
+  if (!abierta && trade && trade.id !== cerradaId) setAbierta(trade);
+
   if (!abierta) return null;
-  return <TradeSurvey trade={trade} onClose={() => setAbierta(false)} />;
+
+  return (
+    <TradeSurvey
+      trade={abierta}
+      onClose={() => {
+        setCerradaId(abierta.id);
+        setAbierta(null);
+      }}
+    />
+  );
 }
 
 export function SurveyButton({ trade }: { trade: SurveyTrade }) {

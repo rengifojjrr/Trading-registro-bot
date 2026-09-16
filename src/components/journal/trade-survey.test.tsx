@@ -15,15 +15,36 @@ import { RESPUESTAS_VACIAS, SURVEY_TOTAL, type SurveyAnswers, type SurveyTrade }
  * largo -- algo que se cierra sin leer.
  */
 
-const guardar = vi.fn();
 const cerrar = vi.fn();
 
 vi.mock("@/app/(dashboard)/trades/survey-actions", () => ({
-  saveSurveyStep: (...args: unknown[]) => guardar(...args),
   closeSurvey: (...args: unknown[]) => cerrar(...args),
 }));
 
 const TRADE_ID = "11111111-1111-4111-8111-111111111111";
+
+/**
+ * Guardar va por `fetch` y no por una Server Action a propósito -- una acción
+ * refresca la ruta y cerraba la encuesta a media contestación --, así que lo
+ * que se espía aquí es la petición.
+ */
+const peticiones: { url: string; cuerpo: unknown }[] = [];
+
+function guardado() {
+  return peticiones.map((p) => p.cuerpo);
+}
+
+beforeEach(() => {
+  peticiones.length = 0;
+  cerrar.mockReset().mockResolvedValue({ error: null });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      peticiones.push({ url, cuerpo: JSON.parse(String(init?.body ?? "null")) });
+      return new Response(JSON.stringify({ error: null }), { status: 200 });
+    }),
+  );
+});
 
 function operacion(answers: Partial<SurveyAnswers> = {}): SurveyTrade {
   return {
@@ -36,21 +57,21 @@ function operacion(answers: Partial<SurveyAnswers> = {}): SurveyTrade {
   };
 }
 
+/** Con el setup ya puesto, que es donde empiezan las preguntas de siempre. */
+function conSetup(answers: Partial<SurveyAnswers> = {}): SurveyTrade {
+  return operacion({ setup: "A", ...answers });
+}
+
 function abrir(trade: SurveyTrade = operacion(), onClose = vi.fn()) {
   render(<TradeSurvey trade={trade} onClose={onClose} />);
   return { onClose };
 }
 
-beforeEach(() => {
-  guardar.mockReset().mockResolvedValue({ error: null });
-  cerrar.mockReset().mockResolvedValue({ error: null });
-});
-
 describe("una pregunta a la vez", () => {
   it("empieza por la primera y no enseña la segunda", () => {
     abrir();
-    expect(screen.getByRole("heading", { name: "¿Seguiste tu plan?" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "¿Qué tal estuvo la entrada?" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "¿Qué tal era el setup?" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "¿Seguiste tu plan?" })).toBeNull();
   });
 
   it("dice por dónde vas", () => {
@@ -60,7 +81,7 @@ describe("una pregunta a la vez", () => {
 
   it("elegir una nota avanza sola, sin un segundo clic", async () => {
     const user = userEvent.setup();
-    abrir();
+    abrir(conSetup());
 
     await user.click(screen.getByRole("button", { name: /Casi todo/ }));
 
@@ -71,7 +92,7 @@ describe("una pregunta a la vez", () => {
 
   it("se puede volver atrás a cambiar lo contestado", async () => {
     const user = userEvent.setup();
-    abrir();
+    abrir(conSetup());
 
     await user.click(screen.getByRole("button", { name: /Casi todo/ }));
     await waitFor(() => screen.getByRole("heading", { name: "¿Qué tal estuvo la entrada?" }));
@@ -85,29 +106,52 @@ describe("una pregunta a la vez", () => {
 describe("cada respuesta se guarda al contestarla", () => {
   it("la nota viaja en cuanto se toca, no al final", async () => {
     const user = userEvent.setup();
-    abrir();
+    abrir(conSetup());
 
     await user.click(screen.getByRole("button", { name: /Entero/ }));
 
-    await waitFor(() => expect(guardar).toHaveBeenCalledWith(TRADE_ID, { step: "plan", rating: 5 }));
+    await waitFor(() => expect(guardado()).toContainEqual({ step: "plan", rating: 5 }));
+    expect(peticiones[0].url).toBe(`/api/trades/${TRADE_ID}/survey`);
+  });
+
+  it("guarda por una ruta y no por una acción, que es lo que la cerraba sola", async () => {
+    const user = userEvent.setup();
+    abrir(conSetup());
+
+    await user.click(screen.getByRole("button", { name: /Entero/ }));
+
+    // Una Server Action refresca la ruta al terminar; el panel vuelve a mirar
+    // qué operación encuestar, ésta ya cuenta como apuntada, y el cuadro se
+    // desmontaba a media encuesta. Nada de guardar puede pasar por ahí.
+    await waitFor(() => expect(peticiones.length).toBeGreaterThan(0));
+    expect(cerrar).not.toHaveBeenCalled();
+  });
+
+  it("la nota del setup viaja como nota, no como texto suelto", async () => {
+    const user = userEvent.setup();
+    abrir();
+
+    await user.click(screen.getByRole("button", { name: "A+" }));
+
+    await waitFor(() => expect(guardado()).toContainEqual({ step: "setup", grade: "A+" }));
   });
 
   it("las emociones se mandan al pasar de pregunta, con todas las marcadas", async () => {
     const user = userEvent.setup();
-    abrir(operacion({ plan: 3, entrada: 3 }));
+    abrir(conSetup({ plan: 3, entrada: 3 }));
 
     await user.click(screen.getByRole("button", { name: "Calma" }));
     await user.click(screen.getByRole("button", { name: "FOMO" }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
 
     await waitFor(() =>
-      expect(guardar).toHaveBeenCalledWith(TRADE_ID, { step: "animo", emotions: ["Calma", "FOMO"] }),
+      expect(guardado()).toContainEqual({ step: "animo", emotions: ["Calma", "FOMO"] }),
     );
   });
 
   it("desmarcar un error lo quita de lo que se manda", async () => {
     const user = userEvent.setup();
-    abrir(operacion({ plan: 3, entrada: 3, animo: ["Calma"], errores: ["FOMO"] }));
+    abrir(conSetup({ plan: 3, entrada: 3, animo: ["Calma"], errores: ["FOMO"] }));
 
     // Con los errores ya puestos, la encuesta abre en la última; se vuelve a
     // ellos, que es justo el camino de quien quiere corregir lo que marcó.
@@ -116,16 +160,14 @@ describe("cada respuesta se guarda al contestarla", () => {
     await user.click(screen.getByRole("button", { name: MISTAKE_META.FOMO.label }));
     await user.click(screen.getByRole("button", { name: /Saltar|Siguiente/ }));
 
-    await waitFor(() =>
-      expect(guardar).toHaveBeenCalledWith(TRADE_ID, { step: "errores", mistakes: [] }),
-    );
+    await waitFor(() => expect(guardado()).toContainEqual({ step: "errores", mistakes: [] }));
   });
 });
 
 describe("se puede salir sin contestar", () => {
   it("el botón dice «Saltar» mientras no hayas contestado y «Siguiente» cuando sí", async () => {
     const user = userEvent.setup();
-    abrir(operacion({ plan: 3, entrada: 3 }));
+    abrir(conSetup({ plan: 3, entrada: 3 }));
 
     expect(screen.getByRole("button", { name: "Saltar" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Calma" }));
@@ -160,16 +202,21 @@ describe("ir a mirar la operación", () => {
 });
 
 describe("empieza donde lo dejaste", () => {
-  it("con las dos primeras contestadas, abre en la tercera", () => {
-    abrir(operacion({ plan: 4, entrada: 2 }));
+  it("con las tres primeras contestadas, abre en la cuarta", () => {
+    abrir(conSetup({ plan: 4, entrada: 2 }));
     expect(screen.getByRole("heading", { name: "¿Cómo estabas mientras tanto?" })).toBeTruthy();
+  });
+
+  it("la nota de setup que ya tuviera puesta no se vuelve a preguntar", () => {
+    abrir(conSetup());
+    expect(screen.getByRole("heading", { name: "¿Seguiste tu plan?" })).toBeTruthy();
   });
 });
 
 describe("el final", () => {
   it("resume lo contestado y no inventa lo saltado", async () => {
     const user = userEvent.setup();
-    abrir(operacion({ plan: 4, entrada: 2, animo: ["Miedo"], errores: ["FOMO"] }));
+    abrir(conSetup({ plan: 4, entrada: 2, animo: ["Miedo"], errores: ["FOMO"] }));
 
     expect(screen.getByRole("heading", { name: "¿Qué te llevas de ésta?" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Terminar" }));

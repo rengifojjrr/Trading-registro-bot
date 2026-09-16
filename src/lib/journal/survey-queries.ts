@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
 import { isMistakeCode, type MistakeCode } from "./mistakes";
+import { gradeFromTagName } from "./setup-grade";
 import { RESPUESTAS_VACIAS, type SurveyAnswers, type SurveyTrade } from "./survey";
 import { hasJournalContent } from "./written";
 
@@ -52,9 +53,14 @@ interface FilaDiario {
 const COLUMNAS =
   "trade_id, notes, lesson_learned, emotional_state, mistake_tag, strategy_id, plan_adherence, entry_quality, survey_closed_at";
 
-function respuestasDe(fila: FilaDiario | undefined, errores: MistakeCode[]): SurveyAnswers {
-  if (!fila) return { ...RESPUESTAS_VACIAS, errores };
+function respuestasDe(
+  fila: FilaDiario | undefined,
+  errores: MistakeCode[],
+  setup: string,
+): SurveyAnswers {
+  if (!fila) return { ...RESPUESTAS_VACIAS, errores, setup };
   return {
+    setup,
     plan: fila.plan_adherence,
     entrada: fila.entry_quality,
     // Se guardan unidas por comas, que es como las dejó la importación de
@@ -66,6 +72,43 @@ function respuestasDe(fila: FilaDiario | undefined, errores: MistakeCode[]): Sur
     errores,
     leccion: fila.lesson_learned ?? "",
   };
+}
+
+/**
+ * La nota del setup que ya tuviera puesta.
+ *
+ * Vive como etiqueta («Setup: A+») y no como columna del diario, porque así la
+ * dejó la importación de Notion y una operación no puede tener dos sitios
+ * distintos para lo mismo. Se lee de ahí para que la encuesta abra con lo que
+ * ya estaba y no vuelva a preguntar lo contestado.
+ */
+async function setupPorOperacion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  tradeIds: string[],
+): Promise<Map<string, string>> {
+  const { data: enlaces } = await supabase
+    .from("trade_tags")
+    .select("trade_id, tag_id")
+    .eq("user_id", userId)
+    .in("trade_id", tradeIds);
+
+  const idsDeEtiqueta = [...new Set((enlaces ?? []).map((e) => e.tag_id))];
+  if (idsDeEtiqueta.length === 0) return new Map();
+
+  const { data: etiquetas } = await supabase.from("tags").select("id, name").in("id", idsDeEtiqueta);
+  const notaPorId = new Map<string, string>();
+  for (const etiqueta of etiquetas ?? []) {
+    const nota = gradeFromTagName(etiqueta.name);
+    if (nota) notaPorId.set(etiqueta.id, nota);
+  }
+
+  const porOperacion = new Map<string, string>();
+  for (const enlace of enlaces ?? []) {
+    const nota = notaPorId.get(enlace.tag_id);
+    if (nota) porOperacion.set(enlace.trade_id, nota);
+  }
+  return porOperacion;
 }
 
 async function erroresPorOperacion(
@@ -109,9 +152,10 @@ export async function fetchSurveyCandidate(): Promise<SurveyTrade | null> {
   if (!trades || trades.length === 0) return null;
 
   const ids = trades.map((t) => t.id);
-  const [{ data: journals }, errores] = await Promise.all([
+  const [{ data: journals }, errores, setups] = await Promise.all([
     supabase.from("journal_entries").select(COLUMNAS).eq("user_id", user.id).in("trade_id", ids),
     erroresPorOperacion(supabase, user.id, ids),
+    setupPorOperacion(supabase, user.id, ids),
   ]);
 
   const porOperacion = new Map((journals ?? []).map((j) => [j.trade_id, j as FilaDiario]));
@@ -128,7 +172,7 @@ export async function fetchSurveyCandidate(): Promise<SurveyTrade | null> {
       direction: trade.direction,
       closedAt: trade.closed_at as string,
       netPnl: trade.net_pnl,
-      answers: respuestasDe(fila, errores.get(trade.id) ?? []),
+      answers: respuestasDe(fila, errores.get(trade.id) ?? [], setups.get(trade.id) ?? ""),
     };
   }
 
@@ -155,9 +199,10 @@ export async function fetchSurveyForTrade(tradeId: string): Promise<SurveyTrade 
 
   if (!trade || !trade.closed_at) return null;
 
-  const [{ data: fila }, errores] = await Promise.all([
+  const [{ data: fila }, errores, setups] = await Promise.all([
     supabase.from("journal_entries").select(COLUMNAS).eq("trade_id", tradeId).maybeSingle(),
     erroresPorOperacion(supabase, user.id, [tradeId]),
+    setupPorOperacion(supabase, user.id, [tradeId]),
   ]);
 
   return {
@@ -166,6 +211,10 @@ export async function fetchSurveyForTrade(tradeId: string): Promise<SurveyTrade 
     direction: trade.direction,
     closedAt: trade.closed_at,
     netPnl: trade.net_pnl,
-    answers: respuestasDe((fila as FilaDiario | null) ?? undefined, errores.get(tradeId) ?? []),
+    answers: respuestasDe(
+      (fila as FilaDiario | null) ?? undefined,
+      errores.get(tradeId) ?? [],
+      setups.get(tradeId) ?? "",
+    ),
   };
 }

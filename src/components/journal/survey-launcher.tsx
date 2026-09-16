@@ -19,7 +19,10 @@ export async function SurveyLauncher() {
     return null;
   });
 
-  if (!trade) return null;
+  // El portón se pinta siempre, también sin candidata. Si sólo se pintara
+  // cuando la hay, cualquier refresco que dejara de encontrarla lo desmontaría
+  // -- y contestar una pregunta hace justo eso, porque la operación pasa a
+  // contar como apuntada. Era lo que cerraba la encuesta a mitad.
   return <SurveyGate trade={trade} />;
 }
 
@@ -28,8 +31,8 @@ export async function SurveyLauncher() {
  *
  * Justo encima del formulario completo, porque es la alternativa a él y no un
  * añadido: quien llega hasta aquí y ve dieciséis campos se va, y ésta es la
- * frase que le ofrece contestar cinco preguntas en su lugar. Es también lo
- * que hace que descartar la que salió sola no sea definitivo.
+ * frase que le ofrece contestar media docena de preguntas en su lugar. Es
+ * también lo que hace que descartar la que salió sola no sea definitivo.
  */
 export async function SurveyPrompt({ tradeId }: { tradeId: string }) {
   const trade = await fetchSurveyForTrade(tradeId).catch((error) => {

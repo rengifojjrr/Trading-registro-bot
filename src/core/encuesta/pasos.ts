@@ -1,7 +1,7 @@
 /**
  * Una encuesta por etapas, descrita como datos.
  *
- * Nació en el diario de trading: cinco preguntas de una en una, respuestas que
+ * Nació en el diario de trading: las preguntas de una en una, respuestas que
  * se eligen tocando, y salir cuando quieras sin perder lo contestado. Funcionó
  * por un motivo que no tiene nada que ver con el trading -- un formulario de
  * dieciséis campos vacíos se cierra y una pregunta sola se contesta -- así que
@@ -42,13 +42,34 @@ export interface PasoEscala extends PasoBase {
   opciones: { valor: number; etiqueta: string; detalle?: string }[];
 }
 
+/**
+ * Una ficha con su valor y, si hace falta, qué significa.
+ *
+ * El detalle no es decoración: en una lista donde las opciones son «A+, A, B,
+ * C» o un código de error, la etiqueta sola no dice qué cuenta como cada
+ * cosa, y sin eso cada uno puntúa con su vara y las cuentas de dentro de seis
+ * meses no significan nada.
+ */
+export interface OpcionChip {
+  valor: string;
+  etiqueta: string;
+  detalle?: string;
+}
+
 export interface PasoChips extends PasoBase {
   tipo: "chips";
   /** Varias a la vez, o una sola que se puede desmarcar. */
   multiple: boolean;
-  opciones?: readonly string[];
+  /** Una cadena suelta cuando el valor y la etiqueta son lo mismo. */
+  opciones?: readonly (string | OpcionChip)[];
   /** Con encabezados, cuando la lista es larga y tiene familias naturales. */
-  grupos?: { titulo: string; opciones: readonly { valor: string; etiqueta: string; detalle?: string }[] }[];
+  grupos?: { titulo: string; opciones: readonly OpcionChip[] }[];
+}
+
+/** Las fichas de un paso, siempre en la forma larga. */
+export function opcionesDe(paso: PasoChips): OpcionChip[] {
+  if (paso.grupos) return paso.grupos.flatMap((g) => [...g.opciones]);
+  return (paso.opciones ?? []).map((o) => (typeof o === "string" ? { valor: o, etiqueta: o } : o));
 }
 
 export interface PasoHora extends PasoBase {
@@ -149,13 +170,13 @@ export function textoDeRespuesta(paso: Paso, respuestas: Respuestas): string | n
     return paso.opciones.find((o) => o.valor === valor)?.etiqueta ?? String(valor);
   }
 
-  if (Array.isArray(valor)) {
-    if (paso.tipo === "chips" && paso.grupos) {
-      const todas = paso.grupos.flatMap((g) => g.opciones);
-      return valor.map((v) => todas.find((o) => o.valor === v)?.etiqueta ?? v).join(", ");
-    }
-    return valor.join(", ");
+  if (paso.tipo === "chips") {
+    const todas = opcionesDe(paso);
+    const marcadas = Array.isArray(valor) ? valor.map(String) : [String(valor)];
+    return marcadas.map((v) => todas.find((o) => o.valor === v)?.etiqueta ?? v).join(", ");
   }
+
+  if (Array.isArray(valor)) return valor.join(", ");
 
   return String(valor).trim();
 }

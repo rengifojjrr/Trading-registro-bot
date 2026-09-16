@@ -23,11 +23,14 @@ Así que **no se añade ni un dato nuevo**. Se escribe en las mismas columnas de
 
 | # | Pregunta | Dónde acaba |
 |---|---|---|
-| 1 | ¿Seguiste tu plan? | `journal_entries.plan_adherence` (1-5) |
-| 2 | ¿Qué tal estuvo la entrada? | `journal_entries.entry_quality` (1-5) |
-| 3 | ¿Cómo estabas mientras tanto? | `journal_entries.emotional_state` |
-| 4 | ¿Se coló algún error? | `trade_mistakes` (una fila por error) |
-| 5 | ¿Qué te llevas de ésta? | `journal_entries.lesson_learned` |
+| 1 | ¿Qué tal era el setup? | Etiqueta `Setup: A+` (`trade_tags`) |
+| 2 | ¿Seguiste tu plan? | `journal_entries.plan_adherence` (1-5) |
+| 3 | ¿Qué tal estuvo la entrada? | `journal_entries.entry_quality` (1-5) |
+| 4 | ¿Cómo estabas mientras tanto? | `journal_entries.emotional_state` |
+| 5 | ¿Se coló algún error? | `trade_mistakes` (una fila por error) |
+| 6 | ¿Qué te llevas de ésta? | `journal_entries.lesson_learned` |
+
+El setup va **primero porque es lo primero que pasó**: la entrada se decide mirando el setup, y preguntarlo después de «¿cómo estabas?» obliga a rebobinar. Cada nota lleva escrito al lado qué cuenta como esa nota («B: aceptable, algo forzado»), que es lo que hace que un B de marzo y uno de octubre signifiquen lo mismo y que contar cuánto rinde cada nota diga algo. No es columna del diario sino etiqueta, porque así la dejó la importación de Notion y una operación no puede tener dos sitios distintos para lo mismo; se lee de ahí al abrir (`setupPorOperacion`) para no volver a preguntar lo que ya estaba puesto.
 
 Tres criterios para esta lista y no otra:
 
@@ -35,19 +38,39 @@ Tres criterios para esta lista y no otra:
 - **Vocabularios cerrados** en el ánimo y los errores, los mismos de `lib/journal/options.ts` y `lib/journal/mistakes.ts`. Texto libre no se puede contar, y la pregunta que de verdad cambia cómo operas -- «¿qué error me cuesta más dinero?» -- sólo se responde contando.
 - **Una sola pregunta abierta**, la última, porque es la que hace que el diario se pueda releer dentro de seis meses.
 
-La primera separa la decisión del resultado a propósito, y la ayuda lo dice en voz alta («da igual cómo acabó»): una decisión buena puede perder dinero y una mala puede ganarlo, y confundirlas es la forma más rápida de aprender exactamente lo contrario de lo que pasó.
+La del plan separa la decisión del resultado a propósito, y la ayuda lo dice en voz alta («da igual cómo acabó»): una decisión buena puede perder dinero y una mala puede ganarlo, y confundirlas es la forma más rápida de aprender exactamente lo contrario de lo que pasó.
 
 Las etiquetas del 1 al 5 son **distintas en cada pregunta**. El número guardado es el mismo, pero un 5 de «seguir el plan» y un 5 de «calidad de la entrada» no significan lo mismo, y una escala genérica («Muy bien») hace que cada uno acabe puntuando con su vara.
 
 ## Por qué se contesta
 
-- **Una pregunta en pantalla**, con la siguiente escondida. Saber que quedan cuatro es distinto de tener las cinco delante.
-- **Se responde tocando.** Cuatro de las cinco son botones.
-- **Las notas avanzan solas.** Tocar «Casi todo» y que la pregunta cambie sin un segundo clic es la diferencia entre cinco toques y diez.
+- **Una pregunta en pantalla**, con la siguiente escondida. Saber que quedan cinco es distinto de tener las seis delante.
+- **Se responde tocando.** Todas menos la última son botones.
+- **Las notas avanzan solas.** Tocar «Casi todo» y que la pregunta cambie sin un segundo clic es la diferencia entre seis toques y doce.
 - **Cada respuesta se guarda al instante**, no al final. Contestas dos, te llaman por teléfono, y las dos están guardadas. Un formulario que sólo guarda al final convierte cualquier interrupción en trabajo perdido, y trabajo perdido una vez es un formulario que ya no se abre más.
+- **Y nadie se la quita de delante.** Ver abajo.
 - **Teclado**: 1-5 elige nota, Enter avanza, Esc cierra. Escribiendo la lección los números son números y Enter es un salto de línea -- secuestrarlos dejaría la última pregunta sin poder contestarse.
 - **«Ninguno» no es lo mismo que «Saltar».** Sin ese botón, no haber sentido nada raro y no querer contestar se escriben igual, y luego no hay forma de distinguirlos.
 - **Cerrarla no es un fracaso.** El botón dice «Saltar» mientras no hayas contestado y «Siguiente» cuando sí.
+
+## Por qué no se cierra sola
+
+Durante un tiempo **se cerraba a media contestación**, casi siempre. La cadena:
+
+1. Cada respuesta se guardaba con una Server Action.
+2. Toda Server Action refresca la ruta actual al terminar.
+3. La ruta actual es `/trading`, que vuelve a preguntar qué operación encuestar.
+4. Al contestar «¿cómo estabas?» se escribe `emotional_state`, así que la operación ya cuenta como apuntada (`hasJournalContent`) y deja de ser candidata.
+5. `SurveyLauncher` devolvía `null` y el cuadro se desmontaba con la encuesta a medias.
+
+Está arreglado en dos capas, y las dos hacen falta:
+
+- **Guardar va por `/api/trades/[tradeId]/survey`**, una ruta normal, no una acción. Un `fetch` no refresca nada. Es la misma razón, escrita en el mismo sitio, por la que los dibujos del gráfico son una ruta y no una acción.
+- **`SurveyGate` echa el pestillo**: la primera candidata que llega se queda en su estado y sólo la cierra quien la está contestando. Que el servidor deje de proponerla ya no puede desmontarla, venga el repintado de donde venga. El servidor propone; una vez abierta, manda la pantalla.
+
+Cerrar una respuesta a cerrar la encuesta **sí** es una Server Action (`closeSurvey`): se llama cuando el cuadro ya ha desaparecido, así que su refresco no puede desmontar nada y encima es lo que se quiere, que el panel se entere.
+
+`survey-gate.test.tsx` fija esto: con la encuesta abierta, que la prop pase a `null` no la cierra.
 
 ## Cuándo sale sola
 
@@ -75,10 +98,12 @@ No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastr
 |---|---|
 | `core/encuesta/pasos.ts` | El recorrido, sin pantalla y sin red: qué preguntas hay, cuál está contestada, por dónde se sigue, qué resumen se enseña. Puro, probado entero. |
 | `core/encuesta/encuesta.tsx` | El componente: una pregunta, la barra de avance y el pie. Sirve en un cuadro que sale solo (trading) y en línea dentro de una página (sueño). |
-| `lib/journal/survey.ts` | Las cinco preguntas del diario y la frontera entre el diccionario del motor y el tipo cerrado del módulo. |
-| `lib/journal/survey-queries.ts` | A qué operación toca preguntarle. |
+| `lib/journal/survey.ts` | Las seis preguntas del diario y la frontera entre el diccionario del motor y el tipo cerrado del módulo. |
+| `lib/journal/survey-queries.ts` | A qué operación toca preguntarle, y con qué viene ya contestado. |
+| `lib/journal/survey-store.ts` | Dónde acaba cada respuesta. Sin pantalla y sin HTTP, para que la ruta y la acción escriban lo mismo. |
 | `lib/journal/written.ts` | Cuándo cuenta una operación como apuntada. Un solo criterio para el aviso, la bandeja y la encuesta. |
-| `app/(dashboard)/trades/survey-actions.ts` | Guardar una respuesta; cerrar la encuesta. |
+| `app/api/trades/[tradeId]/survey/route.ts` | Guardar una respuesta. Ruta y no acción, por lo de arriba. |
+| `app/(dashboard)/trades/survey-actions.ts` | Cerrar la encuesta, ya con el cuadro fuera de pantalla. |
 | `components/journal/trade-survey.tsx` | El cuadro. |
-| `components/journal/survey-gate.tsx` | Que salga sola, o con un botón. |
+| `components/journal/survey-gate.tsx` | Que salga sola --y que no se la quite nadie--, o con un botón. |
 | `components/journal/survey-launcher.tsx` | Buscar la candidata y montarla. |

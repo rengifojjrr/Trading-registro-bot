@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   primeraSinContestar,
   siguientePaso,
   indiceDe,
+  opcionesDe,
   type Paso,
   type Respuesta,
   type Respuestas,
@@ -494,7 +495,7 @@ function Chips({
     );
   }
 
-  const chip = (valorOpcion: string, etiqueta: string, detalle?: string) => {
+  const chip = (valorOpcion: string, etiqueta: string, detalle?: string, extra?: string) => {
     const on = marcadas.includes(valorOpcion);
     return (
       <button
@@ -508,6 +509,7 @@ function Chips({
           on
             ? "bg-accent text-foreground"
             : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+          extra,
         )}
         style={on ? { borderColor: `var(${acento ?? "--primary"})` } : undefined}
       >
@@ -531,8 +533,28 @@ function Chips({
     );
   }
 
+  const sueltas = opcionesDe(paso);
+  // Con explicación van en fila propia: la etiqueta sola («A+») no dice qué
+  // cuenta como cada cosa, y sin eso cada uno puntúa con su vara.
+  //
+  // En rejilla y no en filas sueltas porque la primera columna se estira sola
+  // hasta la ficha más ancha: con «A+» al lado de «A», en filas sueltas cada
+  // explicación empezaría en un sitio distinto y la lista se lee en zigzag.
+  if (sueltas.some((o) => o.detalle)) {
+    return (
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
+        {sueltas.map((o) => (
+          <Fragment key={o.valor}>
+            {chip(o.valor, o.etiqueta, o.detalle, "w-full justify-center")}
+            <span className="text-xs text-muted-foreground">{o.detalle}</span>
+          </Fragment>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-wrap gap-1.5">{(paso.opciones ?? []).map((o) => chip(o, o))}</div>
+    <div className="flex flex-wrap gap-1.5">{sueltas.map((o) => chip(o.valor, o.etiqueta))}</div>
   );
 }
 
