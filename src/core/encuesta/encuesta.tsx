@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import {
+  diaMenos,
   estaContestado,
   pasoAnterior,
   pasoPorId,
@@ -354,6 +355,15 @@ function Pregunta({
 
       {paso.tipo === "hora" ? (
         <Hora
+          paso={paso}
+          valor={typeof valor === "string" ? valor : ""}
+          acento={acento}
+          onCambio={(v) => onCambio(paso.id, v)}
+        />
+      ) : null}
+
+      {paso.tipo === "fecha" ? (
+        <Fecha
           paso={paso}
           valor={typeof valor === "string" ? valor : ""}
           acento={acento}
@@ -738,6 +748,62 @@ function Imagen({
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Un día, con los atajos de siempre.
+ *
+ * Mismo reparto que la hora --un campo nativo arriba y botones debajo-- porque
+ * el problema es el mismo: el selector de fecha de un móvil son tres gestos y
+ * la respuesta correcta casi siempre es «hoy» o «ayer». Los atajos salen del
+ * día de referencia del paso y no del reloj del navegador, que a las once de
+ * la noche en Bogotá ya está en mañana.
+ */
+function Fecha({
+  paso,
+  valor,
+  acento,
+  onCambio,
+}: {
+  paso: Extract<Paso, { tipo: "fecha" }>;
+  valor: string;
+  acento?: string;
+  onCambio: (valor: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Input
+        type="date"
+        value={valor}
+        onChange={(event) => onCambio(event.target.value)}
+        className="max-w-44 text-lg tabular-nums"
+        aria-label={paso.pregunta}
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {(paso.atajos ?? []).map((atajo) => {
+          const dia = diaMenos(paso.hoy, atajo.dias);
+          const on = valor === dia;
+          return (
+            <button
+              key={atajo.etiqueta}
+              type="button"
+              onClick={() => onCambio(dia)}
+              aria-pressed={on}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                on
+                  ? "bg-accent font-medium text-foreground"
+                  : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+              )}
+              style={on ? { borderColor: `var(${acento ?? "--primary"})` } : undefined}
+            >
+              {atajo.etiqueta}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   contestadas,
+  diaMenos,
   estaContestado,
   indiceDe,
   pasoAnterior,
@@ -12,6 +13,7 @@ import {
   siguientePaso,
   textoDeRespuesta,
   type Paso,
+  type PasoFecha,
 } from "./pasos";
 
 const PASOS: Paso[] = [
@@ -153,5 +155,57 @@ describe("el resumen del final", () => {
   it("respeta el orden de las preguntas", () => {
     const lineas = resumen(PASOS, { nota_libre: "b", nota: 0 }, { nota: "N", nota_libre: "L" });
     expect(lineas.map((l) => l.etiqueta)).toEqual(["N", "L"]);
+  });
+});
+
+describe("la pregunta de un día", () => {
+  const PASO_FECHA: PasoFecha = {
+    id: "dia",
+    tipo: "fecha",
+    pregunta: "¿Qué día fue?",
+    hoy: "2026-03-15",
+    atajos: [
+      { etiqueta: "Hoy", dias: 0 },
+      { etiqueta: "Ayer", dias: 1 },
+    ],
+  };
+
+  it("cuenta los días hacia atrás desde el día de referencia", () => {
+    expect(diaMenos("2026-03-15", 0)).toBe("2026-03-15");
+    expect(diaMenos("2026-03-15", 1)).toBe("2026-03-14");
+    expect(diaMenos("2026-03-15", 2)).toBe("2026-03-13");
+  });
+
+  it("cruza el principio de mes y de año sin inventarse días", () => {
+    expect(diaMenos("2026-03-01", 1)).toBe("2026-02-28");
+    expect(diaMenos("2026-01-01", 1)).toBe("2025-12-31");
+  });
+
+  it("cuenta el 29 de febrero de un bisiesto", () => {
+    expect(diaMenos("2028-03-01", 1)).toBe("2028-02-29");
+  });
+
+  /**
+   * La razón de que la resta sea de calendario y no de segundos: la noche en
+   * que se adelanta el reloj tiene 23 horas, y restar 86.400 segundos se queda
+   * en el mismo día.
+   */
+  it("no se salta un día en el cambio de hora", () => {
+    expect(diaMenos("2026-03-30", 1)).toBe("2026-03-29");
+    expect(diaMenos("2026-10-26", 1)).toBe("2026-10-25");
+  });
+
+  it("enseña el atajo por su nombre y no la fecha en crudo", () => {
+    expect(textoDeRespuesta(PASO_FECHA, { dia: "2026-03-15" })).toBe("Hoy");
+    expect(textoDeRespuesta(PASO_FECHA, { dia: "2026-03-14" })).toBe("Ayer");
+  });
+
+  it("un día que no es ningún atajo sale tal cual", () => {
+    expect(textoDeRespuesta(PASO_FECHA, { dia: "2026-02-02" })).toBe("2026-02-02");
+  });
+
+  it("sin contestar no es una fecha vacía sino ninguna fecha", () => {
+    expect(estaContestado(PASO_FECHA, { dia: "" })).toBe(false);
+    expect(respuestasVacias([PASO_FECHA])).toEqual({ dia: "" });
   });
 });

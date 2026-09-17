@@ -9,6 +9,7 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 | `lib/journal/plan.ts` | **Antes** de entrar en una operación (`docs/PLAN_PREVIO.md`) |
 | `lib/journal/survey.ts` | Al cerrar una operación |
 | `modules/sleep/domain/encuesta.ts` | Antes de dormir, y al despertar |
+| `modules/reading/domain/encuesta.ts` | Al acabar un rato de lectura |
 
 El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
@@ -96,6 +97,25 @@ No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastr
 
 **Las notas del 1 al 5 no cuentan como «apuntada»** (`hasJournalContent`). Son un toque, no algo escrito: si contaran, una encuesta abandonada en la segunda pregunta se leería como una operación apuntada y nadie volvería a ella.
 
+## Cuando la fila todavía no existe
+
+Las tres primeras encuestas escriben sobre algo que ya está en la base: una operación cerrada, la noche de hoy, un plan que se crea al abrir el cuadro. Siempre hay a quién escribirle, así que guardar una respuesta es un `update` y ya.
+
+**Lecturas rompe eso**, y es el caso que se van a encontrar comidas y tareas: de lecturas hay las que quieras el mismo día, así que no hay ninguna clave por la que buscar la fila --no es «la lectura del 15 de marzo»-- y no puede existir antes de que se conteste algo. Las reglas que salieron de ahí:
+
+- **La primera respuesta crea la fila y devuelve su id**; la pantalla se queda con él y las demás respuestas ya escriben encima. Sin eso, cada pregunta crearía su propia fila y un rato de veinte minutos acabaría siendo seis lecturas vacías.
+- **Saltar no crea nada.** El motor manda un guardado también al saltar una pregunta --así es como se borra lo que ya había escrito--, así que el servidor tiene que distinguir «contestado en blanco» de «no contestado» y no insertar por lo segundo. Si no, abrir la encuesta y saltárselo todo deja una fila en blanco cada vez.
+- **Lo que viene contestado de serie no cuenta como contestado.** El día viene puesto en hoy; por sí solo no crea la fila, y la pantalla final no dice «apuntada» si es lo único que hay. Anunciar que se ha guardado algo que no se ha guardado es peor que no anunciar nada.
+
+## La pregunta de un día
+
+`tipo: "fecha"` (`core/encuesta/pasos.ts`) se estrenó en lecturas y vale para cualquier módulo. Dos decisiones que no son obvias:
+
+- **Los atajos son relativos** --«Hoy», «Ayer», «Anteayer»-- y no fechas literales, porque la lista de pasos se escribe una vez y se usa todos los días.
+- **El día de referencia lo pone quien llama**, no el reloj del navegador: a las once de la noche en Bogotá ya es mañana en UTC, y el rato de lectura se archivaría en el día siguiente. Es la misma lección que `core/today.ts`.
+
+Que el día sea una pregunta más --y no un campo oculto con el de hoy-- es lo que deja apuntar el rato de anoche. Antes había que crearlo hoy y luego editarlo.
+
 ## Dónde está cada cosa
 
 | Archivo | Qué hace |
@@ -111,3 +131,6 @@ No se puede deducir de lo escrito -- quien la cierra sin contestar no deja rastr
 | `components/journal/trade-survey.tsx` | El cuadro. |
 | `components/journal/survey-gate.tsx` | Que salga sola --y que no se la quite nadie--, o con un botón. |
 | `components/journal/survey-launcher.tsx` | Buscar la candidata y montarla. |
+| `modules/reading/domain/encuesta.ts` | Las preguntas de un rato de lectura, con los libros de quien contesta. |
+| `modules/reading/ui/reading-survey.tsx` | La encuesta de lecturas, en línea en la página. Registra y corrige con el mismo componente. |
+| `modules/reading/actions.ts` | `saveReadingAnswer`: crea la lectura con la primera respuesta y escribe encima con las demás. |

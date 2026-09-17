@@ -78,6 +78,41 @@ export interface PasoHora extends PasoBase {
   atajos: readonly string[];
 }
 
+/**
+ * Un día.
+ *
+ * Los atajos son relativos --«Hoy», «Ayer»-- y no fechas literales porque la
+ * lista de pasos se escribe una vez y se usa todos los días. El día de
+ * referencia lo pone quien llama, que es quien sabe en qué zona horaria vive
+ * el usuario: a las 21:00 en Bogotá ya es mañana en UTC, y un «Hoy» sacado del
+ * reloj del navegador archivaría la comida en el día equivocado.
+ */
+export interface PasoFecha extends PasoBase {
+  tipo: "fecha";
+  /** El día de referencia (`AAAA-MM-DD`) desde el que cuentan los atajos. */
+  hoy: string;
+  /** Botones relativos: cuántos días hacia atrás, y cómo se llaman. */
+  atajos?: readonly { etiqueta: string; dias: number }[];
+}
+
+/**
+ * El día que cae `dias` antes de `hoy`, en aritmética de calendario.
+ *
+ * En UTC a propósito, y no con la zona del usuario: los dos extremos son
+ * fechas sin hora, así que restar días es contar casillas de un calendario y
+ * no restar 86.400 segundos -- que es lo que se equivoca la noche en que
+ * cambia la hora.
+ */
+export function diaMenos(hoy: string, dias: number): string {
+  const [anio, mes, dia] = hoy.split("-").map(Number);
+  return new Date(Date.UTC(anio, mes - 1, dia - dias)).toISOString().slice(0, 10);
+}
+
+/** «Ayer» cuando el día es uno de los atajos; la fecha tal cual si no. */
+export function etiquetaDeFecha(paso: PasoFecha, valor: string): string {
+  return (paso.atajos ?? []).find((a) => diaMenos(paso.hoy, a.dias) === valor)?.etiqueta ?? valor;
+}
+
 export interface PasoTexto extends PasoBase {
   tipo: "texto";
   marcador?: string;
@@ -127,6 +162,7 @@ export type Paso =
   | PasoEscala
   | PasoChips
   | PasoHora
+  | PasoFecha
   | PasoTexto
   | PasoLinea
   | PasoNumero
@@ -221,6 +257,10 @@ export function textoDeRespuesta(paso: Paso, respuestas: Respuestas): string | n
       maximumFractionDigits: paso.decimales ?? 2,
     })}`;
   }
+
+  // «Ayer» y no «2026-09-16»: el resumen se lee de un vistazo, y la fecha en
+  // crudo obliga a calcular qué día era ése.
+  if (paso.tipo === "fecha" && typeof valor === "string") return etiquetaDeFecha(paso, valor);
 
   // Una imagen en el resumen se enseña, no se describe: lo que hay guardado es
   // una ruta, y «planes/3f2a…png» no le dice nada a nadie.

@@ -10,7 +10,7 @@ import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { formatReadingTime, totalsFor } from "@/modules/reading/domain/reading";
 import { fetchBooks, fetchSessions } from "@/modules/reading/queries";
-import { LogReadingForm } from "@/modules/reading/ui/reading-forms";
+import { ReadingSurvey } from "@/modules/reading/ui/reading-survey";
 import { NotionImportCard } from "@/core/ui/notion-import-card";
 import { runReadingFromNotion } from "@/modules/reading/actions";
 import { readingDatabaseId } from "@/modules/reading/notion-import";
@@ -18,9 +18,9 @@ import { readingDatabaseId } from "@/modules/reading/notion-import";
 /**
  * Lecturas: registrar.
  *
- * Igual que en sueño, lo primero que se ve es el formulario: es lo que se
- * abre a diario. Los libros y el análisis tienen su propia sección para que
- * esta no crezca hasta dejar de servir para lo único que se le pide.
+ * Igual que en sueño, lo primero que se ve es la encuesta: es lo que se abre a
+ * diario. Los libros y el análisis tienen su propia sección para que esta no
+ * crezca hasta dejar de servir para lo único que se le pide.
  */
 export default async function ReadingPage() {
   const timezone = await userTimezone();
@@ -60,7 +60,7 @@ export default async function ReadingPage() {
         />
       </div>
 
-      <LogReadingForm date={today} books={books} />
+      <ReadingSurvey date={today} books={books} />
 
       <Card>
         <CardHeader>

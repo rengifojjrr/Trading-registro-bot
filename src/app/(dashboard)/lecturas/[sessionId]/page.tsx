@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 
 import { fetchEntityExtras } from "@/core/entity-extras";
+import { todayIn } from "@/core/today";
 import { DetailShell } from "@/core/ui/detail-shell";
 import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { fetchBooks, fetchSession } from "@/modules/reading/queries";
-import { LogReadingForm } from "@/modules/reading/ui/reading-forms";
+import { ReadingSurvey } from "@/modules/reading/ui/reading-survey";
 
 /**
  * La ficha de una lectura.
@@ -51,7 +52,9 @@ export default async function ReadingSessionPage({
       attachments={extras.attachments}
       related={extras.related}
     >
-      <LogReadingForm date={session.session_date} books={books} session={session} />
+      {/* El día de hoy y no el de la lectura: es desde donde cuentan «Hoy» y
+          «Ayer» de la pregunta del día. El de la lectura ya viaja en `session`. */}
+      <ReadingSurvey date={todayIn(timezone)} books={books} session={session} />
     </DetailShell>
   );
 }
