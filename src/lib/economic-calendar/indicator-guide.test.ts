@@ -105,3 +105,63 @@ describe("de qué lado cae cada escenario", () => {
     expect(guide?.porEncima.toLowerCase()).toMatch(/dos lecturas|tensión|depende/);
   });
 });
+
+/**
+ * El orden de las reglas es lo frágil de este módulo.
+ *
+ * Gana la primera que encaja y el emparejamiento es por subcadena, así que una
+ * regla general puesta demasiado arriba se come a todas las que vienen detrás.
+ * La de «speech» es la más peligrosa: puesta antes de tiempo convertiría la
+ * decisión de tipos y los discursos del presidente en «una intervención de
+ * alguien de la Reserva Federal».
+ */
+describe("lo específico gana a lo general", () => {
+  const ficha = (title: string, indicator: string | null = "Interest Rate") =>
+    guideFor({ title, indicator });
+
+  it("un discurso de un gobernador de la Fed cae en la ficha de la Fed", () => {
+    expect(ficha("Fed Bowman Speech")?.mide).toMatch(/Reserva Federal/);
+    expect(ficha("Fed Waller Speech")?.mide).toMatch(/Reserva Federal/);
+  });
+
+  it("la decisión de tipos no se la come la regla de los discursos", () => {
+    expect(ficha("Fed Interest Rate Decision")?.mide).toMatch(/tipo de interés oficial/i);
+  });
+
+  it("la rueda de prensa tampoco", () => {
+    expect(ficha("Fed Press Conference")?.mide).toMatch(/comparecencia del presidente/i);
+  });
+
+  /**
+   * Un discurso del presidente del país y uno de un gobernador de la Fed no se
+   * leen igual: el segundo habla de tipos y el primero de gasto, aranceles y
+   * regulación. Meterlos en la misma ficha sería decirle al lector que
+   * cualquiera de los dos significa lo mismo.
+   */
+  it("un discurso político no cae en la ficha de la Fed", () => {
+    expect(ficha("US President Trump Speech")?.mide).toMatch(/comparecencia política/i);
+    expect(ficha("Treasury Secretary Bessent Speech")?.mide).toMatch(/comparecencia política/i);
+  });
+
+  it("las peticiones continuadas no se confunden con las iniciales", () => {
+    expect(ficha("Continuing Jobless Claims", null)?.mide).toMatch(/semana tras semana/);
+    expect(ficha("Initial Jobless Claims", null)?.mide).toMatch(/por primera vez/i);
+  });
+});
+
+describe("lo que se dice de lo que no se sabe bien", () => {
+  /**
+   * El balance de la Fed es el dato más discutido de la lista: la relación con
+   * el precio es una correlación observada, no el mecanismo limpio de los
+   * tipos. Decirlo es la diferencia entre una ficha y una promesa.
+   */
+  it("el balance de la Fed admite que es una correlación, no un mecanismo", () => {
+    const guide = guideFor({ title: "Fed Balance Sheet", indicator: null });
+    expect(guide?.nota?.toLowerCase()).toMatch(/discutido|correlación/);
+  });
+
+  it("el ADP admite que falla como anticipo del dato oficial", () => {
+    const guide = guideFor({ title: "ADP Employment Change", indicator: null });
+    expect(guide?.nota?.toLowerCase()).toMatch(/falla|desmiente/);
+  });
+});

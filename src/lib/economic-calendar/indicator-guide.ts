@@ -306,6 +306,76 @@ const REGLAS: Regla[] = [
       nota: "El dato general lo distorsionan los pedidos de aviones; por eso se mira también el que los excluye.",
     },
   },
+  {
+    match: ["continuing jobless"],
+    guide: {
+      mide:
+        "Cuánta gente sigue cobrando el paro semana tras semana. Las peticiones iniciales dicen cuántos lo pierden; ésta dice cuánto tardan en encontrar otro.",
+      porEncima:
+        "Más de lo previsto significa que a quien se queda sin trabajo le cuesta volver a colocarse. Un mercado laboral que se enfría empuja a la Reserva Federal a bajar tipos antes, y eso suele favorecer a los activos de riesgo.",
+      sesgoEncima: "ALCISTA",
+      porDebajo:
+        "Menos de lo previsto significa que se recoloca rápido: mercado laboral fuerte, menos prisa por bajar tipos.",
+      sesgoDebajo: "BAJISTA",
+      nota: "Se mueve más despacio que las peticiones iniciales, así que sirve para confirmar una tendencia y no para detectarla.",
+    },
+  },
+  {
+    match: ["adp employment"],
+    guide: {
+      mide:
+        "El empleo privado según ADP, la mayor procesadora de nóminas del país. Sale antes que el dato oficial y se lee como su anticipo.",
+      porEncima:
+        "Más empleo del previsto apunta a una economía que aguanta, lo que aleja las bajadas de tipos.",
+      sesgoEncima: "BAJISTA",
+      porDebajo:
+        "Menos empleo apunta a enfriamiento, lo que suele adelantar las bajadas de tipos.",
+      sesgoDebajo: "ALCISTA",
+      nota: "Falla bastante como anticipo del dato oficial -- son metodologías distintas -- así que mueve el precio en el momento y luego el viernes lo desmiente la mitad de las veces.",
+    },
+  },
+  {
+    match: ["balance sheet"],
+    guide: {
+      mide:
+        "Cuánto tiene la Reserva Federal en su balance. Crece cuando compra deuda (mete dinero en el sistema) y encoge cuando la deja vencer sin reponerla, que es lo que lleva haciendo desde 2022.",
+      porEncima:
+        "Un balance mayor de lo esperado significa más liquidez en el sistema, y más liquidez ha acompañado históricamente a las subidas de los activos de riesgo.",
+      sesgoEncima: "ALCISTA",
+      porDebajo:
+        "Un balance que encoge más rápido drena liquidez, y eso ha acompañado a los tramos malos de Bitcoin.",
+      sesgoDebajo: "BAJISTA",
+      nota: "Es el dato más discutido de esta lista: la relación entre balance y precio es una correlación observada, no un mecanismo tan claro como el de los tipos. Se publica semanalmente y casi nunca mueve el precio en el momento.",
+    },
+  },
+  {
+    match: ["treasury secretary", "president trump", "state of the union", "xi summit"],
+    guide: {
+      mide:
+        "Una comparecencia política, no un dato. No trae número: trae lo que se anuncia o se insinúa sobre gasto, deuda, aranceles o regulación.",
+      porEncima:
+        "No hay dato que comparar. Lo que mueve el precio es lo inesperado -- un anuncio de más gasto, un giro en aranceles, algo sobre la regulación de las criptomonedas.",
+      sesgoEncima: "MIXTO",
+      porDebajo:
+        "Lo mismo al revés: lo que cuenta es la sorpresa, y puede caer de cualquiera de los dos lados.",
+      sesgoDebajo: "MIXTO",
+      nota: "Bitcoin reacciona a estas comparecencias sobre todo cuando tocan regulación cripto o el tamaño de la deuda; al resto suele ignorarlas.",
+    },
+  },
+  {
+    match: ["speech", "testimony", "beige book", "loan officer survey"],
+    guide: {
+      mide:
+        "Una intervención de alguien de la Reserva Federal. No trae un dato: trae el tono con el que ve la inflación y los tipos, y lo que insinúa sobre las próximas reuniones.",
+      porEncima:
+        "No hay dato que comparar. Un tono más duro de lo esperado -- preocupación por la inflación, prisa por no bajar tipos -- suele pesar sobre los activos de riesgo.",
+      sesgoEncima: "BAJISTA",
+      porDebajo:
+        "Un tono más blando -- confianza en que la inflación cede, puerta abierta a bajar tipos -- suele leerse como favorable.",
+      sesgoDebajo: "ALCISTA",
+      nota: "Pesa según quién habla: el presidente y los gobernadores con voto mueven el precio, y un presidente regional sin voto ese año casi nunca. Esta ficha no distingue entre ellos.",
+    },
+  },
 ];
 
 /** La ficha de este dato, si es de los que se conocen bien. */
