@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchEntityExtras } from "@/core/entity-extras";
+import { todayIn } from "@/core/today";
 import { DetailShell } from "@/core/ui/detail-shell";
 import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { MEAL_TYPE_LABELS } from "@/modules/meals/domain/meals";
 import { fetchMeal } from "@/modules/meals/queries";
-import { MealForm } from "@/modules/meals/ui/meal-form";
+import { MealSurvey } from "@/modules/meals/ui/meal-survey";
 
 /**
  * La ficha de una comida.
@@ -62,7 +63,7 @@ export default async function MealDetailPage({
           <CardTitle className="text-base">La comida</CardTitle>
         </CardHeader>
         <CardContent>
-          <MealForm date={meal.meal_date} meal={meal} />
+          <MealSurvey date={meal.meal_date} hoy={todayIn(timezone)} meal={meal} />
         </CardContent>
       </Card>
     </DetailShell>

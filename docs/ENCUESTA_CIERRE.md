@@ -10,6 +10,7 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 | `lib/journal/survey.ts` | Al cerrar una operación |
 | `modules/sleep/domain/encuesta.ts` | Antes de dormir, y al despertar |
 | `modules/reading/domain/encuesta.ts` | Al acabar un rato de lectura |
+| `modules/meals/domain/encuesta.ts` | Al apuntar o planificar una comida |
 
 El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
@@ -107,6 +108,8 @@ Las tres primeras encuestas escriben sobre algo que ya está en la base: una ope
 - **Saltar no crea nada.** El motor manda un guardado también al saltar una pregunta --así es como se borra lo que ya había escrito--, así que el servidor tiene que distinguir «contestado en blanco» de «no contestado» y no insertar por lo segundo. Si no, abrir la encuesta y saltárselo todo deja una fila en blanco cada vez.
 - **Lo que viene contestado de serie no cuenta como contestado.** El día viene puesto en hoy; por sí solo no crea la fila, y la pantalla final no dice «apuntada» si es lo único que hay. Anunciar que se ha guardado algo que no se ha guardado es peor que no anunciar nada.
 
+**Comidas añade una vuelta más**: `name` y `meal_type` son `not null`, así que la fila no puede nacer de una respuesta suelta como nace una lectura -- hace falta el nombre. Por eso cada guardado lleva **todo lo contestado hasta ahora** y no sólo la respuesta: cuando por fin llega el nombre, la comida nace con lo que ya había escrito en vez de perderlo. Es también lo que deja que aplicar una plantilla --nombre, tipo e ingredientes de un toque-- sea una sola llamada.
+
 ## La pregunta de un día
 
 `tipo: "fecha"` (`core/encuesta/pasos.ts`) se estrenó en lecturas y vale para cualquier módulo. Dos decisiones que no son obvias:
@@ -134,3 +137,6 @@ Que el día sea una pregunta más --y no un campo oculto con el de hoy-- es lo q
 | `modules/reading/domain/encuesta.ts` | Las preguntas de un rato de lectura, con los libros de quien contesta. |
 | `modules/reading/ui/reading-survey.tsx` | La encuesta de lecturas, en línea en la página. Registra y corrige con el mismo componente. |
 | `modules/reading/actions.ts` | `saveReadingAnswer`: crea la lectura con la primera respuesta y escribe encima con las demás. |
+| `modules/meals/domain/encuesta.ts` | Las preguntas de una comida, y cuándo puede nacer. |
+| `modules/meals/ui/meal-survey.tsx` | La encuesta de comidas, con la barra de plantillas encima. |
+| `modules/meals/actions.ts` | `saveMealAnswer`: la fila nace del nombre, con todo lo contestado dentro. Los ingredientes se reescriben enteros. |

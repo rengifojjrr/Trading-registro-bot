@@ -11,39 +11,10 @@ import { MEAL_TYPES, parseIngredientLine } from "@/modules/meals/domain/meals";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importMealsFromNotion } from "@/modules/meals/notion-import";
 
-/**
- * `savedAt` no es informativo: es lo que deja vaciar el formulario sin
- * escribir estado desde un efecto. Cambia en cada guardado correcto, así que
- * sirve de `key` para que React vuelva a montar los campos limpios -- que es
- * lo mismo que hacía `form.reset()` con los campos sin control.
- */
-export type MealFormState = { error: string | null; success: boolean; savedAt?: number };
+export type MealFormState = { error: string | null; success: boolean };
 
 const emptyToNull = <T extends z.ZodTypeAny>(inner: T) =>
   z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), inner.nullable());
-
-const schema = z.object({
-  meal_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha no válida."),
-  meal_type: z.enum(MEAL_TYPES),
-  name: z.string().trim().min(1, "¿Qué comiste?").max(200),
-  notes: emptyToNull(z.string().max(4000)),
-  cook: emptyToNull(z.string().max(120)),
-  icon: emptyToNull(z.string().max(8)),
-  ingredients: emptyToNull(z.string().max(8000)),
-});
-
-/** Los campos del formulario, que crear y editar comparten. */
-function readForm(formData: FormData) {
-  return schema.safeParse({
-    meal_date: formData.get("meal_date"),
-    meal_type: formData.get("meal_type"),
-    name: formData.get("name"),
-    notes: formData.get("notes"),
-    cook: formData.get("cook"),
-    icon: formData.get("icon"),
-    ingredients: formData.get("ingredients"),
-  });
-}
 
 /**
  * Interpreta el bloque de ingredientes.
@@ -58,114 +29,247 @@ function ingredientsFrom(block: string | null) {
     .filter((i): i is NonNullable<typeof i> => i !== null);
 }
 
-export async function saveMeal(_prev: MealFormState, formData: FormData): Promise<MealFormState> {
-  const user = await requireUser();
+/**
+ * Las preguntas de la encuesta, que aquí son las columnas más los
+ * ingredientes -- que no son una columna sino otra tabla.
+ */
+const CAMPOS_COMIDA = [
+  "meal_date",
+  "meal_type",
+  "name",
+  "ingredients",
+  "cook",
+  "notes",
+  "icon",
+] as const;
 
-  const parsed = readForm(formData);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
-  }
+type CampoComida = (typeof CAMPOS_COMIDA)[number];
 
-  const supabase = await createClient();
-  const { data: meal, error } = await supabase
-    .from("meals_entries")
-    .insert({
-      user_id: user.id,
-      meal_date: parsed.data.meal_date,
-      meal_type: parsed.data.meal_type,
-      name: parsed.data.name,
-      notes: parsed.data.notes,
-      cook: parsed.data.cook,
-      icon: parsed.data.icon,
-    })
-    .select("id")
-    .maybeSingle();
+const valorSchema = z.union([
+  z.string().max(8000),
+  z.array(z.string().max(200)).max(40),
+  z.number(),
+  z.null(),
+]);
 
-  if (error || !meal) return { error: "No se pudo guardar la comida.", success: false };
+const respuestaComidaSchema = z.object({
+  meal_id: emptyToNull(z.string().uuid()),
+  campo: z.enum(CAMPOS_COMIDA, { message: "Pregunta desconocida." }),
+  valor: valorSchema,
+  /**
+   * Todo lo contestado hasta ahora, que sólo se usa para crear la fila.
+   *
+   * Hace falta porque `name` y `meal_type` son `not null`: la comida no puede
+   * nacer de una respuesta suelta como nace una lectura. Y ya que se manda lo
+   * mínimo, se manda todo -- así contestar el nombre en cuarto lugar no pierde
+   * las tres respuestas anteriores, que es lo que pasaría creando la fila sólo
+   * con el nombre.
+   */
+  respuestas: z.record(z.string(), valorSchema),
+});
 
-  const lines = ingredientsFrom(parsed.data.ingredients);
+export type RespuestaComida = z.infer<typeof valorSchema>;
 
-  if (lines.length > 0) {
-    await supabase.from("meals_ingredients").insert(
-      lines.map((ingredient, index) => ({
-        user_id: user.id,
-        meal_id: meal.id,
-        name: ingredient.name,
-        quantity: ingredient.quantity,
-        unit: ingredient.unit,
-        sort_order: index,
-      })),
-    );
-  }
+/** Un texto, o null si está en blanco. */
+function texto(valor: unknown): string | null {
+  const t = typeof valor === "string" ? valor.trim() : "";
+  return t === "" ? null : t;
+}
 
-  await republishDay(parsed.data.meal_date);
-  revalidateMeals();
-  return { error: null, success: true, savedAt: Date.now() };
+function tipoValido(valor: unknown): (typeof MEAL_TYPES)[number] | null {
+  return (MEAL_TYPES as readonly string[]).includes(String(valor))
+    ? (valor as (typeof MEAL_TYPES)[number])
+    : null;
+}
+
+function diaValido(valor: unknown): string | null {
+  const t = texto(valor);
+  return t !== null && /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+}
+
+/** Reemplaza los ingredientes de una comida por los del bloque de texto. */
+async function reescribirIngredientes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: { userId: string; mealId: string; bloque: unknown },
+): Promise<void> {
+  // Enteros y no casados uno a uno con los que había: el bloque de texto no
+  // tiene identidad --nadie escribe «el tercero era cebolla»--, así que
+  // casarlos sería adivinar, y adivinar mal borra el que no tocaba.
+  await supabase
+    .from("meals_ingredients")
+    .delete()
+    .eq("meal_id", params.mealId)
+    .eq("user_id", params.userId);
+
+  const lines = ingredientsFrom(texto(params.bloque));
+  if (lines.length === 0) return;
+
+  await supabase.from("meals_ingredients").insert(
+    lines.map((ingredient, index) => ({
+      user_id: params.userId,
+      meal_id: params.mealId,
+      name: ingredient.name,
+      quantity: ingredient.quantity,
+      unit: ingredient.unit,
+      sort_order: index,
+    })),
+  );
 }
 
 /**
- * Edita una comida.
+ * Una respuesta de la encuesta de comidas, guardada en cuanto se contesta.
  *
- * No existía: guardar sólo creaba, así que un ingrediente mal escrito se
- * arreglaba borrando la comida entera y tecleando los otros seis otra vez.
+ * Como en lecturas, la fila no existe de antemano: de comidas hay tres al día
+ * y varias pueden compartir hueco. La diferencia es **cuándo puede nacer**. Una
+ * lectura nace de cualquier respuesta, pero una comida necesita nombre --es
+ * `not null`, y una comida sin nombre no se puede enseñar en la rejilla de la
+ * semana--, así que hasta que lo haya no se crea nada.
  *
- * Los ingredientes se reemplazan enteros en lugar de intentar casarlos uno a
- * uno con los que había. El bloque de texto no tiene identidad -- nadie
- * escribe «el tercero era cebolla» -- así que casarlos sería adivinar, y
- * adivinar mal borra el que no tocaba.
+ * Por eso viaja todo lo contestado y no sólo la respuesta: cuando por fin
+ * llega el nombre, la fila nace con lo que ya se había contestado antes en vez
+ * de perderlo.
  */
-export async function updateMeal(
-  _prev: MealFormState,
-  formData: FormData,
-): Promise<MealFormState> {
+export async function saveMealAnswer(entrada: {
+  mealId: string | null;
+  campo: string;
+  valor: RespuestaComida;
+  respuestas: Record<string, RespuestaComida>;
+}): Promise<MealFormState & { id: string | null }> {
   const user = await requireUser();
 
-  const id = String(formData.get("id") ?? "");
-  if (!z.string().uuid().safeParse(id).success) {
-    return { error: "Comida no encontrada.", success: false };
-  }
-
-  const parsed = readForm(formData);
+  const parsed = respuestaComidaSchema.safeParse({
+    meal_id: entrada.mealId,
+    campo: entrada.campo,
+    valor: entrada.valor,
+    respuestas: entrada.respuestas,
+  });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos.",
+      success: false,
+      id: entrada.mealId,
+    };
   }
 
+  const { meal_id, campo, valor, respuestas } = parsed.data;
   const supabase = await createClient();
+
+  if (meal_id === null) {
+    const nombre = texto(respuestas.name);
+    const dia = diaValido(respuestas.meal_date);
+    const tipo = tipoValido(respuestas.meal_type);
+    // Sin nombre no hay comida que crear. Saltárselo todo no puede dejar una
+    // fila en blanco, igual que en lecturas.
+    if (nombre === null || dia === null || tipo === null) {
+      return { error: null, success: true, id: null };
+    }
+
+    const { data: meal, error } = await supabase
+      .from("meals_entries")
+      .insert({
+        user_id: user.id,
+        meal_date: dia,
+        meal_type: tipo,
+        name: nombre,
+        cook: texto(respuestas.cook),
+        notes: texto(respuestas.notes),
+        icon: texto(respuestas.icon),
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (error || !meal) return { error: "No se pudo guardar la comida.", success: false, id: null };
+
+    await reescribirIngredientes(supabase, {
+      userId: user.id,
+      mealId: meal.id,
+      bloque: respuestas.ingredients,
+    });
+
+    await republishDay(dia);
+    revalidateMeals();
+    return { error: null, success: true, id: meal.id };
+  }
+
+  if (campo === "ingredients") {
+    await reescribirIngredientes(supabase, {
+      userId: user.id,
+      mealId: meal_id,
+      bloque: valor,
+    });
+    revalidateMeals();
+    revalidatePath(`/comidas/${meal_id}`);
+    return { error: null, success: true, id: meal_id };
+  }
+
+  const parche = columnaDeComida(campo, valor);
+  // Una respuesta que no escribe nada --el nombre borrado, un tipo que no
+  // existe-- no puede vaciar una columna obligatoria.
+  if (Object.keys(parche).length === 0) return { error: null, success: true, id: meal_id };
+
+  const { data: antes } = await supabase
+    .from("meals_entries")
+    .select("meal_date")
+    .eq("id", meal_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("meals_entries")
-    .update({
-      meal_date: parsed.data.meal_date,
-      meal_type: parsed.data.meal_type,
-      name: parsed.data.name,
-      notes: parsed.data.notes,
-      cook: parsed.data.cook,
-      icon: parsed.data.icon,
-    })
-    .eq("id", id)
+    .update(parche)
+    .eq("id", meal_id)
     .eq("user_id", user.id);
 
-  if (error) return { error: "No se pudo guardar la comida.", success: false };
+  if (error) return { error: "No se pudo guardar la comida.", success: false, id: meal_id };
 
-  await supabase.from("meals_ingredients").delete().eq("meal_id", id).eq("user_id", user.id);
+  // Mover una comida de día cambia la cuenta de los dos, y recontar sólo el
+  // nuevo dejaría el viejo inflado para siempre.
+  const ahora = parche.meal_date ?? antes?.meal_date ?? null;
+  if (ahora) await republishDay(ahora);
+  if (antes && ahora && antes.meal_date !== ahora) await republishDay(antes.meal_date);
 
-  const lines = ingredientsFrom(parsed.data.ingredients);
-  if (lines.length > 0) {
-    await supabase.from("meals_ingredients").insert(
-      lines.map((ingredient, index) => ({
-        user_id: user.id,
-        meal_id: id,
-        name: ingredient.name,
-        quantity: ingredient.quantity,
-        unit: ingredient.unit,
-        sort_order: index,
-      })),
-    );
-  }
-
-  await republishDay(parsed.data.meal_date);
   revalidateMeals();
-  revalidatePath(`/comidas/${id}`);
-  return { error: null, success: true, savedAt: Date.now() };
+  revalidatePath(`/comidas/${meal_id}`);
+  return { error: null, success: true, id: meal_id };
+}
+
+type ParcheComida = Partial<{
+  meal_date: string;
+  meal_type: (typeof MEAL_TYPES)[number];
+  name: string;
+  cook: string | null;
+  notes: string | null;
+  icon: string | null;
+}>;
+
+/**
+ * La columna que toca esta respuesta, y sólo ella.
+ *
+ * Las obligatorias --nombre, tipo, día-- devuelven un parche vacío cuando la
+ * respuesta no vale, en vez de escribir null: son `not null`, así que el
+ * `update` fallaría entero y la respuesta buena de al lado se perdería con él.
+ */
+function columnaDeComida(campo: Exclude<CampoComida, "ingredients">, valor: RespuestaComida): ParcheComida {
+  switch (campo) {
+    case "name": {
+      const nombre = texto(valor);
+      return nombre === null ? {} : { name: nombre };
+    }
+    case "meal_type": {
+      const tipo = tipoValido(valor);
+      return tipo === null ? {} : { meal_type: tipo };
+    }
+    case "meal_date": {
+      const dia = diaValido(valor);
+      return dia === null ? {} : { meal_date: dia };
+    }
+    case "cook":
+      return { cook: texto(valor) };
+    case "notes":
+      return { notes: texto(valor) };
+    case "icon":
+      return { icon: texto(valor) };
+  }
 }
 
 /** Rehace la cuenta del día después de que la papelera se lleve una comida. */

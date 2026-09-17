@@ -91,7 +91,13 @@ export interface PasoFecha extends PasoBase {
   tipo: "fecha";
   /** El día de referencia (`AAAA-MM-DD`) desde el que cuentan los atajos. */
   hoy: string;
-  /** Botones relativos: cuántos días hacia atrás, y cómo se llaman. */
+  /**
+   * Botones relativos: cuántos días hacia atrás, y cómo se llaman.
+   *
+   * Hacia atrás porque casi todo en Vida se apunta después de que pase. En
+   * negativo van hacia delante, que es lo que necesita comidas: eso es un
+   * planificador, y planificar es escribir el martes que viene.
+   */
   atajos?: readonly { etiqueta: string; dias: number }[];
 }
 

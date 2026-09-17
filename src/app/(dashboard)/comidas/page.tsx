@@ -11,7 +11,7 @@ import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { MEAL_TYPES, MEAL_TYPE_LABELS, type MealType } from "@/modules/meals/domain/meals";
 import { fetchMeals } from "@/modules/meals/queries";
-import { MealForm } from "@/modules/meals/ui/meal-form";
+import { MealSurvey } from "@/modules/meals/ui/meal-survey";
 import { NotionImportCard } from "@/core/ui/notion-import-card";
 import { runMealsFromNotion } from "@/modules/meals/actions";
 import { mealsDatabaseId } from "@/modules/meals/notion-import";
@@ -61,9 +61,10 @@ export default async function MealsPage({
         <CardContent>
           {/* Remontar al cambiar de hueco: los campos por defecto sólo se leen
               al montar, y sin esto el enlace de la rejilla no cambiaría nada. */}
-          <MealForm
+          <MealSurvey
             key={`${date}-${defaultType}`}
             date={date}
+            hoy={today}
             defaultType={defaultType}
             templates={templates}
           />
