@@ -11,6 +11,7 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 | `modules/sleep/domain/encuesta.ts` | Antes de dormir, y al despertar |
 | `modules/reading/domain/encuesta.ts` | Al acabar un rato de lectura |
 | `modules/meals/domain/encuesta.ts` | Al apuntar o planificar una comida |
+| `modules/tasks/domain/encuesta.ts` | Al rellenar la ficha de una tarea |
 
 El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
@@ -110,6 +111,16 @@ Las tres primeras encuestas escriben sobre algo que ya está en la base: una ope
 
 **Comidas añade una vuelta más**: `name` y `meal_type` son `not null`, así que la fila no puede nacer de una respuesta suelta como nace una lectura -- hace falta el nombre. Por eso cada guardado lleva **todo lo contestado hasta ahora** y no sólo la respuesta: cuando por fin llega el nombre, la comida nace con lo que ya había escrito en vez de perderlo. Es también lo que deja que aplicar una plantilla --nombre, tipo e ingredientes de un toque-- sea una sola llamada.
 
+## Cuando lo que se escribe se toca muchas veces
+
+Una noche, una lectura o una operación se escriben **una vez** y se archivan. Una tarea no: se apunta en un segundo --«llamar al fontanero»-- y luego se toca durante días. Son dos usos distintos y la encuesta sola sólo sirve para el primero, así que tareas hace tres cosas diferentes y conviene no «arreglarlas»:
+
+- **Apuntar sigue siendo un campo y un botón** (`modules/tasks/ui/new-task.tsx`). Eso ya era lo más rápido que podía ser; convertirlo en encuesta lo haría más lento. El formulario largo de este módulo era el de la ficha, no el de apuntar.
+- **Una tarea a medias abre en la primera pregunta sin contestar**, que es el camino de quien la capturó con prisa y ahora se sienta a decidir de qué proyecto es y para cuándo.
+- **Una tarea entera abre en su ficha** --`pasoInicial=""`, la pantalla final-- con todo a la vista y cada línea saltando a su pregunta. Cambiarle la fecha no puede costar recorrer nueve preguntas, y es lo que más se hace con una tarea.
+
+Las preguntas sin contestar salen en la ficha con un guión, y también se tocan. Es lo que la convierte en el índice de la encuesta en vez de en un resumen de lo hecho: los huecos se ven, y por eso se acaban rellenando.
+
 ## La pregunta de un día
 
 `tipo: "fecha"` (`core/encuesta/pasos.ts`) se estrenó en lecturas y vale para cualquier módulo. Dos decisiones que no son obvias:
@@ -140,3 +151,6 @@ Que el día sea una pregunta más --y no un campo oculto con el de hoy-- es lo q
 | `modules/meals/domain/encuesta.ts` | Las preguntas de una comida, y cuándo puede nacer. |
 | `modules/meals/ui/meal-survey.tsx` | La encuesta de comidas, con la barra de plantillas encima. |
 | `modules/meals/actions.ts` | `saveMealAnswer`: la fila nace del nombre, con todo lo contestado dentro. Los ingredientes se reescriben enteros. |
+| `modules/tasks/domain/encuesta.ts` | Las preguntas de una tarea, con los proyectos de quien contesta. |
+| `modules/tasks/ui/task-survey.tsx` | La ficha de una tarea: encuesta para rellenarla, resumen tocable para corregirla. |
+| `modules/tasks/actions.ts` | `saveTaskAnswer`: una columna por respuesta. Marcar «hecha» sella el cierre igual que el círculo de la lista. |

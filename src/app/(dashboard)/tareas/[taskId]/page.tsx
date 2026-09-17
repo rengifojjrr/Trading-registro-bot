@@ -8,7 +8,7 @@ import { userTimezone } from "@/core/user-settings";
 import { formatDate } from "@/lib/format";
 import { PRIORITY_LABELS, STATUS_LABELS, daysLeftLabel } from "@/modules/tasks/domain/tasks";
 import { fetchProjects, fetchTask } from "@/modules/tasks/queries";
-import { TaskForm } from "@/modules/tasks/ui/task-form";
+import { TaskSurvey } from "@/modules/tasks/ui/task-survey";
 
 /**
  * La ficha de una tarea.
@@ -17,9 +17,10 @@ import { TaskForm } from "@/modules/tasks/ui/task-form";
  * marcar y borrar, y la descripción que traen tus tareas de Notion -- «Hacer
  * inventario de trendy sports» -- no tenía dónde verse.
  *
- * El formulario va arriba y no detrás de un botón de «editar». Una ficha que
+ * La encuesta va arriba y no detrás de un botón de «editar». Una ficha que
  * hay que desbloquear para tocar convierte cada corrección en dos pasos, y
- * aquí casi todo lo que se viene a hacer es corregir.
+ * aquí casi todo lo que se viene a hacer es corregir -- que es también por lo
+ * que abre en el resumen y no en la primera pregunta cuando ya está entera.
  */
 export default async function TaskDetailPage({
   params,
@@ -68,7 +69,7 @@ export default async function TaskDetailPage({
           <CardTitle className="text-base">Datos</CardTitle>
         </CardHeader>
         <CardContent>
-          <TaskForm task={task} projects={projects} />
+          <TaskSurvey task={task} projects={projects} hoy={today} />
         </CardContent>
       </Card>
     </DetailShell>

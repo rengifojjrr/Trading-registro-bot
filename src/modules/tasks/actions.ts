@@ -76,63 +76,160 @@ export async function createTask(_prev: TaskFormState, formData: FormData): Prom
   return { error: null, success: true };
 }
 
+/** Las preguntas de la encuesta de la ficha, que aquí son las columnas. */
+const CAMPOS_TAREA = [
+  "title",
+  "status",
+  "priority",
+  "project_id",
+  "due_date",
+  "due_time",
+  "due_end",
+  "categories",
+  "notes",
+  "description",
+  "icon",
+] as const;
+
+type CampoTarea = (typeof CAMPOS_TAREA)[number];
+
+const respuestaTareaSchema = z.object({
+  task_id: z.string().uuid("Tarea no encontrada."),
+  campo: z.enum(CAMPOS_TAREA, { message: "Pregunta desconocida." }),
+  valor: z.union([z.string().max(20000), z.array(z.string().max(200)).max(40), z.number(), z.null()]),
+});
+
+export type RespuestaTarea = z.infer<typeof respuestaTareaSchema>["valor"];
+
+/** Un texto, o null si está en blanco. */
+function textoTarea(valor: RespuestaTarea): string | null {
+  const t = typeof valor === "string" ? valor.trim() : "";
+  return t === "" ? null : t;
+}
+
+function coincide<T extends string>(valores: readonly T[], valor: RespuestaTarea): T | null {
+  const t = textoTarea(valor);
+  return t !== null && (valores as readonly string[]).includes(t) ? (t as T) : null;
+}
+
+function fechaTarea(valor: RespuestaTarea): string | null {
+  const t = textoTarea(valor);
+  return t !== null && /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+}
+
+type ParcheTarea = Partial<{
+  title: string;
+  status: (typeof STATUSES)[number];
+  priority: (typeof PRIORITIES)[number];
+  project_id: string | null;
+  due_date: string | null;
+  due_end: string | null;
+  due_time: string | null;
+  categories: string[];
+  notes: string | null;
+  description: string | null;
+  icon: string | null;
+}>;
+
 /**
- * Edita una tarea entera.
+ * La columna que toca esta respuesta, y sólo ella.
  *
- * No existía: la lista sólo sabía girar el estado y borrar, así que el título,
- * la fecha, el proyecto, la prioridad, las categorías y las notas quedaban
- * congelados en el momento de crearla, y un error de escritura obligaba a
- * borrar y volver a empezar.
+ * El título, el estado y la prioridad son `not null`: una respuesta que no
+ * vale devuelve un parche vacío en vez de escribir null, porque el `update`
+ * fallaría entero. Es la misma regla que en comidas.
  */
-export async function updateTask(
-  _prev: TaskFormState,
-  formData: FormData,
+function columnaDeTarea(campo: CampoTarea, valor: RespuestaTarea): ParcheTarea {
+  switch (campo) {
+    case "title": {
+      const titulo = textoTarea(valor);
+      return titulo === null ? {} : { title: titulo.slice(0, 300) };
+    }
+    case "status": {
+      const estado = coincide(STATUSES, valor);
+      return estado === null ? {} : { status: estado };
+    }
+    case "priority": {
+      const prioridad = coincide(PRIORITIES, valor);
+      return prioridad === null ? {} : { priority: prioridad };
+    }
+    case "project_id": {
+      const id = textoTarea(valor);
+      // Un id que no es un uuid es la ficha de un proyecto que ya no existe:
+      // se guarda como «sin proyecto» en vez de reventar la fila.
+      return { project_id: id !== null && z.string().uuid().safeParse(id).success ? id : null };
+    }
+    case "due_date":
+      return { due_date: fechaTarea(valor) };
+    case "due_end":
+      return { due_end: fechaTarea(valor) };
+    case "due_time": {
+      const hora = textoTarea(valor);
+      return { due_time: hora !== null && /^\d{2}:\d{2}$/.test(hora) ? hora : null };
+    }
+    case "categories":
+      return { categories: Array.isArray(valor) ? valor.map(String) : [] };
+    case "notes":
+      return { notes: textoTarea(valor) };
+    case "description":
+      return { description: textoTarea(valor) };
+    case "icon":
+      return { icon: textoTarea(valor) };
+  }
+}
+
+/**
+ * Una respuesta de la encuesta de la ficha, guardada en cuanto se contesta.
+ *
+ * Más simple que en lecturas y comidas: aquí la fila **siempre existe**. Una
+ * tarea nace de un campo y un botón (`ui/new-task.tsx`), que es lo más rápido
+ * que puede ser apuntar algo antes de que se te olvide; la encuesta es para
+ * rellenarla después, que es cuando hay diez campos y ninguna prisa.
+ */
+export async function saveTaskAnswer(
+  taskId: string,
+  campo: string,
+  valor: RespuestaTarea,
 ): Promise<TaskFormState> {
   const user = await requireUser();
 
-  const id = String(formData.get("id") ?? "");
-  if (!z.string().uuid().safeParse(id).success) {
-    return { error: "Tarea no encontrada.", success: false };
-  }
-
-  const parsed = readForm(formData);
+  const parsed = respuestaTareaSchema.safeParse({ task_id: taskId, campo, valor });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
 
+  const parche = columnaDeTarea(parsed.data.campo, parsed.data.valor);
+  if (Object.keys(parche).length === 0) return { error: null, success: true };
+
   const supabase = await createClient();
 
-  // Cambiar el estado desde la ficha tiene que sellar el cierre igual que lo
-  // hace el círculo de la lista, o la gráfica de «entra y sale» se quedaría
-  // sin la mitad de los cierres.
-  const { data: before } = await supabase
-    .from("tasks_items")
-    .select("status, completed_at")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // Marcar «hecha» desde la ficha tiene que sellar el cierre igual que lo hace
+  // el círculo de la lista, o la gráfica de «entra y sale» se quedaría sin la
+  // mitad de los cierres. Y desmarcarla tiene que borrar el sello.
+  if (parche.status !== undefined) {
+    const { data: antes } = await supabase
+      .from("tasks_items")
+      .select("completed_at")
+      .eq("id", parsed.data.task_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-  const completedAt =
-    parsed.data.status === "HECHA"
-      ? (before?.completed_at ?? new Date().toISOString())
-      : null;
+    Object.assign(parche, {
+      completed_at:
+        parche.status === "HECHA" ? (antes?.completed_at ?? new Date().toISOString()) : null,
+    });
+  }
 
   const { error } = await supabase
     .from("tasks_items")
-    .update({
-      ...parsed.data,
-      completed_at: completedAt,
-      categories: formData.getAll("categories").map(String),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
+    .update({ ...parche, updated_at: new Date().toISOString() })
+    .eq("id", parsed.data.task_id)
     .eq("user_id", user.id);
 
   if (error) return { error: "No se pudo guardar la tarea.", success: false };
 
   await republish();
   revalidateTasks();
-  revalidatePath(`/tareas/${id}`);
+  revalidatePath(`/tareas/${parsed.data.task_id}`);
   return { error: null, success: true };
 }
 
