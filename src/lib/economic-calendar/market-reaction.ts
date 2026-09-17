@@ -185,6 +185,14 @@ export function horizonOf(reaction: MarketReaction, minutes: number): HorizonMea
   return reaction.horizons.find((h) => h.minutes === minutes) ?? null;
 }
 
+/**
+ * Con la coma decimal del calendario y no con el punto de `formatPercent`.
+ *
+ * Esta cifra se enseña pegada al dato macro --«prev. 0,3 % → 0,4 %» a la
+ * izquierda, «+0,35 %» a la derecha, en la misma fila-- y las dos tienen que
+ * escribirse igual. La convención de esa fila es la del calendario del que
+ * salen los datos; ver la cabecera de `format.ts`.
+ */
 export function formatPct(value: number): string {
   return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 }).format(value)}%`;
 }

@@ -1,4 +1,5 @@
 import type { Paso, Respuestas } from "@/core/encuesta/pasos";
+import { formatNumber } from "@/lib/format";
 
 import { EMOTION_OPTIONS } from "./options";
 
@@ -263,7 +264,10 @@ export function resumenCorto(answers: PlanAnswers): string {
   const partes: string[] = [];
   if (answers.direccion) partes.push(answers.direccion === "LONG" ? "Largo" : "Corto");
 
-  const precio = (n: number) => n.toLocaleString("es-ES", { maximumFractionDigits: 2 });
+  // Por `formatNumber`: estos tres precios se enseñan en la misma pantalla que
+  // el P&L y el precio de entrada reales, que salen de `formatMoney`. Escrito
+  // aquí a mano separaba los miles al revés que ellos.
+  const precio = (n: number) => formatNumber(n);
   if (answers.entrada !== null) partes.push(`entrada ${precio(answers.entrada)}`);
   if (answers.stop !== null) partes.push(`stop ${precio(answers.stop)}`);
   if (answers.objetivo !== null) partes.push(`objetivo ${precio(answers.objetivo)}`);

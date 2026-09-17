@@ -18,6 +18,8 @@
  * pregunta.
  */
 
+import { formatNumber } from "@/lib/format";
+
 export type Respuesta = string | string[] | number | null;
 
 export type Respuestas = Record<string, Respuesta>;
@@ -257,11 +259,13 @@ export function textoDeRespuesta(paso: Paso, respuestas: Respuestas): string | n
   }
 
   if (paso.tipo === "numero" && typeof valor === "number") {
-    // Con separador de miles: 68.450 se lee de un vistazo y 68450 hay que
-    // contarlo. Es la misma razón por la que el eje del gráfico los lleva.
-    return `${paso.prefijo ?? ""}${valor.toLocaleString("es-ES", {
-      maximumFractionDigits: paso.decimales ?? 2,
-    })}`;
+    // Con separador de miles: 68,450 se lee de un vistazo y 68450 hay que
+    // contarlo. Es la misma razón por la que el eje del gráfico los lleva --
+    // y por eso va por `formatNumber`, que es de donde salen los del gráfico.
+    // Escrito a mano aquí, los separaba al revés que el gráfico: una encuesta
+    // que pregunta por un precio y luego lo enseña de otra forma que la
+    // pantalla de al lado.
+    return `${paso.prefijo ?? ""}${formatNumber(valor, paso.decimales ?? 2)}`;
   }
 
   // «Ayer» y no «2026-09-16»: el resumen se lee de un vistazo, y la fecha en

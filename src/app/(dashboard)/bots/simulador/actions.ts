@@ -26,6 +26,7 @@ import {
   BIBLIOTECA,
   type EstrategiaDeLaBiblioteca,
 } from "@/lib/paper/strategy-library";
+import { formatNumber } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database";
 
@@ -303,7 +304,7 @@ export async function cambiarCapital(input: {
 
   const capital = z.number().min(0).max(CAPITAL_MAXIMO).safeParse(input.capital);
   if (!capital.success) {
-    return { error: `El capital va de 0 a ${CAPITAL_MAXIMO.toLocaleString("es-ES")}.` };
+    return { error: `El capital va de 0 a ${formatNumber(CAPITAL_MAXIMO)}.` };
   }
   const nuevo = redondearDinero(capital.data);
 

@@ -5,6 +5,20 @@ import type { EventImportance } from "./types";
  *
  * Sin efectos ni dependencias: lo prueba `format.test.ts` y lo usan tanto la
  * pantalla como el aviso, para que las dos digan exactamente lo mismo.
+ *
+ * **Por qué no pasa por `@/lib/format`, que es donde va todo lo demás.** Estos
+ * números no los calcula la aplicación: los publica una fuente, y se enseñan
+ * como los publica -- «0,4 %», con coma, que es lo que pone el calendario del
+ * que salen y lo que pone cualquier otro. Los del resto de la aplicación son
+ * cuentas propias y llevan el separador de `formatMoney`, con coma en los
+ * miles.
+ *
+ * Que sean dos convenciones distintas es a propósito y se sostiene porque no
+ * se mezclan: en la ficha de una publicación, el dato macro y el movimiento
+ * del precio se enseñan uno al lado del otro y los dos van así (ver
+ * `market-reaction.ts`, `formatPct`). Lo que no puede pasar --y pasaba-- es
+ * que dos números de la misma fila se escriban de dos maneras. Lo vigila
+ * `src/lib/format-unico.test.ts`.
  */
 
 /**

@@ -155,7 +155,10 @@ describe("cómo se comportan estas preguntas en el motor", () => {
     const lineas = resumen(PLAN_STEPS, aRespuestas(plan({ direccion: "LONG", entrada: 68450 })), PLAN_LABELS);
     expect(lineas).toEqual([
       { etiqueta: "Dirección", valor: "Largo" },
-      { etiqueta: "Entrada", valor: "$68.450" },
+      // Coma y no punto: el separador es el de `formatNumber`, que es el que
+      // usa el resto de la aplicación. El motor lo escribía a mano con
+      // `es-ES` y salía «$68.450» al lado de un P&L que ponía «$1,234.50».
+      { etiqueta: "Entrada", valor: "$68,450" },
     ]);
   });
 

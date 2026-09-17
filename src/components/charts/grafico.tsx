@@ -118,7 +118,7 @@ import { TOOL_BY_ID, type ToolId } from "@/lib/charts/tools";
 import type { CoinbaseCandleGranularity } from "@/lib/coinbase/types";
 import { formatHorizonLabel } from "@/lib/economic-calendar/market-reaction";
 import { uploadTradeScreenshot } from "@/app/(dashboard)/trades/[tradeId]/actions";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatNumber } from "@/lib/format";
 import { useCurrentPrice } from "@/lib/hooks/use-current-price";
 import { cn } from "@/lib/utils";
 
@@ -1395,7 +1395,11 @@ export function Grafico({
         ["Mín", formatMoney(shown.low), null],
         ["C", formatMoney(shown.close), color],
         ["Var", `${sign}${changePct.toFixed(2)}%`, color],
-        ["Vol", shown.volume.toLocaleString("es-ES"), null],
+        // Por `formatNumber` y no por `toLocaleString("es-ES")`: las cinco
+        // cifras de arriba salen de `formatMoney`, y el volumen estaba en la
+        // misma fila separando los miles con un punto mientras ellas los
+        // separaban con una coma.
+        ["Vol", formatNumber(shown.volume), null],
       ];
 
       // En una publicación, la cifra que se viene a leer no es cuánto se movió
