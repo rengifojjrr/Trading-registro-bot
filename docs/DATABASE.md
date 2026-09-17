@@ -81,6 +81,14 @@ El linter de Supabase pide cincuenta y uno y hay dos. No es un descuido:
 
 Los dos que se añadieron (`reading_sessions (user_id, book_id)` y `tasks_items (user_id, project_id)`) salieron de mirar las consultas, no la lista de avisos: son las dos que preguntan «dame los hijos de esto», no tenían índice que las cubriera, y son tablas que crecen para siempre.
 
+### El efectivo del simulador lo deriva la base
+
+`paper_accounts.efectivo` parece una columna y no lo es: un disparador la recalcula en cada escritura como `capital asignado + lo realizado en cerradas − lo que cuesta la abierta`. Escribir otra cosa no sirve de nada, y es deliberado.
+
+Viene de un fallo que estuvo semanas acuñando dinero. La posición se escribía vela a vela y el efectivo sólo al final del ciclo; un ciclo que muriera entre las dos cosas dejaba la posición abierta y el efectivo sin descontar, y el ciclo siguiente sumaba las dos. Dos bots se inventaron 7.650 y 6.522 dólares. `lib/paper/runner.ts` ya no lee la columna --deriva el efectivo del libro-- pero eso sólo protege desde el despliegue, y el reloj corre cada cinco minutos contra lo que haya desplegado. El disparador cierra esa ventana desde abajo.
+
+No toca `equity`: el patrimonio incluye la posición abierta valorada al último cierre, y ese precio no está en la base. Con el efectivo bueno, el primer ciclo que pase deja el patrimonio bueno.
+
 ## Regenerar los tipos desde un proyecto real
 
 Una vez que exista un proyecto Supabase real y las migraciones estén aplicadas:
