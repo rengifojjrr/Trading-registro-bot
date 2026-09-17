@@ -14,6 +14,8 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 | `modules/tasks/domain/encuesta.ts` | Al rellenar la ficha de una tarea |
 | `modules/content/domain/encuesta.ts` | Al rellenar la ficha de una pieza |
 
+Los siete módulos están cubiertos salvo **hábitos**, que no tiene formulario largo que arreglar y se queda como está -- el porqué, más abajo.
+
 El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
 ## El problema que resuelve
@@ -125,6 +127,15 @@ Las preguntas sin contestar salen en la ficha con un guión, y también se tocan
 **Contenido funciona igual** y por lo mismo: una idea se apunta en un segundo y la pieza se toca durante dos meses mientras baja por los diez estados. El índice vive en `core/encuesta/ficha.tsx`, compartido por los dos.
 
 Dónde va la barra de plantillas es la diferencia entre los dos módulos que la tienen. En **comidas** va encima de la encuesta, porque una plantilla ahí es lo que rellena la comida entera de un toque. En **contenido** va en la ficha, porque es ahí donde están los campos que una plantilla copia --la forma de la pieza: tipo, canal, plataforma, estilo de edición--, mientras que al apuntar la idea sólo se aplican.
+
+## El módulo que no la lleva
+
+**Hábitos se queda como está, a propósito.** Es el único de los siete que no tiene formulario largo que arreglar:
+
+- Crear un hábito son dos campos --emoji y nombre-- y un botón. Que eso sea trivial es la mitad del argumento del módulo: en Notion añadir un hábito significa añadir una columna y el histórico nunca la tiene.
+- Marcar un día es **un bit**. No hay nada que preguntar: la rejilla de días se toca y ya está, y la ausencia de fila significa «no hecho», no «sin datos».
+
+Una encuesta ahí añadiría pasos a lo que ya es un toque. La encuesta existe para el formulario que nadie rellena entero, y hábitos no tiene ninguno; convertirlo sería aplicar el remedio donde no está la enfermedad.
 
 ## La pregunta de un día
 
