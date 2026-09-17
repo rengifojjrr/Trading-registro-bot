@@ -113,6 +113,22 @@ export async function velasPublicas(
     return [];
   }
 
+  const velas = velasDeCoinbase(crudo);
+
+  const ahora = Date.now();
+  const utiles = incluirEnCurso ? velas : velas.filter((v) => v.time + segundos * 1000 <= ahora);
+
+  return utiles.slice(-limite);
+}
+
+/**
+ * Lo que manda Coinbase, convertido en velas y en orden cronológico.
+ *
+ * Suelto porque lo usan las dos formas de pedir --la última tanda y el
+ * histórico paginado-- y porque el orden de los campos de cada fila es lo
+ * bastante raro como para no querer escribirlo dos veces.
+ */
+function velasDeCoinbase(crudo: unknown): Vela[] {
   if (!Array.isArray(crudo)) return [];
 
   const velas: Vela[] = [];
@@ -143,15 +159,101 @@ export async function velasPublicas(
 
   // Coinbase las manda de más reciente a más antigua y todo lo demás en este
   // repositorio (indicadores, motor de backtest) asume orden cronológico.
-  velas.sort((a, b) => a.time - b.time);
-
-  const ahora = Date.now();
-  const utiles = incluirEnCurso ? velas : velas.filter((v) => v.time + segundos * 1000 <= ahora);
-
-  return utiles.slice(-limite);
+  return velas.sort((a, b) => a.time - b.time);
 }
 
 /** La hora de apertura de la última vela cerrada, para saber si ya se evaluó. */
 export function horaUltimaVelaCerrada(velas: Vela[]): number | null {
   return velas.length > 0 ? velas[velas.length - 1].time : null;
+}
+
+/**
+ * Cuántas páginas de trescientas velas se piden como mucho.
+ *
+ * Coinbase devuelve trescientas por petición, así que un histórico largo son
+ * varias llamadas encadenadas. El tope existe porque esto lo dispara una
+ * persona desde una pantalla y espera: doce páginas son unos tres segundos y
+ * tres mil seiscientas velas, que para una estrategia diaria son diez años y
+ * para una de cinco minutos doce días. Más allá, lo que falta no es histórico
+ * sino paciencia.
+ */
+const MAX_PAGINAS = 12;
+
+/** Lo que se espera entre páginas, para no chocar con el límite de la API pública. */
+const PAUSA_ENTRE_PAGINAS_MS = 120;
+
+/**
+ * Un histórico largo, encadenando peticiones hacia atrás.
+ *
+ * `velasPublicas` trae lo último y con eso le basta al ciclo del simulador,
+ * que sólo mira las velas nuevas. Medir una estrategia es otra cosa: con
+ * trescientas velas de cinco minutos se mide un día, y un día no dice nada de
+ * una estrategia. Así que aquí se pagina.
+ *
+ * Devuelve lo que haya podido traer, aunque sea menos de lo pedido. Un
+ * histórico corto es una medición con menos velas --y la pantalla dice cuántas
+ * fueron--, mientras que fallar entero deja la estrategia sin medir por un
+ * corte de red. Igual que `velasPublicas`, no lanza nunca.
+ */
+export async function velasHistoricas(
+  productId: string,
+  granularidad: GranularidadPublica,
+  objetivo: number,
+): Promise<Vela[]> {
+  const segundos = SEGUNDOS_POR_GRANULARIDAD[granularidad];
+  const porPagina = MAX_VELAS_POR_PETICION;
+
+  const paginas = Math.min(MAX_PAGINAS, Math.ceil(objetivo / porPagina));
+  const porHora = new Map<number, Vela>();
+
+  let fin = Math.floor(Date.now() / 1000);
+
+  for (let pagina = 0; pagina < paginas; pagina += 1) {
+    const inicio = fin - porPagina * segundos;
+    const lote = await unaPagina(productId, segundos, inicio, fin);
+
+    // Una página vacía significa que se acabó el histórico del producto. Seguir
+    // pidiendo hacia atrás sólo gasta llamadas para recibir más vacíos.
+    if (lote.length === 0) break;
+
+    for (const vela of lote) porHora.set(vela.time, vela);
+
+    // Desde la más antigua de esta página, no desde `inicio`: si la fuente
+    // devolvió menos de lo pedido --un fin de semana, un hueco-- restar la
+    // ventana entera se saltaría velas que sí existen.
+    const masAntigua = Math.min(...lote.map((v) => v.time / 1000));
+    fin = masAntigua - segundos;
+
+    if (pagina < paginas - 1) await esperar(PAUSA_ENTRE_PAGINAS_MS);
+  }
+
+  const ahora = Date.now();
+  return [...porHora.values()]
+    .filter((v) => v.time + segundos * 1000 <= ahora)
+    .sort((a, b) => a.time - b.time)
+    .slice(-objetivo);
+}
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((listo) => setTimeout(listo, ms));
+}
+
+/** Una ventana suelta, ya normalizada. Devuelve vacío si falla, como el resto. */
+async function unaPagina(
+  productId: string,
+  segundos: number,
+  inicio: number,
+  fin: number,
+): Promise<Vela[]> {
+  const url =
+    `${BASE}/products/${encodeURIComponent(productId)}/candles` +
+    `?granularity=${segundos}&start=${inicio}&end=${fin}`;
+
+  try {
+    const respuesta = await fetch(url, { headers: { accept: "application/json" } });
+    if (!respuesta.ok) return [];
+    return velasDeCoinbase(await respuesta.json());
+  } catch {
+    return [];
+  }
 }

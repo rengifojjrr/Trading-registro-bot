@@ -1420,6 +1420,43 @@ export interface Database {
           last_used_at?: string | null;
         }
       >;
+      /** La última medición de cada estrategia de la biblioteca, por usuario.
+       *  Ver supabase/migrations/20260917160000_medir_las_estrategias_de_la_biblioteca.sql */
+      strategy_measurements: Table<
+        {
+          id: string;
+          user_id: string;
+          slug: string;
+          pnl_pct: string;
+          dd_pct: string;
+          trades: number;
+          profit_factor: string | null;
+          market: string;
+          timeframe: string;
+          velas: number;
+          desde: string;
+          hasta: string;
+          comision_pct: string;
+          measured_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          slug: string;
+          pnl_pct: number | string;
+          dd_pct: number | string;
+          trades: number;
+          profit_factor?: number | string | null;
+          market: string;
+          timeframe: string;
+          velas: number;
+          desde: string;
+          hasta: string;
+          comision_pct: number | string;
+          measured_at?: string;
+        }
+      >;
+
       backtest_strategies: Table<
         {
           id: string;

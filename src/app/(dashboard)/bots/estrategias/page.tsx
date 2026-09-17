@@ -19,6 +19,13 @@ import {
   estrategiaPorSlug,
   type EstrategiaDeLaBiblioteca,
 } from "@/lib/paper/strategy-library";
+import { MedirBiblioteca } from "@/components/bots/medir-biblioteca";
+import {
+  medicionesGuardadas,
+  medirVarias,
+  slugsSinMedir,
+  type MedicionGuardada,
+} from "@/lib/paper/measurement-store";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database";
 
@@ -147,7 +154,41 @@ export default async function EstrategiasPage({
   // Contado y no escrito a mano: el día que una estrategia se mida, la frase
   // de abajo tiene que cambiar sola. Un número a mano en un texto sobre no
   // inventarse números duraría exactamente hasta la siguiente medición.
-  const sinMedir = BIBLIOTECA.filter((e) => e.medido === null).length;
+  //
+  // Lo medido desde aquí se suma a lo que traía el estudio de agosto: una
+  // ficha enseña las cifras de donde las tenga, y dice sobre qué ventana.
+  const medidas = await medicionesGuardadas();
+  const sinMedir = slugsSinMedir(medidas).length;
+
+  /**
+   * Medir las que no tienen cifras.
+   *
+   * Trae el histórico de cada una de la API pública y lo pasa por el mismo
+   * `runBacktest` con el que se midieron las del estudio de agosto. Tarda --
+   * son hasta doce peticiones encadenadas por estrategia, en serie -- y por eso
+   * es un botón y no algo que pase al abrir la página.
+   *
+   * Mide sólo las que faltan. Volver a medir una que ya tiene cifras es otra
+   * decisión: la de tirar una medición para quedarse con otra, y esa se toma de
+   * una en una desde su ficha.
+   */
+  async function medirLasQueFaltan() {
+    "use server";
+
+    const resultados = await medirVarias(slugsSinMedir(await medicionesGuardadas()));
+    revalidatePath("/bots/estrategias");
+
+    const medidas = resultados.filter((r) => r.medicion !== null).length;
+    const sinHistorico = resultados.length - medidas;
+
+    return {
+      medidas,
+      sinHistorico,
+      // Los nombres de las que no se pudieron, para que la pantalla diga
+      // cuáles en vez de un número que no se puede accionar.
+      fallidas: resultados.filter((r) => r.medicion === null).map((r) => r.nombre),
+    };
+  }
 
   /**
    * Dar de alta un bot que opere estas reglas.
@@ -300,9 +341,13 @@ export default async function EstrategiasPage({
             <span className="text-foreground">la hipótesis</span> es por qué debería funcionar,{" "}
             <span className="text-foreground">las reglas</span> son lo que el ordenador va a hacer
             de verdad, y <span className="text-foreground">las cifras</span> son lo que dio cuando
-            alguien la midió. {sinMedir} de las {BIBLIOTECA.length} no tienen cifras, y lo dicen: en
-            la biblioteca no se inventan números.
+            alguien la midió.{" "}
+            {sinMedir === 0
+              ? "Las " + BIBLIOTECA.length + " tienen cifras, y todas dicen sobre qué ventana."
+              : `${sinMedir} de las ${BIBLIOTECA.length} no tienen cifras, y lo dicen: en la biblioteca no se inventan números.`}
           </p>
+
+          <MedirBiblioteca cuantas={sinMedir} medir={medirLasQueFaltan} />
           <p>
             Llevarse una crea un bot en F1, con el tamaño a cero y sin tocar dinero. La cuenta de
             papel se le abre y se enciende en{" "}
@@ -338,6 +383,7 @@ export default async function EstrategiasPage({
                   key={estrategia.slug}
                   estrategia={estrategia}
                   bot={yaCreados.get(estrategia.slug) ?? null}
+                  medidaAqui={medidas.get(estrategia.slug) ?? null}
                   crear={crearBotDesdeLaBiblioteca}
                 />
               ))}
@@ -360,13 +406,18 @@ export default async function EstrategiasPage({
 function FichaPlegable({
   estrategia,
   bot,
+  medidaAqui,
   crear,
 }: {
   estrategia: EstrategiaDeLaBiblioteca;
   bot: { id: string; name: string } | null;
+  /** Lo medido desde esta aplicación, si alguien le dio al botón. */
+  medidaAqui: MedicionGuardada | null;
   crear: (formData: FormData) => Promise<void>;
 }) {
-  const { medido } = estrategia;
+  // Lo del estudio de agosto manda sobre lo medido aquí: es una ventana más
+  // larga y revisada a mano. Lo de aquí es para las que no tenían nada.
+  const medido = estrategia.medido ?? medidaAqui;
 
   return (
     <details className="group rounded-lg border border-border">
@@ -382,8 +433,14 @@ function FichaPlegable({
         <span className="ml-auto flex flex-wrap items-center gap-1.5">
           {bot ? <Badge variant="default">Ya tienes un bot</Badge> : null}
           {medido ? (
-            <Badge variant={medido.profitFactor >= 1 ? "positive" : "negative"}>
-              {formatPercent(medido.pnlPct)} · factor {formatNumber(medido.profitFactor, 2)}
+            <Badge variant={medido.pnlPct >= 0 ? "positive" : "negative"}>
+              {formatPercent(medido.pnlPct)}
+              {/* Sin factor cuando no perdió ni una vez: dividir por cero no es
+                  infinito, es que no se sabe, y un «factor ∞» se lee como la
+                  estrategia perfecta. */}
+              {medido.profitFactor === null
+                ? null
+                : ` · factor ${formatNumber(medido.profitFactor, 2)}`}
             </Badge>
           ) : (
             <Badge variant="outline">Sin medir</Badge>
