@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import { describe, expect, it } from "vitest";
 
 import { nextReview, reviewCalendar, reviewsOn } from "./calendar";

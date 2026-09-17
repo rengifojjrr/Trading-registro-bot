@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { stretchPastMidnight } from "@/core/clock";
 

@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 /**
  * Whether what the app is showing can still be trusted as current.

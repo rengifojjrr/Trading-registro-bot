@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, PartyPopper, Target, X } from "lucide-react";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";

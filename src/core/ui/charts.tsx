@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import {
   Bar,
   BarChart,

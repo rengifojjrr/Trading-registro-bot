@@ -1,6 +1,6 @@
 import "server-only";
 
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { fetchAccounts } from "@/lib/analytics/queries";
 import { computeEquityCurve, type EquityCurvePoint } from "@/lib/analytics/stats";

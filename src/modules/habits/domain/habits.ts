@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 /**
  * Hábitos, en su forma pura.

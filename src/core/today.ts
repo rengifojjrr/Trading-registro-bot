@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 /**
  * The date a log entry belongs to, in the user's own timezone.

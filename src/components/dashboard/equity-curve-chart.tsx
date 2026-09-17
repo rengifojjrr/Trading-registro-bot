@@ -1,6 +1,6 @@
 "use client";
 
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import {
   Area,
   AreaChart,

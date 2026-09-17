@@ -20,7 +20,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -2896,13 +2896,16 @@ function describeDrawing(d: TradeChartDrawing): string {
  * Va debajo del gráfico y no flotando encima: un panel sobre las velas tapa
  * justo lo que se acaba de pulsar para poder mirarlo.
  *
- * La hora se formatea en la zona del navegador a propósito, no en la del
- * usuario configurada en la aplicación: el eje del gráfico usa la del
- * navegador, y que el panel dijera una hora distinta de la que se está
- * señalando en el eje sería peor que no decir ninguna.
+ * La **zona** es la del navegador a propósito, no la del usuario configurada
+ * en la aplicación: el eje del gráfico usa la del navegador, y que el panel
+ * dijera una hora distinta de la que se está señalando en el eje sería peor
+ * que no decir ninguna.
+ *
+ * El **idioma** no, ése va fijo. Dejarlo en el del navegador era lo que hacía
+ * que el mes saliera «Aug» en un ordenador y «ago» en otro.
  */
 function PinnedFillSummary({ group, onClose }: { group: FillGroup; onClose: () => void }) {
-  const hora = new Date(group.time * 1000).toLocaleString(undefined, {
+  const hora = new Date(group.time * 1000).toLocaleString("es", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",

@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { SESSION_WINDOWS, type SessionLabel } from "./config";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { ClipboardList, Loader2, Pencil, Target, Trash2 } from "lucide-react";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 

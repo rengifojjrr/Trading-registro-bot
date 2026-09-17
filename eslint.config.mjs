@@ -13,6 +13,29 @@ import nextTs from "eslint-config-next/typescript";
 const MODULE_IDS = ["trading", "sleep", "habits", "reading", "tasks", "meals", "content"];
 
 /**
+ * Las fechas se importan de `@/lib/fecha`, nunca de `luxon`.
+ *
+ * `@/lib/fecha` es luxon con `Settings.defaultLocale = "es"` puesto. Sin eso
+ * luxon usa el idioma de la máquina --`en-US` en este servidor-- y la
+ * aplicación escribe «Jan», «Apr», «Aug», «Dec»; peor aún, escribe una cosa en
+ * el servidor y otra en el navegador de quien la abra.
+ *
+ * Se arregla importando de un sitio que ya lo tiene puesto, y esta regla es lo
+ * que hace que ese sitio sea el único. Quince ficheros se acordaban de llamar
+ * a `.setLocale("es")` y cuatro no; recordarlo no es un mecanismo.
+ *
+ * Va repetida en cada bloque de `no-restricted-imports` porque ESLint no
+ * acumula la configuración de una regla: el bloque más específico sustituye al
+ * general, así que un módulo que sólo tuviera su regla de fronteras se quedaría
+ * sin ésta.
+ */
+const SIN_LUXON = {
+  name: "luxon",
+  message:
+    'Importa de "@/lib/fecha", que es luxon con el idioma puesto. Importar luxon directamente devuelve fechas en el idioma de la máquina.',
+};
+
+/**
  * Un módulo puede importar de @/core, de @/components y de @/lib.
  * De otro módulo, nunca.
  *
@@ -31,6 +54,7 @@ const moduleBoundaries = MODULE_IDS.map((id) => ({
     "no-restricted-imports": [
       "error",
       {
+        paths: [SIN_LUXON],
         patterns: MODULE_IDS.filter((other) => other !== id).map((other) => ({
           group: [`@/modules/${other}`, `@/modules/${other}/**`],
           message: `El módulo "${id}" no puede importar de "${other}". Si hay algo que compartir, súbelo a @/core.`,
@@ -51,7 +75,13 @@ const eslintConfig = defineConfig([
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      "no-restricted-imports": ["error", { paths: [SIN_LUXON] }],
     },
+  },
+  {
+    // El único sitio que puede importar luxon: es el que le pone el idioma.
+    files: ["src/lib/fecha.ts"],
+    rules: { "no-restricted-imports": "off" },
   },
   ...moduleBoundaries,
   {
@@ -62,6 +92,7 @@ const eslintConfig = defineConfig([
       "no-restricted-imports": [
         "error",
         {
+          paths: [SIN_LUXON],
           patterns: [
             {
               group: ["@/modules/*", "@/modules/*/**"],

@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/dashboard/stat-tile";

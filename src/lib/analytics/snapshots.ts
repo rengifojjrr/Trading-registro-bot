@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { computeStats, type TradeForStats } from "./stats";
 

@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import Link from "next/link";
 
 import { BreakdownTable } from "@/components/analytics/breakdown-table";

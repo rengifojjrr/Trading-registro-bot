@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import type { MistakeCode } from "@/lib/journal/mistakes";
 

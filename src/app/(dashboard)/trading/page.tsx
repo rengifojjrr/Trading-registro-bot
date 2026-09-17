@@ -1,5 +1,5 @@
 import { LayoutDashboard, SearchX } from "lucide-react";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import Link from "next/link";
 import { Suspense } from "react";
 

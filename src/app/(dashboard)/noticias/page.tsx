@@ -1,5 +1,5 @@
 import { CalendarOff } from "lucide-react";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import type { Route } from "next";
 import Link from "next/link";
 

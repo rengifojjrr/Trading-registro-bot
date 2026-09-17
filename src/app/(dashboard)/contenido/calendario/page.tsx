@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 import Link from "next/link";
 import type { Route } from "next";
 

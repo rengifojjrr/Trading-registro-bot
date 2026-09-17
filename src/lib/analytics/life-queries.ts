@@ -1,6 +1,6 @@
 import "server-only";
 
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 import { createClient } from "@/lib/supabase/server";
 

@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { DateTime } from "luxon";
+import { DateTime } from "@/lib/fecha";
 
 /**
  * Qué operaciones caen en un día, y cuáles de ellas son las que lo explican.
