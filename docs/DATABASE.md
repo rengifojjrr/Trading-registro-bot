@@ -58,6 +58,29 @@ Todas las columnas de precio/tamaño/comisión/P&L son `numeric` en Postgres (nu
 
 Requerido por el tipo `GenericTable` de `@supabase/postgrest-js`, no solo un adorno: omitirlo hace que todo el mapa de `Tables` deje de coincidir estructuralmente con lo que el cliente espera, y la inferencia de tipos de cada `Row`/`Insert`/`Update` colapsa silenciosamente a `never`. Si añades una tabla nueva a mano (en vez de regenerar con `supabase gen types`), no olvides este campo.
 
+### `revoke ... from public` no cierra una función
+
+Supabase tiene puesto un `alter default privileges ... grant execute on functions to anon, authenticated` sobre el esquema `public`. Así que toda función nueva nace con **tres** permisos: el implícito de PUBLIC y dos explícitos a nombre de `anon` y `authenticated`. `revoke ... from public` quita el primero y deja los otros dos: la función parece cerrada en la migración y está abierta en la base.
+
+Costó tener tres funciones `security definer` --las que reescriben las operaciones de una cuenta entera-- llamables por `/rest/v1/rpc/...` **sin sesión ninguna**, con la clave publicable que está en el navegador. Se arreglaron en `20260917120000` nombrando a los roles, y desde entonces el permiso por defecto para `anon` está apagado, así que lo que quiera ser público tendrá que decirlo con un `grant` explícito.
+
+`src/lib/supabase/permisos-sql.test.ts` vigila la regla: toda función `security definer` de las migraciones tiene que aparecer en un `revoke` que **nombre a `anon`**.
+
+### `auth.uid()` va envuelto en un subselect
+
+En una política, `auth.uid() = user_id` se evalúa **una vez por fila**: Postgres no puede saber que devuelve lo mismo para todas, así que lo trata como parte del filtro. `(select auth.uid()) = user_id` es un InitPlan -- se resuelve una vez por consulta. Mismas filas, mismo permiso, una llamada en vez de treinta mil.
+
+Las políticas de la primera fase ya estaban así; las treinta y dos que se escribieron después no, y se pusieron al día en `20260917130000` con `alter policy` (no `drop`+`create`: no hace falta abrir un hueco, por breve que sea, en lo único que separa los datos de una persona de los de otra). El mismo test vigila que ninguna migración nueva vuelva a introducirlo suelto.
+
+### Por qué no hay un índice por cada clave ajena
+
+El linter de Supabase pide cincuenta y uno y hay dos. No es un descuido:
+
+- **Cuarenta y tantos son `user_id` hacia `auth.users`.** Esto es un diario personal: hay un usuario, y un índice sobre una columna en la que todas las filas valen lo mismo no lo usa el planificador --no descarta ninguna fila-- pero hay que escribirlo en cada `insert`.
+- **Los demás ya están cubiertos.** Toda consulta de esta aplicación filtra primero por `user_id`, porque eso es lo que hace `requireUser`. Lo que sirve entonces no es un índice sobre la clave ajena sola sino uno compuesto que empiece por `user_id`, y varios ya existen: `habits_entries (user_id, habit_id, entry_date)` cubre exactamente la consulta que se hace.
+
+Los dos que se añadieron (`reading_sessions (user_id, book_id)` y `tasks_items (user_id, project_id)`) salieron de mirar las consultas, no la lista de avisos: son las dos que preguntan «dame los hijos de esto», no tenían índice que las cubriera, y son tablas que crecen para siempre.
+
 ## Regenerar los tipos desde un proyecto real
 
 Una vez que exista un proyecto Supabase real y las migraciones estén aplicadas:
