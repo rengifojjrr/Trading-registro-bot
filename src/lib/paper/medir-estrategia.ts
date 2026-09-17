@@ -1,9 +1,10 @@
 import { Decimal } from "decimal.js";
 
-import { runBacktest } from "@/lib/backtest/engine";
+import { runBacktest, type SimulatedTrade } from "@/lib/backtest/engine";
 import { computeMetrics } from "@/lib/backtest/metrics";
 import type { Strategy } from "@/lib/backtest/types";
 import type { Vela } from "@/lib/charts/indicators";
+import { calculatePnl } from "@/lib/pnl/calculate";
 
 /**
  * Medir una estrategia de la biblioteca sobre histórico real.
@@ -29,7 +30,7 @@ import type { Vela } from "@/lib/charts/indicators";
 
 /** Las cuatro cifras, y sobre qué se sacaron. */
 export interface Medicion {
-  /** Sobre el capital que hacía falta para sostener una unidad al principio. */
+  /** Compuesto: cada operación gana o pierde un porcentaje de lo que había. */
   pnlPct: number;
   ddPct: number;
   trades: number;
@@ -94,23 +95,14 @@ export function medirSobreVelas(
   });
 
   const metricas = computeMetrics(resultado.trades, 1);
-
-  // El capital es lo que costaba sostener una unidad al principio: el motor
-  // opera un contrato, así que el porcentaje sólo significa algo medido contra
-  // lo que ese contrato costaba. Es lo mismo que hace el simulador de papel al
-  // repartir el 100% del capital en una posición.
-  const capital = new Decimal(velas[0].close);
-  if (capital.lte(0)) return null;
-
-  const neto = new Decimal(metricas.neto);
-  const drawdown = new Decimal(metricas.drawdown);
+  const curva = curvaCompuesta(resultado.trades);
 
   const brutoGanado = new Decimal(metricas.mediaGanadora).times(metricas.ganadoras);
   const brutoPerdido = new Decimal(metricas.mediaPerdedora).times(metricas.perdedoras).abs();
 
   return {
-    pnlPct: neto.div(capital).times(100).toDecimalPlaces(2).toNumber(),
-    ddPct: drawdown.div(capital).times(100).abs().toDecimalPlaces(2).toNumber(),
+    pnlPct: curva.retornoPct,
+    ddPct: curva.caidaPct,
     trades: metricas.operaciones,
     profitFactor: brutoPerdido.lte(0)
       ? null
@@ -119,6 +111,78 @@ export function medirSobreVelas(
     desde: new Date(velas[0].time).toISOString(),
     hasta: new Date(velas[velas.length - 1].time).toISOString(),
     comisionPct: COMISION_POR_LADO_PCT,
+  };
+}
+
+/**
+ * La curva de la estrategia en porcentaje, compuesta operación a operación.
+ *
+ * Cada operación gana o pierde un porcentaje **de lo que valía la posición al
+ * abrirla**, y ese porcentaje se compone sobre lo que hubiera. Es cómo mide el
+ * estudio de agosto, y es lo único que funciona sobre una ventana larga.
+ *
+ * Lo de antes era dividir el P&L en dólares por el cierre de la primera vela
+ * --«lo que costaba sostener una unidad al principio»--, y sobre doce días de
+ * velas de cinco minutos eso está bien porque el precio apenas se mueve. Sobre
+ * diez años de velas diarias es otra cosa: la primera vela de ETH en esta
+ * ventana es de noviembre de 2016 y vale **10,84 dólares**, con el precio
+ * moviéndose 715 veces de mínimo a máximo. Dividir por 10,84 unos dólares
+ * ganados en 2025 daba «+39.495%» y, peor, una caída máxima del **3.090%**.
+ *
+ * Una caída del 3.090% no es una cifra optimista ni pesimista: es imposible.
+ * No se puede perder treinta veces el máximo que se llegó a tener. Y era justo
+ * la clase de número que esta biblioteca existe para no publicar -- el módulo
+ * prohíbe escribir cifras a mano porque «una mentira que nadie va a poder
+ * detectar», y ésta llevaba dentro su propia prueba de que era falsa.
+ *
+ * Compuesto, la caída está acotada por construcción: es una fracción del
+ * máximo alcanzado, así que no puede pasar del 100%.
+ *
+ * Sin operaciones devuelve ceros y no null: una estrategia que se corrió sobre
+ * diez años y no entró ni una vez **sí se midió**, y lo que hay que enseñar es
+ * eso --0 operaciones-- y no «Sin medir», que suena a que falta por hacer.
+ */
+function curvaCompuesta(trades: SimulatedTrade[]): { retornoPct: number; caidaPct: number } {
+  let equity = new Decimal(1);
+  let pico = new Decimal(1);
+  let peor = new Decimal(0);
+
+  for (const simulada of trades) {
+    const t = simulada.trade;
+
+    // El mismo `calculatePnl` que usa `computeMetrics`, y que produce el P&L de
+    // las operaciones reales de Coinbase. Lo que cambia aquí es contra qué se
+    // divide, no cómo se gana.
+    const pnl = calculatePnl({
+      direction: t.direction,
+      entryWap: t.entryWap,
+      exitWap: t.exitWap,
+      totalEntryQty: t.totalEntryQty,
+      totalExitQty: t.totalExitQty,
+      entryCommissions: t.entryCommissions,
+      exitCommissions: t.exitCommissions,
+      contractSize: "1",
+    });
+    if (pnl.netPnl === null) continue;
+
+    // Lo que costaba la posición al abrirla, en el precio de entonces.
+    const nocional = new Decimal(t.entryWap).times(t.totalEntryQty);
+    if (nocional.lte(0)) continue;
+
+    equity = equity.times(new Decimal(pnl.netPnl).div(nocional).plus(1));
+
+    // Una cuenta en cero o en negativo se acabó, y lo que venga después no se
+    // habría podido operar: no hay dinero con el que hacerlo.
+    if (equity.lte(0)) return { retornoPct: -100, caidaPct: 100 };
+
+    if (equity.greaterThan(pico)) pico = equity;
+    const caida = pico.minus(equity).div(pico);
+    if (caida.greaterThan(peor)) peor = caida;
+  }
+
+  return {
+    retornoPct: equity.minus(1).times(100).toDecimalPlaces(2).toNumber(),
+    caidaPct: peor.times(100).toDecimalPlaces(2).toNumber(),
   };
 }
 

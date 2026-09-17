@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { serverEnv } from "@/lib/env";
 import { coincideSecreto, secretoDelReloj } from "@/lib/paper/cron-secret";
+import { medirLoQueFalte, type ResultadoDeMedir } from "@/lib/paper/measurement-store";
 import { correrCicloDePapel } from "@/lib/paper/runner";
 import { createClient } from "@/lib/supabase/server";
 
@@ -75,7 +76,22 @@ export async function POST(request: Request) {
 
   try {
     const resumen = await correrCicloDePapel(userId ? { userId } : {});
-    return NextResponse.json(resumen);
+
+    // Y de paso, un par de estrategias de la biblioteca que estén sin medir.
+    //
+    // Lo medido no es de nadie --misma biblioteca, mismas velas públicas,
+    // mismo motor-- así que no hace falta que nadie lo pida: puede hacerlo el
+    // reloj, y entonces la pantalla llega con los números puestos en vez de
+    // con once «Sin medir» esperando a que alguien pulse un botón.
+    //
+    // Sólo en el camino del cron. Una sesión que pulsa «evaluar ahora» quiere
+    // ver su ciclo, no pagar veinticuatro peticiones a Coinbase por el camino.
+    //
+    // Y aparte del resultado del ciclo: que la biblioteca no se pueda medir no
+    // puede convertir un ciclo que operó bien en un 500.
+    const medidas = esCron ? await medirSinRomperElCiclo() : [];
+
+    return NextResponse.json({ ...resumen, medidas: medidas.length });
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : "Error desconocido";
     console.error("[api/paper/tick]", mensaje);
@@ -83,5 +99,24 @@ export async function POST(request: Request) {
     // `curl --fail-with-body` justamente para que el registro de GitHub diga
     // qué pasó en lugar de un código de salida suelto.
     return NextResponse.json({ error: mensaje }, { status: 500 });
+  }
+}
+
+/**
+ * Medir es el extra del ciclo, no su trabajo.
+ *
+ * Aislado para que quede escrito de una vez: lo que este `catch` protege no es
+ * la medición sino el ciclo. Las operaciones ya están escritas cuando esto
+ * corre; devolver un 500 porque Coinbase no contestó a una consulta de
+ * histórico haría que el registro del reloj dijera que el ciclo falló cuando
+ * el ciclo fue bien, y eso es la clase de aviso que enseña a ignorar los
+ * avisos.
+ */
+async function medirSinRomperElCiclo(): Promise<ResultadoDeMedir[]> {
+  try {
+    return await medirLoQueFalte();
+  } catch (error) {
+    console.error("[api/paper/tick] al medir la biblioteca", error);
+    return [];
   }
 }

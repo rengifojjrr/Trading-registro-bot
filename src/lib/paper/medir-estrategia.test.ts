@@ -105,16 +105,72 @@ describe("lo que acompaña a la cifra", () => {
   });
 });
 
-describe("los porcentajes se miden contra lo que costaba entrar", () => {
-  it("el capital es el precio de la primera vela, no una cifra redonda", () => {
-    // El motor opera un contrato, así que un porcentaje sólo significa algo
-    // medido contra lo que ese contrato costaba al empezar.
-    const caras = medirSobreVelas({ reglas: NUNCA, mercado: "BTC-USD" }, velas(200, 70_000, 10))!;
-    const baratas = medirSobreVelas({ reglas: NUNCA, mercado: "BTC-USD" }, velas(200, 100, 10))!;
+/** Entra en cuanto puede y sale a las diez velas: sirve para tener operaciones. */
+const SIEMPRE: Strategy = {
+  ...EMPTY_STRATEGY,
+  name: "Entra siempre, sale a las diez velas",
+  direction: "LONG",
+  entry: [
+    { left: { kind: "PRECIO", field: "CLOSE" }, comparator: "MAYOR", right: { kind: "NUMERO", value: 0 } },
+  ],
+  exit: { stopAtr: null, targetAtr: null, maxBars: 10, conditions: [] },
+};
 
-    // Sin operaciones las dos dan cero, que es lo correcto: lo que se comprueba
-    // es que ninguna revienta por el cambio de escala.
-    expect(caras.pnlPct).toBe(0);
-    expect(baratas.pnlPct).toBe(0);
+describe("los porcentajes no dependen de la época del precio", () => {
+  /**
+   * El fallo que motivó todo esto.
+   *
+   * El porcentaje se sacaba dividiendo el P&L en dólares entre el cierre de la
+   * **primera** vela. Sobre doce días de velas de cinco minutos da igual,
+   * porque el precio casi no se mueve. Sobre diez años de velas diarias no: la
+   * primera vela de ETH en esa ventana vale 10,84 dólares y el precio se mueve
+   * 715 veces, así que unos dólares ganados en 2025 divididos entre 10,84
+   * daban «+39.495%» y una caída máxima del «3.090%».
+   *
+   * Una caída del 3.090% es imposible: no se puede perder treinta veces el
+   * máximo que se llegó a tener. Y era la clase de número que esta biblioteca
+   * existe para no publicar.
+   */
+  const rampaLarga = velas(200, 10, 12); // de 10 a 2.398, como ETH desde 2016
+
+  it("una caída máxima no puede pasar del 100%", () => {
+    const medicion = medirSobreVelas({ reglas: SIEMPRE, mercado: "ETH-USD" }, rampaLarga)!;
+
+    expect(medicion.trades).toBeGreaterThan(0);
+    expect(medicion.ddPct).toBeLessThanOrEqual(100);
+    expect(medicion.ddPct).toBeGreaterThanOrEqual(0);
+  });
+
+  it("ni el retorno ser el de otra escala de precios", () => {
+    // Las mismas velas multiplicadas por cien: la misma forma, otra época. Lo
+    // que gana la estrategia en porcentaje tiene que ser prácticamente lo
+    // mismo; antes se multiplicaba por cien con ellas.
+    const baratas = medirSobreVelas({ reglas: SIEMPRE, mercado: "ETH-USD" }, rampaLarga)!;
+    const caras = medirSobreVelas(
+      { reglas: SIEMPRE, mercado: "ETH-USD" },
+      rampaLarga.map((v) => ({
+        ...v,
+        open: v.open * 100,
+        high: v.high * 100,
+        low: v.low * 100,
+        close: v.close * 100,
+      })),
+    )!;
+
+    expect(caras.trades).toBe(baratas.trades);
+    // No idénticos: el deslizamiento del motor es un tick de un dólar, que
+    // pesa cien veces más sobre el precio pequeño. Lo que importa es que la
+    // diferencia sea ésa y no un factor de cien.
+    expect(caras.pnlPct / baratas.pnlPct).toBeGreaterThan(0.5);
+    expect(caras.pnlPct / baratas.pnlPct).toBeLessThan(2);
+  });
+
+  it("una estrategia que no entra se mide igual, con cero", () => {
+    // «Se corrió sobre doscientas velas y no entró ni una vez» es un
+    // resultado. No es lo mismo que «sin medir».
+    const nunca = medirSobreVelas({ reglas: NUNCA, mercado: "BTC-USD" }, velas(200, 70_000, 10))!;
+    expect(nunca.trades).toBe(0);
+    expect(nunca.pnlPct).toBe(0);
+    expect(nunca.ddPct).toBe(0);
   });
 });

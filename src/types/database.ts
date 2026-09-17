@@ -1422,10 +1422,15 @@ export interface Database {
       >;
       /** La última medición de cada estrategia de la biblioteca, por usuario.
        *  Ver supabase/migrations/20260917160000_medir_las_estrategias_de_la_biblioteca.sql */
+      /**
+       * Dato de referencia compartido, sin `user_id`: la miden la biblioteca
+       * (que es código), las velas públicas y un motor determinista, así que
+       * la respuesta es la misma para todo el mundo. Sólo la escribe el rol de
+       * servicio. Ver `20260917210000_lo_medido_no_es_de_nadie.sql`.
+       */
       strategy_measurements: Table<
         {
           id: string;
-          user_id: string;
           slug: string;
           pnl_pct: string;
           dd_pct: string;
@@ -1441,7 +1446,6 @@ export interface Database {
         },
         {
           id?: string;
-          user_id: string;
           slug: string;
           pnl_pct: number | string;
           dd_pct: number | string;

@@ -60,6 +60,14 @@ Todas las columnas de precio/tamaño/comisión/P&L son `numeric` en Postgres (nu
 
 Requerido por el tipo `GenericTable` de `@supabase/postgrest-js`, no solo un adorno: omitirlo hace que todo el mapa de `Tables` deje de coincidir estructuralmente con lo que el cliente espera, y la inferencia de tipos de cada `Row`/`Insert`/`Update` colapsa silenciosamente a `never`. Si añades una tabla nueva a mano (en vez de regenerar con `supabase gen types`), no olvides este campo.
 
+### Lo que mide una estrategia de la biblioteca no es de nadie
+
+`strategy_measurements` no tiene `user_id`: es dato de referencia compartido, como `products` (principio 5). La estrategia es de la biblioteca --que es código--, las velas son las públicas de Coinbase y el motor es determinista, así que dos personas midiendo lo mismo el mismo día obtienen el mismo número después de pedirle a Coinbase las mismas ciento treinta y dos páginas cada una.
+
+Nació con una fila por usuario y eso tenía una consecuencia peor que el trabajo repetido: lo que depende de un usuario no lo puede medir nadie por adelantado, así que la única forma de llenar la tabla era que esa persona entrara y pulsara un botón, y mientras tanto once de veintidós estrategias decían «Sin medir». Sin dueño, lo mide el reloj que ya corre cada cinco minutos (`medirLoQueFalte`, dos por ciclo) y la pantalla llega con los números puestos.
+
+Sólo escribe el rol de servicio: no hay política de `insert`/`update`. Una cifra de rentabilidad es lo que alguien mira para decidir si pone dinero, y no puede poder escribirse desde el navegador.
+
 ### La caída conjunta del simulador la calcula la base
 
 `paper_caida_maxima_conjunta()` recorre la curva de todos los bots de papel sumados y devuelve una fila: cuánto cayó desde su máximo, y entre qué dos instantes.
