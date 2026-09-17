@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { formatCountdown } from "@/lib/economic-calendar/format";
 import type { CalendarEvent } from "@/lib/economic-calendar/queries";
+import { tituloEnEspanol } from "@/lib/economic-calendar/en-espanol";
 
 /**
  * «El IPC sale en 45 minutos y tienes 22 contratos abiertos.»
@@ -58,7 +59,7 @@ export function ImminentEventBanner({
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
       <span>
         <span className="font-medium">
-          {event.title} sale en {cuenta}, y tienes {openContracts} contrato
+          {tituloEnEspanol(event.title)} sale en {cuenta}, y tienes {openContracts} contrato
           {openContracts === 1 ? "" : "s"} abierto{openContracts === 1 ? "" : "s"}.
         </span>{" "}
         <span className="text-muted-foreground">

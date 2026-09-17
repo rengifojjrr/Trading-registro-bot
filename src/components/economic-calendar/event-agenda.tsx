@@ -8,6 +8,7 @@ import { formatEventValue, surpriseOf } from "@/lib/economic-calendar/format";
 import type { CalendarEvent } from "@/lib/economic-calendar/queries";
 import { categoryLabel } from "@/lib/economic-calendar/relevance";
 import { cn } from "@/lib/utils";
+import { tituloEnEspanol } from "@/lib/economic-calendar/en-espanol";
 
 /**
  * La agenda: qué se publica, por días.
@@ -84,7 +85,7 @@ function EventRow({
         <ImpactBars importance={event.importance} />
 
         <span className="min-w-0 flex-1 text-sm">
-          <span className="font-medium">{event.title}</span>
+          <span className="font-medium">{tituloEnEspanol(event.title)}</span>
           {event.period ? (
             <span className="ml-1.5 text-xs text-muted-foreground">{event.period}</span>
           ) : null}

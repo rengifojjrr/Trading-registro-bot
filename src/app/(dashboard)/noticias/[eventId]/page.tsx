@@ -30,6 +30,7 @@ import { categoryLabel } from "@/lib/economic-calendar/relevance";
 import { formatDateTime } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { tituloEnEspanol } from "@/lib/economic-calendar/en-espanol";
 
 /**
  * La ficha de un dato macro: qué es, cómo se lee, y qué hizo el precio las
@@ -102,7 +103,7 @@ export default async function EventoPage(props: PageProps<"/noticias/[eventId]">
 
   return (
     <>
-      <PageHeader title={event.title} description={descripcionCorta(event, timezone)} />
+      <PageHeader title={tituloEnEspanol(event.title)} description={descripcionCorta(event, timezone)} />
 
       <Link
         href={"/noticias" as Route}

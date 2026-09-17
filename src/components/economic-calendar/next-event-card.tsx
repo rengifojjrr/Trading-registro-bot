@@ -13,6 +13,7 @@ import { formatCountdown, formatEventValue, surpriseOf } from "@/lib/economic-ca
 import { categoryLabel } from "@/lib/economic-calendar/relevance";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { tituloEnEspanol } from "@/lib/economic-calendar/en-espanol";
 
 /**
  * Lo próximo que se publica, con la cuenta atrás y lo que tienes abierto.
@@ -80,7 +81,7 @@ export function NextEventCard({
               className="flex w-fit items-center gap-2 rounded-sm hover:underline hover:underline-offset-4"
             >
               <ImpactBars importance={event.importance} />
-              <span className="text-lg font-semibold">{event.title}</span>
+              <span className="text-lg font-semibold">{tituloEnEspanol(event.title)}</span>
               <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             </Link>
             <span className="text-xs text-muted-foreground">

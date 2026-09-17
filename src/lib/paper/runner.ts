@@ -290,7 +290,7 @@ async function procesarCuenta(entrada: {
   const posicionFila = await leerPosicionAbierta(supabase, cuenta);
   let posicion = posicionFila ? aPosicion(posicionFila) : null;
   let posicionId = posicionFila?.id ?? null;
-  let efectivo = Number(cuenta.efectivo);
+  let efectivo = await efectivoSegunLibro(supabase, cuenta, posicion);
   let patrimonio = efectivo;
   let abiertas = 0;
   let cerradas = 0;
@@ -400,6 +400,14 @@ async function procesarCuenta(entrada: {
   // La cuenta se actualiza una vez al final y no en cada vuelta: lo que
   // importa es dónde quedó, y escribirla en cada vela sería pagar una
   // escritura por vela recuperada sin que nadie vea los estados intermedios.
+  //
+  // Que esto se escriba tarde ya no puede descuadrar nada: el efectivo del
+  // ciclo siguiente no sale de aquí sino del libro (`efectivoSegunLibro`).
+  // Estas dos columnas son la copia que lee la pantalla.
+  //
+  // La cota a cero se queda por la restricción de la tabla, pero ahora es lo
+  // que debe ser: algo que no puede saltar. Un efectivo negativo saldría de
+  // una posición que la cuenta no podía pagar, y eso era justamente el fallo.
   await supabase
     .from("paper_accounts")
     .update({
@@ -578,6 +586,56 @@ async function leerAjustes(
 }
 
 type FilaPosicion = Database["public"]["Tables"]["paper_positions"]["Row"];
+
+/**
+ * El efectivo de la cuenta, sacado del libro y no de la columna.
+ *
+ * Esto arregla un fallo que estuvo acuñando dinero durante semanas, y conviene
+ * contar cómo era porque el mecanismo se repite en cualquier sitio donde un
+ * saldo se guarde aparte de los movimientos que lo producen.
+ *
+ * La posición se escribe **vela a vela**, en cuanto se abre. El efectivo de la
+ * cuenta se escribía **una sola vez, al final del ciclo**. Entre esas dos
+ * escrituras hay una ventana --el resto de las velas pendientes, cada una con
+ * su llamada a la base-- y cualquier ciclo que muriera ahí dentro dejaba la
+ * posición abierta y el efectivo sin descontar. El ciclo siguiente leía ese
+ * efectivo intacto, le sumaba la posición que ya existía, y la cuenta valía de
+ * golpe el doble. Le pasó a dos bots: uno se inventó 7.650 dólares y otro
+ * 6.521. Al revés también: un tercero se quedó a cero teniendo 4.489.
+ *
+ * Nada de eso se ve en la pantalla como un fallo. Se ve como una estrategia
+ * que gana dinero, que es peor.
+ *
+ * La cura no es escribir las dos cosas juntas --seguiría habiendo dos verdades
+ * y algún día volverían a separarse-- sino que el efectivo deje de ser un
+ * dato. Es una resta de tres cosas que ya están escritas:
+ *
+ *     capital asignado + lo ganado y perdido en cerradas - lo que cuesta la abierta
+ *
+ * Así no hay nada que se pueda desincronizar, y una cuenta que ya esté
+ * descuadrada se arregla sola en el ciclo siguiente en vez de arrastrar el
+ * error para siempre. La columna `efectivo` se sigue escribiendo, pero como lo
+ * que es: una copia para enseñar, no la fuente.
+ */
+async function efectivoSegunLibro(
+  supabase: ClienteSimulador,
+  cuenta: FilaCuenta,
+  posicion: PosicionAbierta | null,
+): Promise<number> {
+  // Sólo la columna del resultado, que es la que suma. Son unos cientos de
+  // números por bot; cuando eso deje de ser cierto, esta suma es lo primero
+  // que hay que bajar a Postgres.
+  const { data } = await supabase
+    .from("paper_trades")
+    .select("pnl")
+    .eq("bot_id", cuenta.bot_id)
+    .eq("user_id", cuenta.user_id);
+
+  const realizado = (data ?? []).reduce((suma, fila) => suma + Number(fila.pnl), 0);
+  const costeAbierta = posicion ? posicion.size * posicion.precioEntrada : 0;
+
+  return redondearDinero(Number(cuenta.capital_asignado) + realizado - costeAbierta);
+}
 
 async function leerPosicionAbierta(
   supabase: ClienteSimulador,

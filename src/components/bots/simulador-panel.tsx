@@ -4,14 +4,20 @@ import { Play, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { encenderCuenta } from "@/app/(dashboard)/bots/simulador/actions";
 import { BotCapitalControl } from "@/components/bots/bot-capital-control";
+import {
+  FILTROS_VACIOS,
+  SimuladorFiltros,
+  type FiltrosDeBots,
+} from "@/components/bots/simulador-filtros";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { familiasPresentes, filtrarBots } from "@/lib/bots/filtrar-simulador";
 import { formatDateTime, formatMoney, formatNumber, formatPercent, formatSignedMoney, pnlColorClass } from "@/lib/format";
 
 /**
@@ -72,6 +78,21 @@ const FAMILIA_ETIQUETA: Record<string, string> = {
   POSICION: "Posición",
 };
 
+/** Lo que el filtro necesita de una fila, y nada más. */
+function aFiltrable(f: FilaSimulador) {
+  return {
+    nombre: f.nombre,
+    familia: f.familia,
+    mercado: f.mercado,
+    temporalidad: f.temporalidad,
+    equity: f.equity,
+    pnl: f.pnl,
+    encendido: f.encendido,
+    operaciones: f.operaciones,
+    tienePosicion: f.posicion !== null,
+  };
+}
+
 /**
  * Los bots operando con dinero ficticio, uno por fila.
  *
@@ -92,12 +113,44 @@ export function SimuladorPanel({
   /** `paper_settings.capital_por_defecto`: lo que se propone al abrir una cuenta. */
   capitalPorDefecto: number;
 }) {
+  const [filtros, setFiltros] = useState<FiltrosDeBots>(FILTROS_VACIOS);
+
+  const familias = useMemo(
+    () => familiasPresentes(filas.map(aFiltrable), (f) => FAMILIA_ETIQUETA[f] ?? f),
+    [filas],
+  );
+
+  // Las filas se filtran por su versión reducida y luego se recuperan enteras:
+  // así la regla de filtrado no sabe nada de la pantalla y se puede probar con
+  // una lista escrita a mano.
+  const visibles = useMemo(() => {
+    const porId = new Map(filas.map((f) => [f.botId, f]));
+    return filtrarBots(
+      filas.map((f) => ({ ...aFiltrable(f), botId: f.botId })),
+      filtros,
+    ).map((f) => porId.get(f.botId)!);
+  }, [filas, filtros]);
+
   return (
     <div className="flex flex-col gap-3">
       <BarraDeCiclo />
 
+      <SimuladorFiltros
+        filtros={filtros}
+        familias={familias}
+        onCambio={setFiltros}
+        visibles={visibles.length}
+        total={filas.length}
+      />
+
+      {visibles.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+          Ningún bot cumple lo que has pedido.
+        </p>
+      ) : null}
+
       <ul className="flex flex-col gap-2 lg:hidden">
-        {filas.map((f) => (
+        {visibles.map((f) => (
           <li key={f.botId} className="flex flex-col gap-2 rounded-lg border border-border p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex flex-col gap-1">
@@ -169,7 +222,7 @@ export function SimuladorPanel({
             </tr>
           </thead>
           <tbody>
-            {filas.map((f) => (
+            {visibles.map((f) => (
               <tr key={f.botId} className="border-b border-border last:border-0 hover:bg-secondary/40">
                 <td className="py-2 pr-3">
                   <Link href={`/bots/${f.botId}` as Route} className="font-medium text-foreground hover:underline">

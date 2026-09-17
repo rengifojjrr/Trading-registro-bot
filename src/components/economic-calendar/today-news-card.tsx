@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { formatEventValue, surpriseOf } from "@/lib/economic-calendar/format";
 import type { CalendarEvent } from "@/lib/economic-calendar/queries";
 import { cn } from "@/lib/utils";
+import { tituloEnEspanol } from "@/lib/economic-calendar/en-espanol";
 
 /**
  * Lo que se publica hoy, en el panel.
@@ -78,7 +79,7 @@ export function TodayNewsCard({
               </span>
               <ImpactBars importance={event.importance} />
 
-              <span className="min-w-0 flex-1 font-medium">{event.title}</span>
+              <span className="min-w-0 flex-1 font-medium">{tituloEnEspanol(event.title)}</span>
 
               {/* Si ya salió, lo que salió; si no, lo que se espera. Nunca los
                   dos: en el panel no hay sitio, y la ficha los enseña juntos. */}

@@ -93,6 +93,23 @@ function velas(cuantas: number): string {
   return `${cuantas} vela${cuantas === 1 ? "" : "s"}`;
 }
 
+/**
+ * Lo que dio el movimiento antes de pagar.
+ *
+ * `pnl` viene neto y `comision` viene aparte, así que el bruto es la suma. Se
+ * enseña porque sin él hay filas que parecen un error de la aplicación: una
+ * que dice «llegó al objetivo» y está en rojo se lee como un fallo de la
+ * tabla, cuando lo que pasó es que el objetivo era más pequeño que la tarifa.
+ */
+function bruto(op: OperacionDePapel): Decimal {
+  return new Decimal(op.pnl).plus(new Decimal(op.comision));
+}
+
+/** La operación acertó y aun así perdió dinero: se lo llevó la comisión. */
+function laComisionSeLoComio(op: OperacionDePapel): boolean {
+  return bruto(op).gt(0) && new Decimal(op.pnl).lt(0);
+}
+
 /** Cuánto estuvo dentro de verdad, en tiempo de reloj. */
 function tiempoDentro(entrada: string, salida: string): string {
   const desde = Date.parse(entrada);
@@ -130,6 +147,9 @@ export function PaperTradesTabla({
   const comisiones = filas.reduce((suma, op) => suma.plus(new Decimal(op.comision)), new Decimal(0));
   const ganadoras = filas.filter((op) => new Decimal(op.pnl).gt(0)).length;
   const acierto = (ganadoras / filas.length) * 100;
+  // Las que el precio dio por buenas y la tarifa tumbó. Contarlas es lo que
+  // convierte una tabla llena de rojos inexplicables en un diagnóstico.
+  const comidas = filas.filter(laComisionSeLoComio).length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -163,6 +183,12 @@ export function PaperTradesTabla({
               {op.barrasEnMercado === null ? "velas sin contar" : `${velas(op.barrasEnMercado)} dentro`} ·{" "}
               {tiempoDentro(op.horaEntrada, op.horaSalida)}
             </p>
+            {laComisionSeLoComio(op) ? (
+              <p className="text-xs text-muted-foreground">
+                Dio {formatSignedMoney(bruto(op).toString(), { currency: moneda })} y la comisión fue{" "}
+                {formatMoney(op.comision, { currency: moneda })}.
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -209,6 +235,16 @@ export function PaperTradesTabla({
                   <div className="text-xs">
                     {`${new Decimal(op.pnlPct).gte(0) ? "+" : ""}${new Decimal(op.pnlPct).toFixed(2)}%`}
                   </div>
+                  {/* Sólo cuando acertó y aun así perdió. Enseñarlo en todas
+                      las filas sería ruido; enseñarlo aquí es la diferencia
+                      entre «esta tabla está mal» y «el objetivo no daba para
+                      pagar la tarifa». */}
+                  {laComisionSeLoComio(op) ? (
+                    <div className="text-xs font-normal text-muted-foreground">
+                      dio {formatSignedMoney(bruto(op).toString(), { currency: moneda })} y la
+                      comisión {formatMoney(op.comision, { currency: moneda })}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -226,6 +262,15 @@ export function PaperTradesTabla({
           </span>{" "}
           después de pagar {formatMoney(comisiones.toString(), { currency: moneda })} de comisiones.
         </p>
+        {comidas > 0 ? (
+          <p>
+            <span className="font-medium text-foreground">{comidas}</span>{" "}
+            {comidas === 1 ? "operación acertó" : "operaciones acertaron"} y aun así{" "}
+            {comidas === 1 ? "acabó" : "acabaron"} en pérdida: el precio se movió a favor, pero
+            menos de lo que costó entrar y salir. No es un fallo de la tabla ni del bot -- es que el
+            objetivo es más corto que la tarifa, y eso no lo arregla acertar más.
+          </p>
+        ) : null}
         <p>
           El P&amp;L de cada fila ya lleva descontada la comisión de las dos puntas, y su porcentaje
           está calculado sobre el dinero que puso en esa operación, no sobre la cuenta entera: una

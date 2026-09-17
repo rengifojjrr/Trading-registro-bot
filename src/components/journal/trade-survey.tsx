@@ -115,14 +115,14 @@ export function TradeSurvey({
         aria-modal="true"
         aria-label="Encuesta de cierre de la operación"
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-t-2xl border border-border bg-card shadow-xl sm:rounded-2xl"
+        className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-xl sm:max-h-[88dvh] sm:rounded-2xl"
       >
         {/* Fuera de la encuesta y no como encabezado suyo: ocupa el ancho
             entero del cuadro, y meterla dentro obligaría a deshacer con
             márgenes negativos el relleno que la encuesta necesita. */}
         <Cabecera trade={trade} variante={variante} onCerrar={cerrar} />
 
-        <div className="px-5 pb-5 pt-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
           <Encuesta
             pasos={pasos}
             respuestas={respuestas}
