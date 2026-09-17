@@ -10,7 +10,7 @@ import {
 } from "@/modules/content/domain/content";
 import { fetchPieces } from "@/modules/content/queries";
 import { ContentBoard } from "@/modules/content/ui/content-board";
-import { PieceForm } from "@/modules/content/ui/piece-form";
+import { NewPiece } from "@/modules/content/ui/new-piece";
 
 /** Los dos estados que la vista «Ideas» de Notion filtra. */
 const IDEA_STATUSES = ["IDEA", "FALTA_GUION"] as const;
@@ -49,7 +49,7 @@ export default async function ContentIdeasPage() {
           <CardDescription>Con el título basta. Nace como idea y ya se moverá.</CardDescription>
         </CardHeader>
         <CardContent>
-          <PieceForm />
+          <NewPiece />
         </CardContent>
       </Card>
 

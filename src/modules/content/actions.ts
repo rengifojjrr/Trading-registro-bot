@@ -145,31 +145,191 @@ export async function createPiece(
   return { error: null, success: true };
 }
 
-export async function updatePiece(
-  _prev: ContentFormState,
-  formData: FormData,
+/** Las preguntas de la encuesta de la ficha. */
+const CAMPOS_PIEZA = [
+  "title",
+  "status",
+  "content_type",
+  "channels",
+  "platforms",
+  "planned_date",
+  "summary",
+  "hitos",
+  "record_difficulties",
+  "record_time",
+  "edit_time",
+  "edit_styles",
+  "edit_notes",
+  "video_url",
+  "final_url",
+  "url",
+  "notes",
+  "body",
+  "icon",
+] as const;
+
+type CampoPieza = (typeof CAMPOS_PIEZA)[number];
+
+const respuestaPiezaSchema = z.object({
+  piece_id: z.string().uuid("Pieza no encontrada."),
+  campo: z.enum(CAMPOS_PIEZA, { message: "Pregunta desconocida." }),
+  valor: z.union([z.string().max(20000), z.array(z.string().max(200)).max(40), z.number(), z.null()]),
+});
+
+export type RespuestaPieza = z.infer<typeof respuestaPiezaSchema>["valor"];
+
+/** Un texto, o null si está en blanco. */
+function textoPieza(valor: RespuestaPieza): string | null {
+  const t = typeof valor === "string" ? valor.trim() : "";
+  return t === "" ? null : t;
+}
+
+function listaPieza(valor: RespuestaPieza): string[] {
+  return Array.isArray(valor) ? valor.map(String) : [];
+}
+
+/**
+ * Un enlace, o null.
+ *
+ * Sólo rutas absolutas http(s), igual que en el formulario: un enlace es para
+ * pulsarlo, y aceptar cualquier cadena acaba en enlaces rotos. Uno inválido se
+ * rechaza con aviso en vez de guardarse a medias -- es lo único de esta
+ * encuesta que puede fallar por lo que escribes, y callárselo dejaría pegado
+ * un enlace que no lleva a ninguna parte.
+ */
+function enlacePieza(valor: RespuestaPieza): { url: string | null } | { error: string } {
+  const t = textoPieza(valor);
+  if (t === null) return { url: null };
+  if (t.length > 500) return { error: "El enlace es demasiado largo." };
+  return z.string().url().safeParse(t).success ? { url: t } : { error: "El enlace no es válido." };
+}
+
+/**
+ * Una respuesta de la encuesta de contenido, guardada en cuanto se contesta.
+ *
+ * Como en tareas, la fila siempre existe: una pieza nace de un título y un
+ * botón (`ui/new-piece.tsx`) y la encuesta es para rellenarla después.
+ *
+ * Tres respuestas no son una columna y por eso hay un `switch` y no una clave
+ * calculada: los hitos son tres booleanos en una sola pregunta, los tiempos
+ * son etiquetas que se traducen a minutos, y la dificultad mantiene además la
+ * columna vieja en singular para que las gráficas que ya la leían sigan
+ * funcionando.
+ */
+export async function savePieceAnswer(
+  pieceId: string,
+  campo: string,
+  valor: RespuestaPieza,
 ): Promise<ContentFormState> {
   const user = await requireUser();
 
-  const id = z.string().uuid().safeParse(formData.get("id"));
-  if (!id.success) return { error: "Pieza no encontrada.", success: false };
-
-  const parsed = readForm(formData);
+  const parsed = respuestaPiezaSchema.safeParse({ piece_id: pieceId, campo, valor });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos.", success: false };
   }
 
+  const parche = columnaDePieza(parsed.data.campo, parsed.data.valor);
+  if ("error" in parche) return { error: parche.error, success: false };
+  if (Object.keys(parche.set).length === 0) return { error: null, success: true };
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("content_pieces")
-    .update({ ...fieldsFrom(parsed.data, formData), updated_at: new Date().toISOString() })
-    .eq("id", id.data)
+    .update({ ...parche.set, updated_at: new Date().toISOString() })
+    .eq("id", parsed.data.piece_id)
     .eq("user_id", user.id);
+
   if (error) return { error: "No se pudo guardar la pieza.", success: false };
 
   await republish();
   revalidateContent();
+  revalidatePath(`/contenido/${parsed.data.piece_id}`);
   return { error: null, success: true };
+}
+
+/** La columna --o las columnas-- que toca esta respuesta. */
+function columnaDePieza(
+  campo: CampoPieza,
+  valor: RespuestaPieza,
+): { set: Record<string, unknown> } | { error: string } {
+  switch (campo) {
+    case "title": {
+      const titulo = textoPieza(valor);
+      // `title` es `not null`: borrarlo entero no puede vaciar la columna.
+      return { set: titulo === null ? {} : { title: titulo.slice(0, 200) } };
+    }
+    case "status": {
+      const estado = textoPieza(valor);
+      return {
+        set:
+          estado !== null && (STATUSES as readonly string[]).includes(estado)
+            ? { status: estado }
+            : {},
+      };
+    }
+    case "content_type": {
+      const tipo = textoPieza(valor);
+      return {
+        set: {
+          content_type:
+            tipo !== null && (CONTENT_TYPES as readonly string[]).includes(tipo) ? tipo : null,
+        },
+      };
+    }
+    case "channels":
+      return { set: { channels: listaPieza(valor) } };
+    case "platforms":
+      return { set: { platforms: listaPieza(valor) } };
+    case "edit_styles":
+      return { set: { edit_styles: listaPieza(valor) } };
+    case "planned_date": {
+      const dia = textoPieza(valor);
+      return { set: { planned_date: dia !== null && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null } };
+    }
+    case "hitos": {
+      // Una pregunta, tres columnas: lo que no se marcó es el «no».
+      const marcados = new Set(listaPieza(valor));
+      return {
+        set: {
+          has_script: marcados.has("has_script"),
+          is_edited: marcados.has("is_edited"),
+          has_thumbnail_ab: marcados.has("has_thumbnail_ab"),
+        },
+      };
+    }
+    case "record_difficulties": {
+      const niveles = listaPieza(valor).filter((d): d is (typeof DIFFICULTIES)[number] =>
+        (DIFFICULTIES as readonly string[]).includes(d),
+      );
+      // La lista manda y la columna vieja se queda con el primero: las
+      // gráficas que ya la leían siguen funcionando sin tocarlas.
+      return { set: { record_difficulties: niveles, record_difficulty: niveles[0] ?? null } };
+    }
+    case "record_time": {
+      const { minutes } = minutesFor(textoPieza(valor), RECORD_TIME_OPTIONS);
+      return { set: { record_minutes: minutes } };
+    }
+    case "edit_time": {
+      const { minutes, uncapped } = minutesFor(textoPieza(valor), EDIT_TIME_OPTIONS);
+      return { set: { edit_minutes: minutes, edit_time_uncapped: uncapped } };
+    }
+    case "summary":
+      return { set: { summary: textoPieza(valor) } };
+    case "edit_notes":
+      return { set: { edit_notes: textoPieza(valor) } };
+    case "notes":
+      return { set: { notes: textoPieza(valor) } };
+    case "body":
+      return { set: { body: textoPieza(valor) } };
+    case "icon":
+      return { set: { icon: textoPieza(valor) } };
+    case "video_url":
+    case "final_url":
+    case "url": {
+      const enlace = enlacePieza(valor);
+      return "error" in enlace ? enlace : { set: { [campo]: enlace.url } };
+    }
+  }
 }
 
 export async function setPieceStatus(pieceId: string, status: string): Promise<void> {

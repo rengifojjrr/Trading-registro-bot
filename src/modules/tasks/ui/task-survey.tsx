@@ -1,15 +1,15 @@
 "use client";
 
-import { Check, ListChecks, Pencil } from "lucide-react";
+import { Check, ListChecks } from "lucide-react";
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Encuesta } from "@/core/encuesta/encuesta";
+import { FichaDeRespuestas } from "@/core/encuesta/ficha";
 import {
   contestadas,
   estaContestado,
   primeraSinContestar,
-  textoDeRespuesta,
   type Paso,
   type Respuesta,
   type Respuestas,
@@ -126,13 +126,7 @@ export function TaskSurvey({
   );
 }
 
-/**
- * La ficha de la tarea: todo lo que se sabe, y cada línea es un atajo.
- *
- * Las que no están contestadas también salen, con un guión. Es lo que
- * convierte esta pantalla en el índice de la encuesta en vez de en un resumen
- * de lo hecho: los huecos se ven y se tocan, que es como se acaban rellenando.
- */
+/** La ficha de la tarea: el índice común, más el icono. */
 function Ficha({
   pasos,
   respuestas,
@@ -155,36 +149,12 @@ function Ficha({
         </p>
       </div>
 
-      <dl className="flex flex-col gap-0.5 rounded-lg border border-border bg-secondary/30 p-1.5 text-sm">
-        {pasos.map((paso) => {
-          const texto = textoDeRespuesta(paso, respuestas);
-          return (
-            <button
-              key={paso.id}
-              type="button"
-              onClick={() => onIr(paso.id)}
-              className="group flex w-full items-baseline gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
-            >
-              <dt className="w-24 shrink-0 text-xs text-muted-foreground">
-                {ETIQUETAS_TAREA[paso.id] ?? paso.pregunta}
-              </dt>
-              <dd
-                className={
-                  texto === null
-                    ? "min-w-0 flex-1 text-muted-foreground/60"
-                    : "min-w-0 flex-1 whitespace-pre-line text-pretty"
-                }
-              >
-                {texto ?? "--"}
-              </dd>
-              <Pencil
-                className="size-3 shrink-0 self-center text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                aria-hidden
-              />
-            </button>
-          );
-        })}
-      </dl>
+      <FichaDeRespuestas
+        pasos={pasos}
+        respuestas={respuestas}
+        etiquetas={ETIQUETAS_TAREA}
+        onIr={onIr}
+      />
 
       {/* El icono vive aquí y no entre las preguntas, igual que en sueño y en
           comidas: es lo que hace que reconozcas la tarea en la lista sin

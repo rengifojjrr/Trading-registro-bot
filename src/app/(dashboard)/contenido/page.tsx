@@ -12,7 +12,7 @@ import { contentDatabaseId } from "@/modules/content/notion-import";
 import { fetchPieces } from "@/modules/content/queries";
 import { ContentBoard } from "@/modules/content/ui/content-board";
 import { NotionImportButton } from "@/modules/content/ui/notion-import-button";
-import { PieceForm } from "@/modules/content/ui/piece-form";
+import { NewPiece } from "@/modules/content/ui/new-piece";
 
 /**
  * Contenido: el tablero.
@@ -84,7 +84,7 @@ export default async function ContentPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <PieceForm templates={templates} />
+          <NewPiece templates={templates} />
         </CardContent>
       </Card>
 

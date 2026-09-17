@@ -12,6 +12,7 @@ Empezó en el diario de trading y funcionó por un motivo que no tiene nada que 
 | `modules/reading/domain/encuesta.ts` | Al acabar un rato de lectura |
 | `modules/meals/domain/encuesta.ts` | Al apuntar o planificar una comida |
 | `modules/tasks/domain/encuesta.ts` | Al rellenar la ficha de una tarea |
+| `modules/content/domain/encuesta.ts` | Al rellenar la ficha de una pieza |
 
 El resto de este documento describe la del **cierre**, que es la primera y la que fijó las decisiones.
 
@@ -121,6 +122,10 @@ Una noche, una lectura o una operación se escriben **una vez** y se archivan. U
 
 Las preguntas sin contestar salen en la ficha con un guión, y también se tocan. Es lo que la convierte en el índice de la encuesta en vez de en un resumen de lo hecho: los huecos se ven, y por eso se acaban rellenando.
 
+**Contenido funciona igual** y por lo mismo: una idea se apunta en un segundo y la pieza se toca durante dos meses mientras baja por los diez estados. El índice vive en `core/encuesta/ficha.tsx`, compartido por los dos.
+
+Dónde va la barra de plantillas es la diferencia entre los dos módulos que la tienen. En **comidas** va encima de la encuesta, porque una plantilla ahí es lo que rellena la comida entera de un toque. En **contenido** va en la ficha, porque es ahí donde están los campos que una plantilla copia --la forma de la pieza: tipo, canal, plataforma, estilo de edición--, mientras que al apuntar la idea sólo se aplican.
+
 ## La pregunta de un día
 
 `tipo: "fecha"` (`core/encuesta/pasos.ts`) se estrenó en lecturas y vale para cualquier módulo. Dos decisiones que no son obvias:
@@ -154,3 +159,8 @@ Que el día sea una pregunta más --y no un campo oculto con el de hoy-- es lo q
 | `modules/tasks/domain/encuesta.ts` | Las preguntas de una tarea, con los proyectos de quien contesta. |
 | `modules/tasks/ui/task-survey.tsx` | La ficha de una tarea: encuesta para rellenarla, resumen tocable para corregirla. |
 | `modules/tasks/actions.ts` | `saveTaskAnswer`: una columna por respuesta. Marcar «hecha» sella el cierre igual que el círculo de la lista. |
+| `core/encuesta/ficha.tsx` | El índice tocable: lo contestado y lo que falta, cada línea a su pregunta. Lo usan tareas y contenido. |
+| `modules/content/domain/encuesta.ts` | Las dieciocho preguntas de una pieza, con los diez estados agrupados por tramo. |
+| `modules/content/ui/new-piece.tsx` | Apuntar la idea: un título, un botón y la barra de plantillas. |
+| `modules/content/ui/piece-survey.tsx` | La ficha de una pieza. |
+| `modules/content/actions.ts` | `savePieceAnswer`: tres respuestas no son una columna --los hitos son tres booleanos, los tiempos son etiquetas que se traducen a minutos. |
