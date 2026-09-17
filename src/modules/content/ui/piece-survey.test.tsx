@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fallosDeAccesibilidad } from "@/test-support/axe";
+
 import { PieceSurvey } from "./piece-survey";
 import type { PieceRow } from "@/modules/content/queries";
 
@@ -182,5 +184,12 @@ describe("un enlace que no vale", () => {
     // Llega al servidor, que es quien decide; lo que importa es que la
     // respuesta vuelve con error en vez de quedarse pegada en silencio.
     await waitFor(() => expect(guardados).toContainEqual({ campo: "url", valor: "no-es-un-enlace" }));
+  });
+});
+
+describe("accesibilidad", () => {
+  it("la ficha, con plantillas e icono, no tiene fallos que jsdom pueda ver", async () => {
+    const { container } = render(<PieceSurvey piece={entera()} hoy={HOY} />);
+    expect(await fallosDeAccesibilidad(container)).toEqual([]);
   });
 });

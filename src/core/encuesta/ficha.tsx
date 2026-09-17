@@ -39,39 +39,52 @@ export function FichaDeRespuestas({
   onIr: (id: string) => void;
 }) {
   return (
-    <dl className="flex flex-col gap-0.5 rounded-lg border border-border bg-secondary/30 p-1.5 text-sm">
+    // Una lista de botones y no un `<dl>`: aquí cada línea *se pulsa*, y un
+    // `<button>` no puede ir dentro de un `<dl>` ni contener un `<dt>`. Se
+    // escribió así por parecerse a los resúmenes del final de las otras
+    // encuestas, que sí son listas de definiciones porque sólo se leen.
+    <ul className="flex flex-col gap-0.5 rounded-lg border border-border bg-secondary/30 p-1.5 text-sm">
       {pasos.map((paso) => {
         const texto = textoDeRespuesta(paso, respuestas);
+        const etiqueta = etiquetas[paso.id] ?? paso.pregunta;
         return (
-          <button
-            key={paso.id}
-            type="button"
-            onClick={() => onIr(paso.id)}
-            className="group flex w-full items-baseline gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
-          >
-            <dt className="w-24 shrink-0 text-xs text-muted-foreground">
-              {etiquetas[paso.id] ?? paso.pregunta}
-            </dt>
-            <dd
-              className={
-                texto === null
-                  ? "min-w-0 flex-1 text-muted-foreground/60"
-                  : "min-w-0 flex-1 whitespace-pre-line text-pretty"
-              }
+          <li key={paso.id}>
+            <button
+              type="button"
+              onClick={() => onIr(paso.id)}
+              className="group flex w-full items-baseline gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
             >
-              {/* Recortado: un guion de veinte mil caracteres en una línea de
-                  índice tapa el resto de la ficha. Para leerlo entero está su
-                  propia pregunta, que es adonde lleva esta línea. */}
-              {texto === null ? "--" : recortar(texto)}
-            </dd>
-            <Pencil
-              className="size-3 shrink-0 self-center text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-hidden
-            />
-          </button>
+              {/* El espacio de en medio es literal y no decorativo: el nombre
+                  accesible de un botón se compone pegando el texto de lo que
+                  lleva dentro, y entre dos `span` en línea no se mete ninguno.
+                  Sin él, el lector de pantalla lee «ParaMañana». Con `dt`/`dd`
+                  no hacía falta porque son bloques, pero un `dt` no puede vivir
+                  dentro de un botón. */}
+              <span className="w-24 shrink-0 text-xs text-muted-foreground">{etiqueta}</span>{" "}
+              <span
+                className={
+                  texto === null
+                    ? "min-w-0 flex-1 text-muted-foreground/60"
+                    : "min-w-0 flex-1 whitespace-pre-line text-pretty"
+                }
+              >
+                {/* Recortado: un guion de veinte mil caracteres en una línea de
+                    índice tapa el resto de la ficha. Para leerlo entero está su
+                    propia pregunta, que es adonde lleva esta línea. */}
+                {texto === null ? "--" : recortar(texto)}
+              </span>
+              {/* El guion de «sin contestar» es decorativo: lo que un lector de
+                  pantalla tiene que decir es que está vacío, no «menos menos». */}
+              {texto === null ? <span className="sr-only">Sin contestar</span> : null}
+              <Pencil
+                className="size-3 shrink-0 self-center text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                aria-hidden
+              />
+            </button>
+          </li>
         );
       })}
-    </dl>
+    </ul>
   );
 }
 

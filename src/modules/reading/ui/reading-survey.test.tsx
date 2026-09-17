@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fallosDeAccesibilidad } from "@/test-support/axe";
+
 import { ReadingSurvey } from "./reading-survey";
 import type { BookRow, SessionRow } from "@/modules/reading/queries";
 
@@ -281,5 +283,12 @@ describe("al acabar", () => {
     // que arrastrar. El día viene contestado de serie y saltar manda un
     // guardado vacío, y ni uno ni otro son una lectura.
     expect(guardados.every((g) => g.sessionId === null)).toBe(true);
+  });
+});
+
+describe("accesibilidad", () => {
+  it("la encuesta no tiene fallos que jsdom pueda ver", async () => {
+    const { container } = render(<ReadingSurvey date={HOY} books={LIBROS} />);
+    expect(await fallosDeAccesibilidad(container)).toEqual([]);
   });
 });

@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fallosDeAccesibilidad } from "@/test-support/axe";
+
 import { MealSurvey } from "./meal-survey";
 import type { MealRow } from "@/modules/meals/queries";
 
@@ -212,3 +214,24 @@ describe("al acabar", () => {
     expect(screen.queryByRole("button", { name: "Apuntar otra comida" })).toBeNull();
   });
 });
+
+describe("accesibilidad", () => {
+  it("la encuesta, con la barra de plantillas, no tiene fallos que jsdom pueda ver", async () => {
+    const { container } = render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <MealSurvey date={HOY} hoy={HOY} meal={comida()} templates={PLANTILLA_A11Y as any} />,
+    );
+    expect(await fallosDeAccesibilidad(container)).toEqual([]);
+  });
+});
+
+const PLANTILLA_A11Y = [
+  {
+    id: "a11y",
+    module_id: "meals",
+    name: "Desayuno de siempre",
+    payload: { name: "Avena", meal_type: "DESAYUNO" },
+    body: "60 g avena",
+    created_at: "2026-03-01T00:00:00Z",
+  },
+];

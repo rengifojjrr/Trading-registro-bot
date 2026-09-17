@@ -371,6 +371,11 @@ function Pregunta({
         />
       ) : null}
 
+      {/* La pregunta está escrita justo encima, pero un `<h2>` encima de un
+          campo no lo etiqueta: quien navega con lector de pantalla llega al
+          campo y oye «cuadro de texto», sin más. El marcador tampoco sirve --
+          desaparece al escribir y no todos los lectores lo anuncian. Es la
+          misma etiqueta que ya llevaban la hora y la fecha. */}
       {paso.tipo === "texto" ? (
         <Textarea
           value={typeof valor === "string" ? valor : ""}
@@ -378,6 +383,7 @@ function Pregunta({
           placeholder={paso.marcador}
           maxLength={paso.maximo}
           rows={paso.lineas ?? 4}
+          aria-label={paso.pregunta}
           autoFocus
         />
       ) : null}
@@ -388,6 +394,7 @@ function Pregunta({
           onChange={(event) => onCambio(paso.id, event.target.value)}
           placeholder={paso.marcador}
           maxLength={paso.maximo}
+          aria-label={paso.pregunta}
           autoComplete="off"
           autoFocus
         />
@@ -662,6 +669,7 @@ function Numero({
         }}
         placeholder={paso.marcador}
         inputMode="decimal"
+        aria-label={paso.pregunta}
         autoComplete="off"
         autoFocus
         className={cn("text-lg tabular-nums", paso.prefijo && "pl-7")}

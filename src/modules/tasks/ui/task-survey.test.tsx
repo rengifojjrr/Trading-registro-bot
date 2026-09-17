@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fallosDeAccesibilidad } from "@/test-support/axe";
+
 import { TaskSurvey } from "./task-survey";
 import type { ProjectRow, TaskRow } from "@/modules/tasks/queries";
 
@@ -165,5 +167,12 @@ describe("los huecos de la ficha", () => {
     // El sello de cierre lo pone el servidor, que es quien sabe si ya estaba
     // puesto; aquí basta con que la respuesta llegue.
     await waitFor(() => expect(guardados).toContainEqual({ campo: "status", valor: "HECHA" }));
+  });
+});
+
+describe("accesibilidad", () => {
+  it("la ficha, con el selector de icono, no tiene fallos que jsdom pueda ver", async () => {
+    const { container } = render(<TaskSurvey task={entera()} projects={PROYECTOS} hoy={HOY} />);
+    expect(await fallosDeAccesibilidad(container)).toEqual([]);
   });
 });
