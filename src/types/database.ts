@@ -2488,6 +2488,25 @@ export interface Database {
         Args: { p_user_id: string; p_product_id: string };
         Returns: number;
       };
+      /**
+       * La mayor caída desde máximo de la curva de todos los bots de papel
+       * sumados, sobre toda la historia.
+       *
+       * Sin `user_id`: es `security invoker` y suma lo que las RLS dejan ver,
+       * que es lo del que llama. Devuelve una fila, o ninguna cuando no hay
+       * curva que medir. Ver
+       * `20260917180000_la_caida_conjunta_sobre_toda_la_curva.sql`.
+       */
+      paper_caida_maxima_conjunta: {
+        Args: Record<string, never>;
+        Returns: {
+          caida_pct: string;
+          pico: string;
+          pico_ts: string;
+          valle: string;
+          valle_ts: string;
+        }[];
+      };
     };
     Enums: Record<string, never>;
   };

@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseStoredStrategy } from "@/lib/backtest/persistence";
 import { validateStrategy } from "@/lib/backtest/rules";
 import { readBotContext } from "@/lib/bots/queries";
-import { formatMoney, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
+import { formatDate, formatMoney, formatPercent, formatSignedMoney, pnlTone } from "@/lib/format";
 import { granularidadDeTemporalidad, productoDeMercado } from "@/lib/paper/runner";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,9 +29,6 @@ import { createClient } from "@/lib/supabase/server";
  * la miró por última vez.
  */
 
-/** Cuántos puntos de curva se leen para la caída conjunta. */
-const MAX_PUNTOS_DE_CURVA = 5000;
-
 const DESCRIPCION =
   "Todos los bots operando a la vez con dinero ficticio, con los mismos costes que tendrían de verdad.";
 
@@ -48,7 +45,7 @@ export default async function SimuladorPage() {
     { data: cuentas, error: errorCuentas },
     { data: posiciones, error: errorPosiciones },
     { data: operaciones },
-    { data: puntos },
+    { data: caidas },
     { data: ajustes },
   ] = await Promise.all([
     supabase
@@ -66,17 +63,15 @@ export default async function SimuladorPage() {
       .eq("user_id", userId)
       .eq("status", "ABIERTA"),
     supabase.from("paper_trades").select("bot_id").eq("user_id", userId),
-    // Descendente y con tope: la caída conjunta se mide sobre el tramo
-    // reciente de la curva, no sobre toda la historia. Un bot de un minuto
-    // deja 1.440 puntos al día y sin tope esta consulta crecería sin
-    // límite; cortar por el final es quedarse con lo último, que es lo que
-    // la pantalla está enseñando.
-    supabase
-      .from("paper_equity_points")
-      .select("bot_id, ts, equity")
-      .eq("user_id", userId)
-      .order("ts", { ascending: false })
-      .limit(MAX_PUNTOS_DE_CURVA),
+    // La caída conjunta la calcula la base. Aquí se hacía sumando las curvas
+    // de los dieciocho bots en memoria, y para eso había que traerse los
+    // puntos; como son decenas de miles, la consulta llevaba un tope de cinco
+    // mil filas. Cortar por filas no acota el peso, acota el periodo: el tope
+    // dejaba las últimas cuarenta y ocho horas de una historia de dos semanas
+    // y el número salía casi dieciocho veces más pequeño que el de verdad
+    // --«caída máxima 0,8%» al lado de «P&L -7,2%»--. Ver la migración
+    // `20260917180000_la_caida_conjunta_sobre_toda_la_curva.sql`.
+    supabase.rpc("paper_caida_maxima_conjunta"),
     supabase.from("paper_settings").select("capital_por_defecto").eq("user_id", userId).maybeSingle(),
   ]);
 
@@ -165,7 +160,7 @@ export default async function SimuladorPage() {
   const pnlTotal = redondear(equityTotal - capitalTotal);
   const encendidos = filas.filter((f) => f.encendido).length;
   const conCuenta = filas.filter((f) => f.capital !== null).length;
-  const caida = caidaMaximaConjunta(puntos ?? []);
+  const caida = (caidas ?? [])[0] ?? null;
 
   return (
     <>
@@ -204,10 +199,25 @@ export default async function SimuladorPage() {
         <StatTile
           size="lg"
           label="Caída máxima"
-          value={caida === null ? "--" : `${caida.toFixed(1)}%`}
-          tone={caida === null || caida === 0 ? "neutral" : "negative"}
-          sub={caida === null ? "Falta curva que medir" : "Sobre la curva conjunta"}
-          description="La mayor bajada desde un máximo de la curva de todos los bots sumados, que es la que importa: los bots se hunden a la vez más de lo que parece mirándolos uno a uno. Cambiar el capital de un bot mueve la curva de golpe y ahí la caída no es suya."
+          value={caida === null ? "--" : `${Number(caida.caida_pct).toFixed(1)}%`}
+          tone={caida === null || Number(caida.caida_pct) === 0 ? "neutral" : "negative"}
+          // Las dos fechas y las dos cifras, porque una caída sin episodio no
+          // se puede comprobar: con ellas se puede ir a la curva de esos días
+          // y ver qué pasó, y se ve de un vistazo si fue un desplome de una
+          // tarde o un desgaste de dos semanas.
+          sub={
+            caida === null ? (
+              "Falta curva que medir"
+            ) : (
+              <>
+                De {formatMoney(caida.pico, { currency, compact: true })} el{" "}
+                {formatDate(caida.pico_ts, timezone)} a{" "}
+                {formatMoney(caida.valle, { currency, compact: true })} el{" "}
+                {formatDate(caida.valle_ts, timezone)}
+              </>
+            )
+          }
+          description="La mayor bajada desde un máximo de la curva de todos los bots sumados, sobre toda la historia. Es la que importa: los bots se hunden a la vez más de lo que parece mirándolos uno a uno. Cambiar el capital de un bot mueve la curva de golpe y ahí la caída no es suya."
         />
       </div>
 
@@ -312,61 +322,6 @@ function aPosicionEnPantalla(
     objetivo: fila.objetivo === null ? null : Number(fila.objetivo),
     horaEntrada: fila.hora_entrada,
   };
-}
-
-/**
- * La mayor caída de la curva de todos los bots sumados, en porcentaje.
- *
- * Los puntos de cada bot caen en las horas de SU vela: un bot diario deja uno
- * al día y uno de quince minutos noventa y seis, así que sumar sólo lo que
- * coincide en el mismo instante daría una curva que se desploma cada vez que
- * un bot no tiene punto ahí. Por eso cada bot arrastra su último valor
- * conocido hacia adelante, y hacia atrás el primero: un bot que se enciende
- * hoy no puede aparecer como un salto de patrimonio de la nada, porque ese
- * salto se leería como una ganancia enorme y aplastaría la caída real de los
- * demás.
- */
-function caidaMaximaConjunta(puntos: { bot_id: string; ts: string; equity: string }[]): number | null {
-  if (puntos.length === 0) return null;
-
-  const porBot = new Map<string, { ts: number; equity: number }[]>();
-  for (const p of puntos) {
-    const lista = porBot.get(p.bot_id) ?? [];
-    lista.push({ ts: new Date(p.ts).getTime(), equity: Number(p.equity) });
-    porBot.set(p.bot_id, lista);
-  }
-  for (const lista of porBot.values()) lista.sort((a, b) => a.ts - b.ts);
-
-  const tiempos = [...new Set(puntos.map((p) => new Date(p.ts).getTime()))].sort((a, b) => a - b);
-  if (tiempos.length < 2) return null;
-
-  // Un índice por bot que sólo avanza: la curva se recorre una vez, no una por
-  // bot y por instante.
-  const cursores = new Map<string, number>();
-  for (const bot of porBot.keys()) cursores.set(bot, 0);
-
-  let pico = 0;
-  let peor = 0;
-
-  for (const t of tiempos) {
-    let total = 0;
-
-    for (const [bot, lista] of porBot) {
-      let i = cursores.get(bot) ?? 0;
-      while (i + 1 < lista.length && lista[i + 1].ts <= t) i += 1;
-      cursores.set(bot, i);
-      // Antes de su primer punto vale su primer punto, no cero.
-      total += lista[i].ts <= t ? lista[i].equity : lista[0].equity;
-    }
-
-    if (total > pico) pico = total;
-    if (pico > 0) {
-      const caida = ((pico - total) / pico) * 100;
-      if (caida > peor) peor = caida;
-    }
-  }
-
-  return redondear(peor);
 }
 
 function redondear(valor: number): number {

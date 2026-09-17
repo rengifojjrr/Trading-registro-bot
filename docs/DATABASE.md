@@ -1,6 +1,8 @@
 # Esquema de base de datos
 
-Postgres vía Supabase. Migraciones versionadas en `supabase/migrations/`, aplicadas en orden por nombre de archivo (timestamp). 12 migraciones, 32 tablas. Ver el comentario al inicio de cada migración para el razonamiento de esa tabla específica -- este documento es el resumen de alto nivel, no un sustituto de leer el SQL.
+Postgres vía Supabase. Migraciones versionadas en `supabase/migrations/`, aplicadas en orden por nombre de archivo (timestamp). Ver el comentario al inicio de cada migración para el razonamiento de esa tabla específica -- este documento es el resumen de alto nivel, no un sustituto de leer el SQL.
+
+El mapa de tablas de más abajo es el del dominio de trading, que es el que tiene decisiones que explicar. No están los módulos que llegaron después (lectura, comidas, tareas, hábitos, contenido, bots, calendario económico): son tablas de las que no hay nada sorprendente que contar, cada una con su `user_id` y su política, como dice el principio 1.
 
 ## Principios que rigen todo el esquema
 
@@ -58,13 +60,26 @@ Todas las columnas de precio/tamaño/comisión/P&L son `numeric` en Postgres (nu
 
 Requerido por el tipo `GenericTable` de `@supabase/postgrest-js`, no solo un adorno: omitirlo hace que todo el mapa de `Tables` deje de coincidir estructuralmente con lo que el cliente espera, y la inferencia de tipos de cada `Row`/`Insert`/`Update` colapsa silenciosamente a `never`. Si añades una tabla nueva a mano (en vez de regenerar con `supabase gen types`), no olvides este campo.
 
-### `revoke ... from public` no cierra una función
+### La caída conjunta del simulador la calcula la base
 
-Supabase tiene puesto un `alter default privileges ... grant execute on functions to anon, authenticated` sobre el esquema `public`. Así que toda función nueva nace con **tres** permisos: el implícito de PUBLIC y dos explícitos a nombre de `anon` y `authenticated`. `revoke ... from public` quita el primero y deja los otros dos: la función parece cerrada en la migración y está abierta en la base.
+`paper_caida_maxima_conjunta()` recorre la curva de todos los bots de papel sumados y devuelve una fila: cuánto cayó desde su máximo, y entre qué dos instantes.
 
-Costó tener tres funciones `security definer` --las que reescriben las operaciones de una cuenta entera-- llamables por `/rest/v1/rpc/...` **sin sesión ninguna**, con la clave publicable que está en el navegador. Se arreglaron en `20260917120000` nombrando a los roles, y desde entonces el permiso por defecto para `anon` está apagado, así que lo que quiera ser público tendrá que decirlo con un `grant` explícito.
+Estaba en la pantalla, sumando en memoria los puntos que devolviera `paper_equity_points` con un tope de cinco mil filas. El tope tenía su motivo --un bot de un minuto deja 1.440 puntos al día-- pero cortar por filas no acota el peso: acota el **periodo**, y lo acota cada vez más según se añaden bots. Con dieciocho, cinco mil filas eran las últimas cuarenta y ocho horas de una historia de dos semanas, y el tile decía «caída máxima 0,8%» al lado de «P&L del conjunto -7,2%». Sobre toda la historia era **14,26%**: de 180.558,86 a 154.818,16.
 
-`src/lib/supabase/permisos-sql.test.ts` vigila la regla: toda función `security definer` de las migraciones tiene que aparecer en un `revoke` que **nombre a `anon`**.
+Los puntos de cada bot caen en las horas de su vela, así que la curva conjunta no se saca sumando lo que coincide --se desplomaría cada vez que un bot no tiene punto ahí-- sino arrastrando el último valor conocido de cada uno. Rellenar eso con una rejilla de instantes por bots son millones de celdas; en vez de eso la función suma los primeros valores y les acumula las diferencias, que es una pasada por el índice `(bot_id, ts)` que ya existe.
+
+Es `security invoker` y no recibe `user_id`: suma lo que las RLS dejan ver.
+
+### Cerrar una función hace falta decirlo dos veces
+
+Supabase tiene puesto un `alter default privileges ... grant execute on functions to anon, authenticated` sobre el esquema `public`. Así que toda función nueva nace con **tres** permisos: el implícito de PUBLIC y dos explícitos a nombre de `anon` y `authenticated`. Son permisos distintos y quitar uno no toca el otro, así que los dos revokes que parecen suficientes no lo son:
+
+- `revoke ... from public` quita el implícito y deja los dos nominales: la función parece cerrada en la migración y está abierta a `anon`. Costó tener tres funciones `security definer` --las que reescriben las operaciones de una cuenta entera-- llamables por `/rest/v1/rpc/...` **sin sesión ninguna**, con la clave publicable que está en el navegador. Se arreglaron en `20260917120000`.
+- `revoke ... from anon` quita el nominal y deja el de PUBLIC, que incluye a `anon`. Así nació `paper_caida_maxima_conjunta` en `20260917180000`, escrita precisamente por quien acababa de documentar el error contrario.
+
+Hay que nombrar a los dos. Desde `20260917120000` el permiso por defecto para `anon` está además apagado, así que lo que quiera ser llamable tendrá que decirlo con un `grant` explícito.
+
+`src/lib/supabase/permisos-sql.test.ts` vigila la regla sobre **todas** las funciones de las migraciones, no sólo las `security definer`: cada una tiene que aparecer en revokes que nombren a `public` y a `anon`, aunque vengan en migraciones distintas. Las dos de disparador entran también --`set_updated_at` y `paper_efectivo_del_libro`, cerradas en `20260917190000`--; no se pueden llamar, porque Postgres se niega a ejecutar una función que devuelve `trigger` fuera de uno, pero una regla con excepciones es una regla que hay que explicar en vez de comprobarla.
 
 ### `auth.uid()` va envuelto en un subselect
 
