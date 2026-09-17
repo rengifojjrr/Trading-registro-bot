@@ -23,18 +23,46 @@ import { formatMoney, formatSignedMoney } from "@/lib/format";
  * nothing to do with performance. Plotting by trade number (with the actual
  * date available on hover) is how TradeZella and most journals do this.
  */
+/**
+ * Un punto de la curva que además es algo: el cierre de una operación.
+ *
+ * La curva sola contesta «cómo va» y no contesta «por qué ahí»: un escalón
+ * hacia abajo es una operación concreta, con su entrada, su salida y su motivo,
+ * y hasta ahora había que ir a buscarla a la tabla comparando horas. Marcarlas
+ * en la curva y poder tocarlas es lo que une las dos pantallas.
+ */
+export interface MarcaEnLaCurva {
+  /** El índice del punto de la curva sobre el que cae. */
+  index: number;
+  /** Lo que quien llama quiera recibir al tocarla. */
+  id: string;
+  /** Verde o rojo, según le fuera. */
+  gano: boolean;
+}
+
 export function EquityCurveChart({
   points,
   timezone,
+  marcas = [],
+  onMarca,
+  seleccionada,
 }: {
   points: EquityCurvePoint[];
   timezone: string;
+  /** Los puntos que además son el cierre de una operación. */
+  marcas?: MarcaEnLaCurva[];
+  /** Qué hacer al tocar uno. Sin esto las marcas se pintan pero no se pulsan. */
+  onMarca?: (id: string) => void;
+  /** La que está abierta ahora mismo, para pintarla distinta. */
+  seleccionada?: string | null;
 }) {
   const data = points.map((p, index) => ({
     index,
     closedAt: p.closedAt,
     value: Number(p.cumulativeNetPnl),
   }));
+
+  const porIndice = new Map(marcas.map((m) => [m.index, m]));
 
   /**
    * Dónde cae el cero, para partir el color ahí.
@@ -48,7 +76,21 @@ export function EquityCurveChart({
 
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <AreaChart
+        data={data}
+        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        // Recharts entrega el índice del punto más cercano al clic, que es
+        // justo lo que hace falta: pedirle al usuario que acierte en un círculo
+        // de cuatro píxeles sería no tener la función.
+        onClick={(estado) => {
+          if (!onMarca) return;
+          const i = estado?.activeTooltipIndex;
+          if (typeof i !== "number") return;
+          const marca = porIndice.get(i) ?? marcaMasCercana(porIndice, i);
+          if (marca) onMarca(marca.id);
+        }}
+        style={onMarca && marcas.length > 0 ? { cursor: "pointer" } : undefined}
+      >
         <defs>
           {/* Dos paradas en el mismo punto: es lo que hace el corte seco en el
               cero en vez de una transición de verde a rojo pasando por marrón,
@@ -110,6 +152,8 @@ export function EquityCurveChart({
           // curva de P&L significa «cuánto se aleja de estar en tablas», y
           // medido desde el fondo del gráfico no significa nada.
           baseValue={0}
+          dot={(props) => <PuntoDeOperacion {...props} marcas={porIndice} seleccionada={seleccionada} />}
+          activeDot={{ r: 4 }}
         />
       </AreaChart>
     </ResponsiveContainer>
@@ -120,4 +164,66 @@ function formatAxisDate(iso: string | undefined, timezone: string): string {
   if (!iso) return "";
   const dt = DateTime.fromISO(iso, { zone: "utc" }).setZone(timezone);
   return dt.isValid ? dt.toFormat("dd LLL") : "";
+}
+
+/**
+ * La marca más cercana a donde se pulsó.
+ *
+ * Con cuatro mil puntos de curva y ciento treinta operaciones, exigir que el
+ * clic caiga en el punto exacto es exigir puntería de un píxel. Se acepta
+ * dentro de una ventana estrecha -- si no hay ninguna cerca, el clic no era
+ * para una operación y no pasa nada.
+ */
+const RADIO_DE_CLIC = 6;
+
+function marcaMasCercana(
+  marcas: Map<number, MarcaEnLaCurva>,
+  indice: number,
+): MarcaEnLaCurva | null {
+  for (let salto = 1; salto <= RADIO_DE_CLIC; salto += 1) {
+    const antes = marcas.get(indice - salto);
+    if (antes) return antes;
+    const despues = marcas.get(indice + salto);
+    if (despues) return despues;
+  }
+  return null;
+}
+
+/**
+ * El punto de una operación sobre la curva.
+ *
+ * Sólo se dibuja donde hay operación: un punto en cada una de las cuatro mil
+ * velas convertiría la línea en una salchicha. El color dice cómo acabó, que
+ * es lo que deja ver de un vistazo si los escalones hacia abajo son unos
+ * pocos grandes o muchos pequeños.
+ */
+function PuntoDeOperacion({
+  cx,
+  cy,
+  index,
+  marcas,
+  seleccionada,
+}: {
+  cx?: number;
+  cy?: number;
+  index?: number;
+  marcas: Map<number, MarcaEnLaCurva>;
+  seleccionada?: string | null;
+}) {
+  const marca = typeof index === "number" ? marcas.get(index) : undefined;
+  if (!marca || cx === undefined || cy === undefined) return null;
+
+  const activa = marca.id === seleccionada;
+  const color = marca.gano ? "var(--positive)" : "var(--negative)";
+
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={activa ? 5 : 2.5}
+      fill={color}
+      stroke={activa ? "var(--background)" : "none"}
+      strokeWidth={activa ? 2 : 0}
+    />
+  );
 }

@@ -240,6 +240,7 @@ export default async function BotDetailPage(props: PageProps<"/bots/[botId]">) {
                 timezone={timezone}
                 moneda={currency}
                 temporalidad={bot.timeframe}
+                operaciones={papel.operaciones}
               />
               {/* Abierta de entrada en cuanto hay algo que enseñar: plegada, un
                   bot con operaciones parecía no tener ninguna. */}

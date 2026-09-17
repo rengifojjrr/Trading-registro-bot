@@ -1,6 +1,13 @@
-import { Decimal } from "decimal.js";
+"use client";
 
-import { EquityCurveChart } from "@/components/dashboard/equity-curve-chart";
+import { Decimal } from "decimal.js";
+import { useMemo, useState } from "react";
+
+import {
+  EquityCurveChart,
+  type MarcaEnLaCurva,
+} from "@/components/dashboard/equity-curve-chart";
+import type { OperacionDePapel } from "@/components/bots/paper-trades-tabla";
 import { ChartFrame } from "@/core/ui/chart-frame";
 import {
   ETIQUETA_GRANULARIDAD,
@@ -8,7 +15,13 @@ import {
   esGranularidadPublica,
   type GranularidadPublica,
 } from "@/lib/coinbase/public-candles";
-import { formatMoney, formatPercent, pnlColorClass } from "@/lib/format";
+import {
+  formatDateTime,
+  formatMoney,
+  formatPercent,
+  formatSignedMoney,
+  pnlColorClass,
+} from "@/lib/format";
 
 /**
  * La curva de capital de un bot de papel.
@@ -112,6 +125,7 @@ export function PaperEquityChart({
   timezone = "UTC",
   moneda = "USD",
   temporalidad,
+  operaciones = [],
 }: {
   puntos: PuntoDeCapital[];
   /** Con lo que arrancó la cuenta. Es la línea del cero de la gráfica. */
@@ -124,9 +138,19 @@ export function PaperEquityChart({
    * genérica, no peor.
    */
   temporalidad?: string;
+  /**
+   * Las operaciones cerradas, para poder marcarlas sobre la curva.
+   *
+   * Sin ellas la gráfica sigue funcionando: se dibuja sin marcas, que es como
+   * estaba. Es lo que hace que la pantalla del resumen general pueda seguir
+   * usándola sin traerse ciento treinta filas que allí no se van a tocar.
+   */
+  operaciones?: OperacionDePapel[];
 }) {
   const capital = new Decimal(capitalAsignado);
-  const enOrden = [...puntos].sort((a, b) => a.ts.localeCompare(b.ts));
+  // Memorizado porque de él sale el índice de cada marca: una copia nueva en
+  // cada render recalcularía las ciento treinta posiciones sin que nada cambie.
+  const enOrden = useMemo(() => [...puntos].sort((a, b) => a.ts.localeCompare(b.ts)), [puntos]);
 
   const serie = enOrden.map((punto) => ({
     closedAt: punto.ts,
@@ -141,6 +165,35 @@ export function PaperEquityChart({
   // Sobre el máximo alcanzado y no sobre el capital inicial: eso es lo que
   // duele de verdad y lo que se compara con la caída máxima del backtest.
   const caida = maximo.isZero() ? new Decimal(0) : maximo.minus(ahora).div(maximo).times(100);
+
+  const [elegida, setElegida] = useState<string | null>(null);
+
+  /**
+   * Dónde cae cada operación sobre la curva.
+   *
+   * Por hora de salida, que es el punto en el que la cuenta se movió: la
+   * entrada no cambia el patrimonio --el dinero pasa de efectivo a posición--
+   * y marcar ahí pondría el punto donde no pasó nada.
+   *
+   * Se busca el primer punto de curva en esa hora o después. Casi siempre es
+   * exacto, porque la operación se cierra evaluando una vela y esa vela deja
+   * su punto; el «o después» cubre el hueco de una vela que no llegó.
+   */
+  const marcas = useMemo<MarcaEnLaCurva[]>(() => {
+    if (operaciones.length === 0) return [];
+
+    const horas = enOrden.map((p) => Date.parse(p.ts));
+
+    return operaciones.flatMap((op) => {
+      const salida = Date.parse(op.horaSalida);
+      if (!Number.isFinite(salida)) return [];
+      const index = horas.findIndex((h) => h >= salida);
+      if (index === -1) return [];
+      return [{ index, id: op.id, gano: new Decimal(op.pnl).gt(0) }];
+    });
+  }, [operaciones, enOrden]);
+
+  const operacion = operaciones.find((op) => op.id === elegida) ?? null;
 
   return (
     <ChartFrame
@@ -182,8 +235,121 @@ export function PaperEquityChart({
           </div>
         </dl>
 
-        <EquityCurveChart points={serie} timezone={timezone} />
+        <EquityCurveChart
+          points={serie}
+          timezone={timezone}
+          marcas={marcas}
+          onMarca={(id) => setElegida((actual) => (actual === id ? null : id))}
+          seleccionada={elegida}
+        />
+
+        {marcas.length > 0 && operacion === null ? (
+          <p className="text-xs text-muted-foreground">
+            Cada punto de la curva es una operación cerrada. Toca uno para ver por dónde entró y
+            por dónde salió.
+          </p>
+        ) : null}
+
+        {operacion ? (
+          <DetalleDeLaOperacion
+            operacion={operacion}
+            timezone={timezone}
+            moneda={moneda}
+            onCerrar={() => setElegida(null)}
+          />
+        ) : null}
       </div>
     </ChartFrame>
   );
 }
+
+/**
+ * La operación que se acaba de tocar en la curva.
+ *
+ * Contesta lo que uno se pregunta mirando un escalón: por dónde entró, por
+ * dónde salió, cuánto estuvo dentro y por qué salió. Las dos puntas juntas y
+ * con el recorrido en medio, porque el recorrido es lo que explica el escalón
+ * -- y, cuando el recorrido fue a favor y el resultado no, lo que explica que
+ * la comisión se lo comiera.
+ */
+export function DetalleDeLaOperacion({
+  operacion,
+  timezone,
+  moneda,
+  onCerrar,
+}: {
+  operacion: OperacionDePapel;
+  timezone: string;
+  moneda: string;
+  onCerrar: () => void;
+}) {
+  const entrada = new Decimal(operacion.precioEntrada);
+  const salida = new Decimal(operacion.precioSalida);
+  const recorrido = operacion.side === "LARGO" ? salida.minus(entrada) : entrada.minus(salida);
+  const bruto = new Decimal(operacion.pnl).plus(new Decimal(operacion.comision));
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-secondary/30 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">
+          {operacion.side === "LARGO" ? "Largo" : "Corto"} · {MOTIVO[operacion.motivoSalida] ?? operacion.motivoSalida}
+        </span>
+        <span className={`text-sm font-semibold tabular-nums ${pnlColorClass(operacion.pnl)}`}>
+          {formatSignedMoney(operacion.pnl, { currency: moneda })}
+        </span>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <div>
+          <dt className="text-muted-foreground">Entró</dt>
+          <dd className="text-foreground">{formatDateTime(operacion.horaEntrada, timezone)}</dd>
+          <dd className="tabular-nums text-muted-foreground">
+            {formatMoney(operacion.precioEntrada, { currency: moneda })}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Salió</dt>
+          <dd className="text-foreground">{formatDateTime(operacion.horaSalida, timezone)}</dd>
+          <dd className="tabular-nums text-muted-foreground">
+            {formatMoney(operacion.precioSalida, { currency: moneda })}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Recorrido</dt>
+          <dd className={`tabular-nums ${pnlColorClass(recorrido.toString())}`}>
+            {recorrido.gte(0) ? "+" : ""}
+            {recorrido.toFixed(2)}
+          </dd>
+          <dd className="text-muted-foreground">a favor si es positivo</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Comisión</dt>
+          <dd className="tabular-nums text-foreground">
+            {formatMoney(operacion.comision, { currency: moneda })}
+          </dd>
+          <dd className="tabular-nums text-muted-foreground">
+            de {formatSignedMoney(bruto.toString(), { currency: moneda })} brutos
+          </dd>
+        </div>
+      </dl>
+
+      <button
+        type="button"
+        onClick={onCerrar}
+        className="w-fit rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-solid hover:bg-accent/50 hover:text-foreground"
+      >
+        Quitar
+      </button>
+    </div>
+  );
+}
+
+/** Los motivos, dichos como en la tabla: es la misma operación en dos sitios. */
+const MOTIVO: Record<string, string> = {
+  STOP: "saltó el stop",
+  OBJETIVO: "llegó al objetivo",
+  TIEMPO: "se agotó el tiempo",
+  CONDICION: "se cumplió su condición de salida",
+  MANUAL: "cerrada a mano",
+  APAGADO: "se apagó el bot",
+};
