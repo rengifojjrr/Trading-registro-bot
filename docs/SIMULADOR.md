@@ -93,8 +93,16 @@ ejecuciones. Postgres tiene su propio programador, corre donde ya están los
 datos y no espera a ninguna cola ajena.
 
 El reloj se identifica con un secreto que vive en `paper_cron_secret` (una
-fila, RLS sin políticas: sólo lo leen el rol de servicio y `postgres`). La ruta
-lo acepta además del `CRON_SECRET` del entorno, y lo compara en tiempo
+fila, con dos cerraduras: RLS sin políticas, y sin permiso de tabla para `anon`
+ni `authenticated`). Las dos hacen lo mismo y por eso están las dos: con RLS
+encendida el permiso de tabla sobra, pero si alguien la apaga alguna vez —para
+depurar, al recrear la tabla en una migración, al reconstruir el esquema— la
+credencial pasaría a ser legible con la clave publicable que está en el
+navegador, sin error y sin aviso. Quitado el permiso, una RLS apagada da
+«permission denied» en vez de la fila. Lo leen el rol de servicio y `postgres`,
+que son quienes lo necesitan.
+
+La ruta lo acepta además del `CRON_SECRET` del entorno, y lo compara en tiempo
 constante. Ver `src/lib/paper/cron-secret.ts`.
 
 El trabajo se crea una vez por entorno, porque lleva la URL del despliegue:
