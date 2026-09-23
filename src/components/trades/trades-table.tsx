@@ -47,6 +47,26 @@ function LiquidatedBadge() {
 }
 
 /**
+ * Que el dinero de ésta era ficticio.
+ *
+ * Va en la fila y no sólo en el filtro por una razón: las de papel están
+ * fuera de los totales por defecto, así que cuando alguien las pide y las ve
+ * mezcladas con las reales, lo único que separa una de otra es esto. Sin la
+ * etiqueta, la misma lista enseñaría dos clases de dinero con la misma cara.
+ *
+ * `outline` y no un color: no es un problema ni una advertencia. Operar en
+ * papel es lo correcto mientras se aprende algo, y pintarlo de rojo sugeriría
+ * lo contrario.
+ */
+function PapelBadge() {
+  return (
+    <Badge variant="outline" title="Dinero ficticio: cuenta de prácticas. No entra en los totales salvo que lo pidas.">
+      Papel
+    </Badge>
+  );
+}
+
+/**
  * Sorting, searching and paging all live in the URL and are executed by
  * Postgres -- this component renders exactly the page it was handed.
  *
@@ -280,6 +300,7 @@ export function TradesTable({
                     {row.status === "OPEN" ? "Abierta" : "Cerrada"}
                   </Badge>
                   {Number(row.liquidated_qty) > 0 ? <LiquidatedBadge /> : null}
+                  {row.is_paper ? <PapelBadge /> : null}
                   <span className="tabular-nums">{formatPercent(row.return_pct)}</span>
                   <span className="tabular-nums">{formatDuration(row.duration_seconds)}</span>
                 </div>
@@ -375,6 +396,7 @@ export function TradesTable({
                         {row.status === "OPEN" ? "Abierta" : "Cerrada"}
                       </Badge>
                       {Number(row.liquidated_qty) > 0 ? <LiquidatedBadge /> : null}
+                  {row.is_paper ? <PapelBadge /> : null}
                     </span>
                   </td>
                   <td className={cn(cellPadding, "text-right tabular-nums")}>{formatNumber(row.max_size, 4)}</td>

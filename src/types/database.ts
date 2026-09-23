@@ -1123,6 +1123,12 @@ export interface Database {
           session_override: SessionLabel | null;
           session_effective: SessionLabel | null;
           source: TradeSource;
+          /**
+           * Si el dinero era ficticio. La deriva un disparador de
+           * `accounts.is_demo`: escribirla no sirve de nada. Ver
+           * `20260923120000_el_dinero_de_papel_no_se_suma_al_real.sql`.
+           */
+          is_paper: boolean;
           /** El bot que la abrió, si la abrió un bot. Sobrevive al recálculo. */
           bot_id: string | null;
           /**

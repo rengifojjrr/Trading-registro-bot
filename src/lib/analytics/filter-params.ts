@@ -45,6 +45,10 @@ export function parseTradeFilters(
     status: pickSearchParam(searchParams.status) as TradeFilters["status"],
     session: pickSearchParam(searchParams.session) as SessionLabel | undefined,
     source: pickSearchParam(searchParams.source) as TradeFilters["source"],
+    // Sin `?dinero=` en la URL, el real. Ver la nota del valor por defecto en
+    // `TradeFilters`: que la omisión sea la opción estrecha es lo que impide
+    // que una cifra ya vista cambie al conectar una cuenta de papel.
+    dinero: parseDinero(pickSearchParam(searchParams.dinero)),
     netPnlMin: pickNumberParam(searchParams.netPnlMin),
     netPnlMax: pickNumberParam(searchParams.netPnlMax),
     strategyId: pickSearchParam(searchParams.strategyId),
@@ -52,6 +56,19 @@ export function parseTradeFilters(
     dateFrom,
     dateTo,
   };
+}
+
+/**
+ * Validado contra una lista y no colado con un `as`.
+ *
+ * El resto de este archivo se permite el `as` porque un valor raro en esos
+ * filtros devuelve cero filas y se ve. Aquí no: `dinero` decide qué dinero se
+ * suma, y una cadena inesperada que cayera en la rama equivocada sumaría
+ * ficticio y real en la misma cifra sin que nada lo delate. Lo que no está en
+ * la lista es `undefined`, que es el real.
+ */
+function parseDinero(raw: string | undefined): TradeFilters["dinero"] {
+  return raw === "PAPEL" || raw === "TODO" || raw === "REAL" ? raw : undefined;
 }
 
 export const DEFAULT_PAGE_SIZE = 25;

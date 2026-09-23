@@ -61,6 +61,11 @@ export function FilterBar({
   const status = searchParams.get("status") ?? ALL;
   const session = searchParams.get("session") ?? ALL;
   const source = searchParams.get("source") ?? ALL;
+  // Su omisión no es «todos», es «el real». Y se lee en el propio desplegable
+  // en vez de esconderse: una pantalla que excluye el dinero de papel sin
+  // decirlo es una pantalla que engaña a quien acaba de operar en papel y no
+  // encuentra su operación.
+  const dinero = searchParams.get("dinero") ?? "REAL";
   const strategyId = searchParams.get("strategyId") ?? ALL;
   const tagId = searchParams.get("tagId") ?? ALL;
   const dateFrom = searchParams.get("dateFrom") ?? "";
@@ -70,7 +75,11 @@ export function FilterBar({
 
   const activeFilterCount =
     [accountId, productId, direction, status, session, source, strategyId, tagId].filter((v) => v !== ALL).length +
-    [dateFrom, dateTo, netPnlMin, netPnlMax].filter(Boolean).length;
+    [dateFrom, dateTo, netPnlMin, netPnlMax].filter(Boolean).length +
+    // `dinero` cuenta cuando se sale de su valor por defecto, no cuando lo
+    // tiene: el resto de campos parten de «todos» y éste parte de «el real»,
+    // así que compararlo con ALL lo contaría siempre.
+    (dinero === "REAL" ? 0 : 1);
   const hasActiveFilters = activeFilterCount > 0;
 
   // Collapsed by default on every screen size unless the URL already
@@ -171,6 +180,21 @@ export function FilterBar({
                   {label}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+
+        <FilterField label="Dinero">
+          <Select value={dinero} onValueChange={(v) => setParam("dinero", v)}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="REAL">Real</SelectItem>
+              <SelectItem value="PAPEL">De papel</SelectItem>
+              {/* «Los dos» y no «Todos»: lo que hace es sumar dos dineros
+                  distintos en la misma cifra, y conviene que suene a eso. */}
+              <SelectItem value="TODO">Los dos</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>

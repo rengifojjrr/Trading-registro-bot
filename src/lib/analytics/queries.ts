@@ -29,6 +29,26 @@ export interface TradeFilters {
    */
   strategyId?: string;
   tagId?: string;
+  /**
+   * Qué dinero cuenta. Por defecto, sólo el de verdad.
+   *
+   * Existe porque va a haber las dos cosas en la misma tabla: paper trading de
+   * una cuenta demo sincronizada por el mismo camino que Coinbase. Las dos son
+   * operaciones ciertas y sólo una es dinero cierto, y sumar las dos en un
+   * «P&L neto» sería inventarse el número más importante de la aplicación.
+   *
+   * **El valor por defecto no es una preferencia, es una garantía.** Sin
+   * `dinero`, esta función devuelve lo mismo que devolvía antes de que
+   * existiera una sola operación de papel. Las cuarenta y tantas consultas que
+   * comparten `applyFilters` no tuvieron que enterarse de nada, y ninguna cifra
+   * que el usuario ya había visto cambió porque se conectara una cuenta demo.
+   *
+   * `"TODO"` es para lo que sí se mira junto: la conducta. A qué hora entras,
+   * si te sales de tu propio plan, con qué ánimo llegas y qué setup dices ver
+   * no son menos ciertos porque el dinero fuera ficticio -- y son la mitad de
+   * lo que este diario existe para enseñar.
+   */
+  dinero?: "REAL" | "PAPEL" | "TODO";
 }
 
 /**
@@ -94,13 +114,14 @@ export type TradeTableRow = Pick<
   | "source"
   | "is_manually_adjusted"
   | "liquidated_qty"
+  | "is_paper"
 >;
 
 const STATS_COLUMNS = "id, status, opened_at, closed_at, net_pnl, gross_pnl, total_commissions";
 
 /** Exported so the compare page selects exactly what TradeTableRow declares. */
 export const TABLE_COLUMNS_FOR_COMPARE =
-  "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted, liquidated_qty";
+  "id, product_id, account_id, direction, status, opened_at, closed_at, duration_seconds, max_size, total_entry_qty, total_exit_qty, entry_wap, exit_wap, notional_value, total_commissions, gross_pnl, net_pnl, return_pct, entries_count, exits_count, session_effective, source, is_manually_adjusted, liquidated_qty, is_paper";
 
 const TABLE_COLUMNS = TABLE_COLUMNS_FOR_COMPARE;
 
@@ -124,6 +145,20 @@ export function applyFilters<T>(query: T, filters: TradeFilters): T {
   // tabla, el diario, las estadísticas y los informes: quien añada la
   // consulta número cuarenta y cuatro la hereda sin saber que existe.
   q = q.is("orphaned_at", null);
+
+  // Y fuera el dinero de papel, salvo que se pida.
+  //
+  // Va aquí arriba, junto a las huérfanas, porque es de la misma clase: algo
+  // que casi ninguna consulta quiere y que todas heredarían sin saberlo. La
+  // diferencia es que esto sí se puede desactivar, porque hay preguntas cuya
+  // respuesta honesta incluye las de papel.
+  //
+  // `!== "TODO"` en vez de `=== "REAL"`: así el caso sin decidir --una llamada
+  // que no sabe que existe el papel-- cae del lado seguro. Un filtro nuevo que
+  // por omisión ensancha lo que se cuenta es un filtro que un día suma dinero
+  // ficticio a un total y nadie se entera.
+  if (filters.dinero === "PAPEL") q = q.eq("is_paper", true);
+  else if (filters.dinero !== "TODO") q = q.eq("is_paper", false);
 
   if (filters.accountId) q = q.eq("account_id", filters.accountId);
   if (filters.productId) q = q.eq("product_id", filters.productId);

@@ -60,6 +60,18 @@ Todas las columnas de precio/tamaño/comisión/P&L son `numeric` en Postgres (nu
 
 Requerido por el tipo `GenericTable` de `@supabase/postgrest-js`, no solo un adorno: omitirlo hace que todo el mapa de `Tables` deje de coincidir estructuralmente con lo que el cliente espera, y la inferencia de tipos de cada `Row`/`Insert`/`Update` colapsa silenciosamente a `never`. Si añades una tabla nueva a mano (en vez de regenerar con `supabase gen types`), no olvides este campo.
 
+### `trades.is_paper`: el dinero de papel no se suma al real
+
+Hasta septiembre de 2026 no hacía falta distinguir: todo lo que había en `trades` venía de Coinbase o de un CSV del histórico de Coinbase, y era dinero real en los dos casos. Con paper trading de verdad --una cuenta demo de un exchange, sincronizada por el mismo camino-- entran operaciones que son ciertas como conducta y falsas como dinero.
+
+`accounts.is_demo` ya existía, pero sólo servía para **no** sincronizar y **no** importar; el panel no la miraba. La columna `trades.is_paper` la deriva un disparador de `accounts.is_demo`, y otro disparador la repropaga si una cuenta cambia de demo a real o al revés. Escribirla a mano no sirve de nada, por el mismo motivo que `paper_accounts.efectivo`: las operaciones se reescriben en bloque en cada reconstrucción, y una columna que hay que acordarse de rellenar un día sale vacía.
+
+Denormalizada y no un join porque `applyFilters` recibe una consulta sobre `trades` en plano y le encadena `.eq`; meter un join en las cuarenta y tantas consultas que lo comparten sería cambiar la forma de todas para saber algo que cabe en un booleano. Mismo razonamiento que `session_effective`.
+
+**El valor por defecto es una garantía, no una preferencia.** `TradeFilters.dinero` sin valor significa «el real», así que toda consulta que ya existía devuelve lo mismo que devolvía antes de que hubiera una sola operación de papel: conectar una cuenta demo no cambió ninguna cifra que el usuario ya había visto. `"TODO"` es para lo que sí se mira junto --la conducta: a qué hora entras, si te sales de tu plan, con qué ánimo llegas--, que no es menos cierto porque el dinero fuera ficticio. Lo vigila `src/lib/analytics/dinero-de-papel.test.ts`.
+
+`stats_daily` no hacía falta tocarlo: se calcula por cuenta y sólo se escribe, nunca se lee.
+
 ### Lo que mide una estrategia de la biblioteca no es de nadie
 
 `strategy_measurements` no tiene `user_id`: es dato de referencia compartido, como `products` (principio 5). La estrategia es de la biblioteca --que es código--, las velas son las públicas de Coinbase y el motor es determinista, así que dos personas midiendo lo mismo el mismo día obtienen el mismo número después de pedirle a Coinbase las mismas ciento treinta y dos páginas cada una.
