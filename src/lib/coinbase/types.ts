@@ -7,7 +7,14 @@
  * invented into a type.
  */
 
-export type CoinbaseProductVenue = "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE";
+/**
+ * `EXTERNAL` no lo devuelve Coinbase: lo escribe esta aplicación cuando el
+ * instrumento viene de otro sitio, hoy la cuenta demo de Bybit. La columna
+ * `products.venue` ya lo aceptaba desde el principio; lo que faltaba era que
+ * el tipo lo dijera. Decir «FCM» de un símbolo de Bybit sería mentir en la
+ * columna que sirve justamente para saber de dónde salió un precio.
+ */
+export type CoinbaseProductVenue = "CBE" | "FCM" | "INTX" | "UNKNOWN_VENUE_TYPE" | "EXTERNAL";
 
 export type CoinbaseProductType =
   | "SPOT"

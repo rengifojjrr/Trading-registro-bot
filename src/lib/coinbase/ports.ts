@@ -21,7 +21,14 @@ import type {
  * as "unavailable for this venue", never fall back to a guess.
  */
 export interface MarketDataPort {
-  readonly venue: "FCM" | "INTX";
+  /**
+   * Cuál es. Una etiqueta para diagnosticar, no un interruptor: nada de la
+   * tubería se bifurca según este valor, y si algún día lo hiciera, ese
+   * `switch` sería la señal de que la costura dejó de servir para lo que
+   * existe. `BYBIT_DEMO` es paper trading con API de verdad; ver
+   * `lib/bybit/adapter.ts`.
+   */
+  readonly venue: "FCM" | "INTX" | "BYBIT_DEMO";
 
   /** Paginates GET /orders/historical/fills to completion for the given window. */
   listFills(params: CoinbaseListFillsParams): Promise<CoinbaseFill[]>;
