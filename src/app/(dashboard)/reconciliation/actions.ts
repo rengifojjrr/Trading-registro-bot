@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { runNightlyReconciliation } from "@/lib/sync/reconciliation";
 
+import { CONNECTORS_QUE_SE_SINCRONIZAN } from "@/lib/sync/adaptador-de-la-cuenta";
+
 /**
  * Marks a difference as dealt with.
  *
@@ -66,10 +68,12 @@ export async function reRunReconciliation(
     .select("id")
     .eq("user_id", user.id)
     .eq("is_active", true)
-    .eq("is_demo", false);
+    // Sólo las que tienen un venue al que preguntar: conciliar es comparar lo
+    // guardado con lo que dice la fuente, y una cuenta de CSV no tiene fuente.
+    .in("connector", CONNECTORS_QUE_SE_SINCRONIZAN);
 
   if (!accounts || accounts.length === 0) {
-    return { error: "No hay ninguna cuenta activa que reconciliar.", found: 0 };
+    return { error: "No hay ninguna cuenta conectada que reconciliar.", found: 0 };
   }
 
   let found = 0;

@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth/require-user";
 import { reconstructAsOf, type AsOfResult } from "@/lib/reconstruction/as-of";
 import { createClient } from "@/lib/supabase/server";
 
+import { CONNECTORS_QUE_SE_SINCRONIZAN } from "@/lib/sync/adaptador-de-la-cuenta";
+
 const schema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha tiene que ser AAAA-MM-DD."),
 });
@@ -38,7 +40,7 @@ export async function rebuildAsOf(_prev: AsOfState, formData: FormData): Promise
       .select("id")
       .eq("user_id", user.id)
       .eq("is_active", true)
-      .eq("is_demo", false)
+      .in("connector", CONNECTORS_QUE_SE_SINCRONIZAN)
       .limit(1)
       .maybeSingle(),
   ]);

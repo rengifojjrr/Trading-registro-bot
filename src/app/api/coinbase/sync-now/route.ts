@@ -40,7 +40,9 @@ export async function GET() {
     .select("id")
     .eq("user_id", user.id)
     .eq("venue", env.COINBASE_PRODUCT_VENUE)
-    .eq("is_demo", false)
+    // Por el conector: esta ruta es la de Coinbase, y desde que hay un segundo
+    // venue «la que no es de demostración» ya no la identifica.
+    .eq("connector", "COINBASE")
     .maybeSingle();
 
   let accountId = existingAccount?.id;
@@ -54,6 +56,7 @@ export async function GET() {
         venue: env.COINBASE_PRODUCT_VENUE,
         name: "Coinbase",
         is_demo: false,
+        connector: "COINBASE",
         is_active: true,
       })
       .select("id")

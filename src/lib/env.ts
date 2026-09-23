@@ -30,6 +30,22 @@ const serverEnvSchema = z.object({
   COINBASE_PRODUCT_VENUE: z.enum(["FCM", "INTX"]).default("FCM"),
   COINBASE_PRODUCT_ID: z.string().min(1).optional(),
 
+  /*
+    La cuenta demo de Bybit: paper trading con API de verdad.
+    Ver `lib/bybit/adapter.ts`.
+
+    `spot` por defecto y no `linear` a propósito. En los perpetuos, Bybit cobra
+    funding y ese cobro llega mezclado con las ejecuciones; el adaptador lo
+    descarta --pasarlo por ejecución inventaría entradas-- así que el P&L de
+    una posición que aguante un cobro sale mejor de lo que fue. En spot no hay
+    funding y el número es exacto.
+  */
+  BYBIT_DEMO_API_KEY: z.string().min(1).optional(),
+  BYBIT_DEMO_API_SECRET: z.string().min(1).optional(),
+  BYBIT_CATEGORY: z.enum(["spot", "linear", "inverse"]).default("spot"),
+  /** Separados por comas, como `COINBASE_PRODUCT_ID`. Por ejemplo `BTCUSDT,ETHUSDT`. */
+  BYBIT_SYMBOLS: z.string().min(1).optional(),
+
   // Optional Notion mirror (Phase 5). Absent unless the user opts in.
   NOTION_API_TOKEN: z.string().min(1).optional(),
   NOTION_DATABASE_ID: z.string().min(1).optional(),
@@ -123,6 +139,10 @@ export function serverEnv() {
     COINBASE_CDP_PRIVATE_KEY: process.env.COINBASE_CDP_PRIVATE_KEY,
     COINBASE_PRODUCT_VENUE: process.env.COINBASE_PRODUCT_VENUE,
     COINBASE_PRODUCT_ID: process.env.COINBASE_PRODUCT_ID,
+    BYBIT_DEMO_API_KEY: process.env.BYBIT_DEMO_API_KEY,
+    BYBIT_DEMO_API_SECRET: process.env.BYBIT_DEMO_API_SECRET,
+    BYBIT_CATEGORY: process.env.BYBIT_CATEGORY,
+    BYBIT_SYMBOLS: process.env.BYBIT_SYMBOLS,
     NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
     NOTION_DATABASE_ID: process.env.NOTION_DATABASE_ID,
     NOTION_CONTENT_DATABASE_ID: process.env.NOTION_CONTENT_DATABASE_ID,

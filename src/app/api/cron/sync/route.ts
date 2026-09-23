@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { syncMarketNews } from "@/lib/market-news/sync";
+import { CONNECTORS_QUE_SE_SINCRONIZAN } from "@/lib/sync/adaptador-de-la-cuenta";
 import { runPollSync } from "@/lib/sync/orchestrator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCronRequest } from "@/lib/sync/verify-cron-request";
@@ -12,8 +13,15 @@ export const maxDuration = 60;
  * user-configured intent; the actual cadence is whatever the external
  * scheduler is set to -- see README.md). Only ever touches accounts whose
  * owner has explicitly flipped auto_sync_enabled on, which itself must not
- * happen before docs/VALIDATION_CHECKLIST.md has passed. Demo accounts
- * (is_demo=true) are never synced.
+ * happen before docs/VALIDATION_CHECKLIST.md has passed.
+ *
+ * Qué cuentas se consultan lo dice `accounts.connector`, no lo que la cuenta
+ * *no* es. Antes se elegían con `.eq("is_demo", false)` --«todo lo que no sea
+ * de demostración»-- y en esta base eso son cinco cuentas: la de Coinbase y
+ * cuatro que salieron de importar Notion y CSV. A esas cuatro les habría pedido
+ * los fills **a Coinbase**. No llegó a pasar porque `auto_sync_enabled` estaba
+ * apagado, y el momento en el que habría pasado es justo encenderlo para
+ * sincronizar Bybit.
  */
 export async function GET(request: Request) {
   const auth = verifyCronRequest(request);
@@ -34,10 +42,10 @@ export async function GET(request: Request) {
   const userIds = eligibleSettings.map((s) => s.user_id);
   const { data: accounts } = await supabase
     .from("accounts")
-    .select("id, user_id")
+    .select("id, user_id, connector")
     .in("user_id", userIds)
     .eq("is_active", true)
-    .eq("is_demo", false);
+    .in("connector", CONNECTORS_QUE_SE_SINCRONIZAN);
 
   const results = [];
   for (const account of accounts ?? []) {

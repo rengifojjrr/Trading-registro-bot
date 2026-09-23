@@ -311,7 +311,10 @@ async function resolveAccountId(userId: string, requested: string | null): Promi
     .from("accounts")
     .select("id")
     .eq("user_id", userId)
-    .eq("is_demo", false)
+    // `MANUAL` y no «no es de demostración»: meter ejecuciones a mano en una
+    // cuenta que se sincroniza contra un venue crearía descuadres que la
+    // conciliación marcaría para siempre, porque el venue no las conoce.
+    .eq("connector", "MANUAL")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -325,6 +328,7 @@ async function resolveAccountId(userId: string, requested: string | null): Promi
       venue: "EXTERNAL",
       name: "Importación CSV",
       is_demo: false,
+      connector: "MANUAL",
       is_active: true,
     })
     .select("id")

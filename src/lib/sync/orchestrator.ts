@@ -1,12 +1,8 @@
 import "server-only";
 
-import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
-import { IntxAdapter } from "@/lib/coinbase/venues/intx";
 import type { MarketDataPort } from "@/lib/coinbase/ports";
 import type { CoinbaseFill, CoinbaseOrder, CoinbaseProduct } from "@/lib/coinbase/types";
-import { serverEnv } from "@/lib/env";
 import { describeLiquidation, isStoredLiquidationOrder, summariseLiquidations } from "./liquidations";
-import { parseProductIds } from "./product-ids";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
 import { publishDailyMetricsFor } from "@/core/metrics";
@@ -19,6 +15,10 @@ import { findGapsForProduct } from "./gap-reader";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPositions } from "./verify-positions";
 import type { Json } from "@/types/database";
+
+import { adaptadorDeLaCuenta } from "./adaptador-de-la-cuenta";
+
+import { loQueSePierde, nombreDelConector } from "./lo-que-se-pierde";
 
 const RECONSTRUCTION_ALGORITHM_VERSION = 1;
 const DEFAULT_INITIAL_BACKFILL_DAYS = 90;
@@ -48,7 +48,7 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
 
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id, user_id, venue")
+    .select("id, user_id, venue, connector")
     .eq("id", accountId)
     .single();
 
@@ -58,7 +58,7 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
 
   const { data: syncState } = await supabase
     .from("sync_state")
-    .select("id, high_water_mark, overlap_window_seconds, consecutive_failures")
+    .select("id, high_water_mark, overlap_window_seconds, consecutive_failures, last_success_at, created_at")
     .eq("account_id", accountId)
     .eq("sync_type", "POLL")
     .maybeSingle();
@@ -76,21 +76,9 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
   }
 
   try {
-    const env = serverEnv();
-    const productIds = parseProductIds(env.COINBASE_PRODUCT_ID);
-    if (!env.COINBASE_CDP_API_KEY_NAME || !env.COINBASE_CDP_PRIVATE_KEY || productIds.length === 0) {
-      throw new Error(
-        "Coinbase credentials or COINBASE_PRODUCT_ID are not configured -- see .env.example.",
-      );
-    }
-
-    const adapter: MarketDataPort =
-      env.COINBASE_PRODUCT_VENUE === "INTX"
-        ? new IntxAdapter()
-        : new CfmAdapter({
-            apiKeyName: env.COINBASE_CDP_API_KEY_NAME,
-            privateKeyPem: env.COINBASE_CDP_PRIVATE_KEY,
-          });
+    // Por la cuenta y no por una variable global: la de Coinbase y la de
+    // Bybit demo se sincronizan cada una con lo suyo.
+    const { adapter, productIds } = adaptadorDeLaCuenta(account.connector);
 
     const nowIso = new Date().toISOString();
     const startIso = syncState?.high_water_mark
@@ -208,19 +196,42 @@ export async function runPollSync(accountId: string): Promise<SyncRunSummary> {
       .eq("id", run.id);
 
     if (newFailureCount >= CONSECUTIVE_FAILURES_BEFORE_ALERT) {
+      // Con el nombre de la fuente, no «Coinbase» siempre: desde que hay dos
+      // venues, un aviso que nombra el equivocado manda a mirar la
+      // configuración que está bien.
+      const fuente = nombreDelConector(account.connector);
+
+      // Y con lo que se está jugando. La cuenta demo de Bybit borra a los
+      // siete días, así que ahí una sincronización caída no es un fastidio que
+      // se arregla cuando se pueda: es una cuenta atrás. Un aviso que no lo
+      // distingue enseña a ignorarlo.
+      const reloj = loQueSePierde({
+        connector: account.connector,
+        ultimoExito: syncState?.last_success_at ?? null,
+        desde: syncState?.created_at ?? null,
+      });
+
+      const cuerpo =
+        `${newFailureCount} intentos consecutivos han fallado. Último error: ${errorSummary}` +
+        (reloj.advertencia ? `\n\n${reloj.advertencia}` : "");
+
       await raiseNotification({
         userId: account.user_id,
         type: "SYNC_FAILURE",
         severity: "CRITICAL",
-        title: "La sincronización con Coinbase sigue fallando",
-        message: `${newFailureCount} intentos consecutivos han fallado. Último error: ${errorSummary}`,
+        title: reloj.perdiendoYa
+          ? `Se están perdiendo operaciones de ${fuente}`
+          : `La sincronización con ${fuente} sigue fallando`,
+        message: cuerpo,
         dedupKey: `SYNC_FAILURE:account:${accountId}`,
         // Also push this one out by email: a sync that stays broken is
         // exactly the failure the user would otherwise not notice until
         // they happened to open the app.
         alsoEmail: {
-          subject: "Trading Registro Bot: la sincronización con Coinbase sigue fallando",
-          body: `${newFailureCount} intentos consecutivos de sincronización han fallado para la cuenta ${accountId}.\n\nÚltimo error: ${errorSummary}\n\nRevisa la sección Actividad de la app para más detalle.`,
+          subject: reloj.perdiendoYa
+            ? `Trading Registro Bot: se están perdiendo operaciones de ${fuente}`
+            : `Trading Registro Bot: la sincronización con ${fuente} sigue fallando`,
+          body: `${cuerpo}\n\nCuenta ${accountId}.\n\nRevisa la sección Actividad de la app para más detalle.`,
         },
       });
     }

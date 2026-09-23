@@ -8,6 +8,8 @@ import { runNightlyReconciliation } from "@/lib/sync/reconciliation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCronRequest } from "@/lib/sync/verify-cron-request";
 
+import { CONNECTORS_QUE_SE_SINCRONIZAN } from "@/lib/sync/adaptador-de-la-cuenta";
+
 export const maxDuration = 60;
 
 /**
@@ -50,7 +52,11 @@ export async function GET(request: Request) {
     .select("id, user_id")
     .in("user_id", userIds)
     .eq("is_active", true)
-    .eq("is_demo", false);
+    // Por `connector` y no por `is_demo`: conciliar es comparar lo que tenemos
+    // con lo que dice el venue, así que sólo tiene sentido en las cuentas que
+    // tienen un venue al que preguntar. Ver el comentario del cron de
+    // sincronización.
+    .in("connector", CONNECTORS_QUE_SE_SINCRONIZAN);
 
   const timezoneByUser = new Map(eligibleSettings.map((s) => [s.user_id, s.timezone || "UTC"]));
 

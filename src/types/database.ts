@@ -60,6 +60,16 @@ export type DiscrepancyType =
 export type TradeSource = "COINBASE_SYNC" | "CSV_IMPORT" | "MANUAL" | "DEMO_SEED" | "NOTION_IMPORT";
 
 /**
+ * Quién trae los fills de una cuenta.
+ *
+ * Distinto de `TradeSource`, que dice de dónde salió **una operación** ya
+ * escrita. Esto dice a quién hay que preguntar para que aparezcan más, y sólo
+ * los dos primeros tienen a quién: `MANUAL` es lo que entró por CSV, Notion o a
+ * mano, y `SEED` son los datos inventados del guion de siembra.
+ */
+export type AccountConnector = "COINBASE" | "BYBIT_DEMO" | "MANUAL" | "SEED";
+
+/**
  * Espeja el enum `public.entity_kind`.
  *
  * Es a qué apuntan las tablas comunes de vida -- comentarios, adjuntos,
@@ -717,6 +727,13 @@ export interface Database {
           name: string;
           currency: string;
           is_demo: boolean;
+          /**
+           * Quién trae los fills de esta cuenta, que es otra pregunta que si
+           * el dinero es real (eso es `is_demo`). Sólo `COINBASE` y
+           * `BYBIT_DEMO` se consultan. Ver
+           * `20260923130000_de_donde_salen_los_fills_de_una_cuenta.sql`.
+           */
+          connector: AccountConnector;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -729,6 +746,7 @@ export interface Database {
           name: string;
           currency?: string;
           is_demo?: boolean;
+          connector?: AccountConnector;
           is_active?: boolean;
         }
       >;

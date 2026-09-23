@@ -19,7 +19,7 @@ export default async function ImportPage() {
       .from("accounts")
       .select("id, name")
       .eq("user_id", user.id)
-      .eq("is_demo", false)
+      .eq("connector", "MANUAL")
       .order("created_at", { ascending: true }),
     supabase.from("products").select("product_id, contract_size").order("product_id"),
     supabase.from("app_settings").select("timezone").eq("user_id", user.id).maybeSingle(),

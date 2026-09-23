@@ -1,14 +1,13 @@
 import "server-only";
 
-import { CfmAdapter } from "@/lib/coinbase/venues/cfm";
-import { IntxAdapter } from "@/lib/coinbase/venues/intx";
-import type { MarketDataPort } from "@/lib/coinbase/ports";
 import { serverEnv } from "@/lib/env";
 import { enqueueNotionSync } from "@/lib/notion/sync";
 import { raiseNotification } from "@/lib/notifications/create";
 import { persistReconstruction } from "@/lib/reconstruction/persist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
+
+import { adaptadorDeLaCuenta } from "./adaptador-de-la-cuenta";
 
 const RECONCILIATION_WINDOW_DAYS = 3;
 /**
@@ -43,7 +42,7 @@ export async function runNightlyReconciliation(
 
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id, user_id")
+    .select("id, user_id, connector")
     .eq("id", accountId)
     .single();
   if (accountError || !account) {
@@ -74,13 +73,7 @@ export async function runNightlyReconciliation(
   if (runError || !run) throw new Error(`Failed to create reconciliation_runs row: ${runError?.message}`);
 
   try {
-    const adapter: MarketDataPort =
-      env.COINBASE_PRODUCT_VENUE === "INTX"
-        ? new IntxAdapter()
-        : new CfmAdapter({
-            apiKeyName: env.COINBASE_CDP_API_KEY_NAME,
-            privateKeyPem: env.COINBASE_CDP_PRIVATE_KEY,
-          });
+    const { adapter } = adaptadorDeLaCuenta(account.connector);
 
     const coinbaseFills = await adapter.listFills({
       product_ids: [productId],
