@@ -15,6 +15,7 @@ import {
   updateProject,
   type TaskFormState,
 } from "@/modules/tasks/actions";
+import { PROJECT_NAME_MAX } from "@/modules/tasks/domain/projects";
 import type { ProjectRow } from "@/modules/tasks/queries";
 import type { ProjectColor } from "@/types/database";
 
@@ -51,6 +52,7 @@ export function ProjectManager({
       <form action={formAction} className="flex flex-wrap gap-2">
         <Input
           name="name"
+          maxLength={PROJECT_NAME_MAX}
           placeholder="Nombre del proyecto"
           aria-label="Nombre del proyecto"
           className="max-w-xs flex-1"

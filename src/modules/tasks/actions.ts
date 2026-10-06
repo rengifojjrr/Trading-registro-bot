@@ -10,6 +10,7 @@ import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
+import { projectNameSchema } from "@/modules/tasks/domain/projects";
 import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importTasksFromNotion } from "@/modules/tasks/notion-import";
@@ -324,12 +325,7 @@ export async function createProject(
 ): Promise<TaskFormState> {
   const user = await requireUser();
 
-  const parsed = z
-    .string()
-    .trim()
-    .min(1, "Ponle nombre al proyecto.")
-    .max(120)
-    .safeParse(formData.get("name"));
+  const parsed = projectNameSchema.safeParse(formData.get("name"));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Nombre no válido.", success: false };
   }
