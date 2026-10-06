@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
+import { rutaInterna } from "@/lib/auth/ruta-interna";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -24,10 +25,9 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
   // Sólo rutas internas: `next` viene de la URL y navegar a donde diga sin
   // comprobarlo convertiría el enlace del correo en un redirector abierto.
-  const destination = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const destination = rutaInterna(searchParams.get("next"));
 
   const supabase = await createClient();
 

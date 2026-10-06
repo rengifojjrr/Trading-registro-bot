@@ -89,17 +89,27 @@ jobs:
           # simulador hasta que alguien lo mire por la mañana. Si fallan
           # muchas seguidas sí se para, porque entonces el despliegue está
           # caído y seguir insistiendo cada cinco minutos no arregla nada.
+          #
+          # Sólo el código HTTP, nunca el cuerpo: el repositorio es público y
+          # sus registros de Actions también, y la respuesta lleva ids y nombres
+          # de bots y mensajes de error. El detalle de un fallo está en los
+          # registros de Vercel, que no son públicos.
           fallos_seguidos=0
           for vuelta in $(seq 1 70); do
-            if curl --fail-with-body -sS -X POST \
+            set +e
+            status=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
                  -H "x-cron-secret: $CRON_SECRET" \
                  -H "content-type: application/json" \
                  --max-time 120 \
-                 "$APP_URL/api/paper/tick"; then
+                 "${APP_URL%/}/api/paper/tick")
+            curl_exit=$?
+            set -e
+            echo "HTTP $status"
+            if [ "$curl_exit" -eq 0 ] && [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
               fallos_seguidos=0
             else
               fallos_seguidos=$((fallos_seguidos + 1))
-              echo "::warning::Vuelta $vuelta: el ciclo falló ($fallos_seguidos seguidas)."
+              echo "::warning::Vuelta $vuelta: el ciclo falló (HTTP $status, curl $curl_exit; $fallos_seguidos seguidas)."
               if [ "$fallos_seguidos" -ge 6 ]; then
                 echo "::error::Seis fallos seguidos: el despliegue no responde. Se para el bucle; el relevo lo reintentará."
                 break

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { userForApi } from "@/lib/auth/require-user";
 import { serverEnv } from "@/lib/env";
 import { coincideSecreto, secretoDelReloj } from "@/lib/paper/cron-secret";
 import { medirLoQueFalte, type ResultadoDeMedir } from "@/lib/paper/measurement-store";
 import { correrCicloDePapel } from "@/lib/paper/runner";
-import { createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -60,14 +60,12 @@ export async function POST(request: Request) {
   let userId: string | undefined;
 
   if (!esCron) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
     // Un 401 y no el `redirect("/login")` de `requireUser`: quien llama a esto
     // es un `fetch`, y una redirección al formulario de acceso le llega como
-    // una página HTML donde esperaba un JSON.
+    // una página HTML donde esperaba un JSON. `userForApi` exige además el
+    // código del segundo factor si la cuenta lo tiene: con una sesión aal1 no
+    // se dispara un ciclo ni se lee su resumen.
+    const user = await userForApi();
     if (!user) {
       return NextResponse.json({ error: "No autorizado." }, { status: 401 });
     }
@@ -95,9 +93,8 @@ export async function POST(request: Request) {
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : "Error desconocido";
     console.error("[api/paper/tick]", mensaje);
-    // Un 500 con el motivo dentro, no un 500 a secas: el cron llama con
-    // `curl --fail-with-body` justamente para que el registro de GitHub diga
-    // qué pasó en lugar de un código de salida suelto.
+    // Un 500 con el motivo dentro, para quien pulsa «evaluar ahora». El cron
+    // de GitHub sólo apunta el código HTTP: sus registros son públicos.
     return NextResponse.json({ error: mensaje }, { status: 500 });
   }
 }

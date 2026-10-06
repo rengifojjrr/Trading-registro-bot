@@ -58,6 +58,25 @@ export const IRREPLACEABLE_TABLES = [
   "reading_books",
   "reading_sessions",
   "content_pieces",
+  "shopping_extras",
+  // Los proyectos de verdad: la gente, lo que hace cada una, la hoja de ruta,
+  // la bitácora y la ficha. Estuvieron fuera de la copia y de esta lista igual
+  // que los de vida, con el mismo «se puede restaurar» encima.
+  "core_people",
+  "tasks_streams",
+  "tasks_milestones",
+  "tasks_project_members",
+  "tasks_project_log",
+  "tasks_project_docs",
+  "tasks_project_doc_versions",
+  "tasks_project_sources",
+  // Lo que decidiste en trading fuera del diario
+  "trade_plans",
+  "bots",
+  "bot_portfolio_settings",
+  "bot_phase_history",
+  "bot_impulses",
+  "backtest_strategies",
   // Piezas comunes y configuración
   "core_comments",
   "core_attachments",

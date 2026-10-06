@@ -16,6 +16,8 @@
  * `requireUser` lo usan, y las pruebas lo fijan.
  */
 
+import { rutaInterna } from "./ruta-interna";
+
 export type Aal = "aal1" | "aal2";
 
 /** Lo que interesa de un factor de Supabase. */
@@ -73,10 +75,12 @@ export function necesitaCodigo(
   return tieneFactorVerificado(user) && aal !== "aal2";
 }
 
-/** Un `next` seguro: una ruta de aquí, nunca otra web (`//otra.web`). */
+/**
+ * Un `next` seguro para después del código: una ruta de aquí (nunca otra web,
+ * ver `rutaInterna`) y nunca la propia pantalla del código.
+ */
 export function siguienteSeguro(next: unknown, porDefecto = "/"): string {
-  if (typeof next !== "string") return porDefecto;
-  if (!next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return porDefecto;
-  if (esRutaDelCodigo(next)) return porDefecto;
-  return next;
+  const ruta = rutaInterna(next, porDefecto);
+  if (esRutaDelCodigo(ruta.split(/[?#]/)[0])) return porDefecto;
+  return ruta;
 }

@@ -28,7 +28,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { requireUser } from "./require-user";
+import { requireUser, userForApi } from "./require-user";
 
 function token(aal: string) {
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -61,5 +61,29 @@ describe("requireUser", () => {
     estado.user = { id: "u", factors: [] };
     estado.token = token("aal1");
     await expect(requireUser()).resolves.toMatchObject({ id: "u" });
+  });
+});
+
+describe("userForApi (rutas que contestan JSON)", () => {
+  it("sin sesión, nadie", async () => {
+    await expect(userForApi()).resolves.toBeNull();
+  });
+
+  it("con factor y sesión aal1, nadie: ninguna ruta se salta el código", async () => {
+    estado.user = { id: "u", factors: [{ status: "verified", factor_type: "totp" }] };
+    estado.token = token("aal1");
+    await expect(userForApi()).resolves.toBeNull();
+  });
+
+  it("con factor y aal2, el usuario", async () => {
+    estado.user = { id: "u", factors: [{ status: "verified", factor_type: "totp" }] };
+    estado.token = token("aal2");
+    await expect(userForApi()).resolves.toMatchObject({ id: "u" });
+  });
+
+  it("sin factor, el usuario", async () => {
+    estado.user = { id: "u", factors: [] };
+    estado.token = token("aal1");
+    await expect(userForApi()).resolves.toMatchObject({ id: "u" });
   });
 });

@@ -57,6 +57,27 @@ create table if not exists auth.users (
   created_at timestamptz not null default now()
 );
 
+-- Los factores del segundo factor (TOTP), con la misma forma que en Supabase:
+-- `status` es un enum y `authenticated` no puede leer la tabla (por eso
+-- `sesion_cumple_mfa()` es `security definer`).
+do $$
+begin
+  if not exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
+                  where n.nspname = 'auth' and t.typname = 'factor_status') then
+    create type auth.factor_status as enum ('unverified', 'verified');
+  end if;
+end $$;
+
+create table if not exists auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status auth.factor_status not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function auth.jwt() returns jsonb
 language sql stable
 as $$

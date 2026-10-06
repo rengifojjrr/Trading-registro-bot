@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { rutaInterna } from "@/lib/auth/ruta-interna";
 import { createClient } from "@/lib/supabase/server";
 
 const schema = z.object({
@@ -37,6 +38,5 @@ export async function login(
     return { error: "Correo o contraseña incorrectos." };
   }
 
-  const next = parsed.data.next;
-  redirect(next && next.startsWith("/") ? next : "/");
+  redirect(rutaInterna(parsed.data.next));
 }

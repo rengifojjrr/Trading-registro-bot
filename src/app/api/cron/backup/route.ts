@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { recordAudit } from "@/lib/audit/log";
+import { BACKUP_TABLES } from "@/lib/backup/tables";
 import { raiseNotification } from "@/lib/notifications/create";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCronRequest } from "@/lib/sync/verify-cron-request";
@@ -24,60 +25,12 @@ export const maxDuration = 60;
  * ellos no hay capa que recalcular: una noche que dormiste en marzo no se
  * reconstruye desde ningún sitio. Estuvieron fuera de esta lista desde el
  * principio, que es el fallo silencioso más caro que ha tenido este proyecto.
+ *
+ * La lista vive en `lib/backup/tables.ts`, junto con lo que queda fuera y su
+ * porqué: una prueba lee las migraciones y no deja que una tabla nueva con
+ * `user_id` se quede sin decidir.
  */
-const TABLES = [
-  // -------------------------------------------------------------- Trading
-  "raw_fills",
-  "raw_orders",
-  "accounts",
-  "trade_grouping_overrides",
-  "journal_entries",
-  "journal_templates",
-  "trade_comments",
-  "trade_tags",
-  "tags",
-  "strategies",
-  "playbook_items",
-  "trade_playbook_checks",
-  "trade_mistakes",
-  "trade_verifications",
-  "chart_drawings",
-  "saved_views",
-
-  // ----------------------------------------------------- Los siete de vida
-  //
-  // No estaban. Ninguno de los siete módulos de vida se estaba copiando: 244
-  // marcas de hábitos, 71 noches, 58 piezas de contenido y 54 tareas fuera del
-  // respaldo, y encima la pantalla de comprobación decía «la copia se puede
-  // restaurar» sin mencionar que ignoraba cinco módulos enteros.
-  //
-  // Es peor que no tener copia: una copia que se cree completa y no lo es hace
-  // que nadie busque otra forma de guardar lo que falta.
-  //
-  // Y aquí nada se recalcula desde nada. Una operación se reconstruye desde
-  // sus fills; una noche que dormiste en marzo no se reconstruye desde ningún
-  // sitio. Si se pierde, se perdió.
-  "sleep_entries",
-  "habits_definitions",
-  "habits_entries",
-  "tasks_items",
-  "tasks_projects",
-  "meals_entries",
-  "meals_ingredients",
-  "reading_books",
-  "reading_sessions",
-  "content_pieces",
-
-  // ---------------------------------------- Piezas comunes y configuración
-  "core_comments",
-  "core_attachments",
-  "core_relations",
-  "core_templates",
-  "core_module_views",
-  "app_settings",
-  "csv_imports",
-  "audit_log",
-] as const;
+const TABLES = BACKUP_TABLES;
 
 /** Anything older than this is deleted on each run, so backups don't grow without bound. */
 const RETENTION_DAYS = 90;
