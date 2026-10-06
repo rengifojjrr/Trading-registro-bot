@@ -354,7 +354,10 @@ export async function createPerson(patch: PersonPatch): Promise<ActionResult & {
   return { error: null, id: data.id };
 }
 
-export async function updatePerson(personId: string, patch: PersonPatch): Promise<ActionResult> {
+export async function updatePerson(
+  personId: string,
+  patch: PersonPatch,
+): Promise<ActionResult & { aliases?: string[] }> {
   const user = await requireUser();
   if (!isUuid(personId)) return { error: "Persona no encontrada." };
   const parsed = personaSchema.safeParse(patch);
@@ -390,7 +393,9 @@ export async function updatePerson(personId: string, patch: PersonPatch): Promis
   if (error) return { error: "No se pudo guardar." };
   refrescar();
   revalidatePath(`/personas/${personId}`);
-  return OK;
+  // Los alias como quedaron, para que el formulario no los pierda al guardar
+  // otra vez (el nombre de antes acaba de entrar en ellos).
+  return extra.aliases ? { error: null, aliases: extra.aliases } : OK;
 }
 
 /** Archivar a una persona la saca de las listas sin borrar su historia. */

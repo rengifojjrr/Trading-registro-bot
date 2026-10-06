@@ -17,7 +17,7 @@ import type { MemberView, PersonRow } from "@/modules/tasks/project-queries";
 import type { MemberSide } from "@/types/database";
 
 const selectClass =
-  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Quién está en el proyecto, su papel, de qué lado y qué hace.

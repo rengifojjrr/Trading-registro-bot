@@ -28,7 +28,7 @@ const AGRUPAR_LABELS: Record<Agrupar, string> = {
 };
 
 const selectClass =
-  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export interface ProjectTasksProps {
   projectId: string;

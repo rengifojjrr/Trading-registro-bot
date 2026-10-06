@@ -77,6 +77,9 @@ export async function importTasksFromNotion(): Promise<ImportResult> {
   const rows = tasks.map((task) => ({
     user_id: user.id,
     notion_page_id: task.notion_page_id,
+    // De dónde salió: sin esto nacían con el valor por defecto de la base
+    // ('A_MANO') y la app decía «La escribiste tú».
+    origin: "NOTION" as const,
     title: task.title,
     status: task.status,
     priority: task.priority,

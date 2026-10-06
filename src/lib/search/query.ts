@@ -3,6 +3,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
+import { patronSinTildes, subtituloDePersona } from "./patterns";
 import { actionResults, pageResults, rankResults, type RankedResult, type SearchResult } from "./rank";
 
 /**
@@ -23,7 +24,11 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
 
   const user = await requireUser();
   const supabase = await createClient();
-  const patron = `%${sanitiseForFilter(texto)}%`;
+  // Sin tildes: en el teléfono casi nadie las escribe, y «tomas» tiene que
+  // encontrar a Tomás. La base compara con tildes (`ilike`), así que las
+  // vocales van como comodín de un carácter y el filtro fino --sin tildes, en
+  // `rank.ts`-- descarta lo que no era.
+  const patron = `%${patronSinTildes(sanitiseForFilter(texto))}%`;
 
   // Los ocho módulos, no dos.
   //
@@ -50,6 +55,7 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
     comments,
     projects,
     people,
+    members,
   ] =
     await Promise.all([
     supabase
@@ -80,7 +86,7 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       .eq("user_id", user.id)
       .or(`title.ilike.${patron},notes.ilike.${patron}`)
       .order("updated_at", { ascending: false })
-      .limit(10),
+      .limit(30),
     supabase
       .from("meals_entries")
       .select("id, name, notes, meal_date, meal_type")
@@ -129,22 +135,22 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       .ilike("body", patron)
       .order("created_at", { ascending: false })
       .limit(10),
-    // Los proyectos y las personas: por nombre, objetivo o «quién es». Los
-    // alias se miran en el ordenador (`rank.ts`), que sí ve el array entero.
+    // Los proyectos y las personas van enteros (son decenas, no miles): así el
+    // ordenador de `rank.ts` los mira sin tildes y por sus alias, que la base
+    // no sabe hacer con un `ilike`. «tommy» encuentra a quien tiene ese alias.
     supabase
       .from("tasks_projects")
       .select("id, name, objective, aliases, status")
       .eq("user_id", user.id)
-      .or(`name.ilike.${patron},objective.ilike.${patron},slug.ilike.${patron}`)
-      .limit(10),
+      .limit(300),
     supabase
       .from("core_people")
       .select("id, name, aliases, relation, is_owner")
       .eq("user_id", user.id)
       .is("archived_at", null)
       .eq("is_owner", false)
-      .or(`name.ilike.${patron},relation.ilike.${patron}`)
-      .limit(10),
+      .limit(500),
+    supabase.from("tasks_project_members").select("person_id, project_id, role").eq("user_id", user.id).eq("active", true),
   ]);
 
   const candidatos: SearchResult[] = [...pageResults(), ...actionResults()];
@@ -245,12 +251,14 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
     });
   }
 
+  const nombreDeProyecto = new Map((projects.data ?? []).map((p) => [p.id, p.name]));
+
   for (const p of projects.data ?? []) {
     candidatos.push({
       kind: "project",
       id: p.id,
       title: p.name,
-      subtitle: p.objective ? firstLine(p.objective) : "Proyecto",
+      subtitle: p.objective ? firstLine(p.objective) : undefined,
       href: `/tareas/proyectos/${p.id}`,
       haystack: `${p.name} ${p.aliases.join(" ")} ${p.objective ?? ""}`,
     });
@@ -261,7 +269,14 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       kind: "person",
       id: p.id,
       title: p.name,
-      subtitle: p.relation ?? "Persona",
+      // Papel y proyecto («Arquitecta · Finca El Roble»): con dos «Lucía» es lo
+      // que dice cuál es cuál.
+      subtitle: subtituloDePersona(
+        p.relation,
+        (members.data ?? [])
+          .filter((m) => m.person_id === p.id)
+          .map((m) => ({ role: m.role, project: nombreDeProyecto.get(m.project_id) ?? null })),
+      ),
       href: `/personas/${p.id}`,
       haystack: `${p.name} ${p.aliases.join(" ")} ${p.relation ?? ""}`,
     });

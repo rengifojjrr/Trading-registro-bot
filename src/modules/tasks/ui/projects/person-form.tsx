@@ -13,7 +13,7 @@ import type { PersonRow } from "@/modules/tasks/project-queries";
 import type { PersonCircle } from "@/types/database";
 
 const selectClass =
-  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Lo que sabes de una persona, editable: cómo le dices, otros nombres, quién
@@ -46,8 +46,14 @@ export function PersonForm({ person }: { person: PersonRow }) {
         phone_tail: tail,
         note,
       });
-      if (r.error) toast.error(r.error);
-      else toast.success("Guardado.");
+      if (r.error) {
+        toast.error(r.error);
+        return;
+      }
+      // Al renombrar, el nombre de antes pasa a «Otros nombres»: se enseña ya
+      // y no se pierde al guardar otra vez.
+      if (r.aliases) setAliases(r.aliases.join(", "));
+      toast.success("Guardado.");
     });
   };
 
@@ -70,7 +76,7 @@ export function PersonForm({ person }: { person: PersonRow }) {
       </Campo>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Campo label="Quién es">
-          <Input value={relation} onChange={(e) => setRelation(e.target.value)} maxLength={PERSON_RELATION_MAX} placeholder="Socia de la empresa" className="h-11" />
+          <Input value={relation} onChange={(e) => setRelation(e.target.value)} maxLength={PERSON_RELATION_MAX} placeholder="p. ej. socia de la empresa" className="h-11" />
         </Campo>
         <Campo label="Empresa o sitio">
           <Input value={org} onChange={(e) => setOrg(e.target.value)} maxLength={120} className="h-11" />
@@ -101,14 +107,13 @@ export function PersonForm({ person }: { person: PersonRow }) {
               onChange={(e) => setTail(e.target.value.replace(/\D/g, "").slice(-4))}
               inputMode="numeric"
               maxLength={4}
-              placeholder="…1234"
               className="h-11"
             />
           </Campo>
         ) : null}
       </div>
       <Campo label="Tu nota">
-        <Textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={PERSON_NOTE_MAX} rows={3} placeholder="Prefiere audios; no escribirle antes de las 9." />
+        <Textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={PERSON_NOTE_MAX} rows={3} />
       </Campo>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={pending} className="min-h-11">
@@ -126,10 +131,15 @@ export function PersonForm({ person }: { person: PersonRow }) {
   );
 }
 
+/**
+ * Una etiqueta gris y su campo. El campo va en el color del texto: si heredaba
+ * el gris de la etiqueta, lo escrito y el ejemplo se veían iguales y una
+ * persona sin datos parecía tenerlos.
+ */
 function Campo({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-      {label}
+    <label className="flex flex-col gap-1 text-sm text-foreground">
+      <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </label>
   );

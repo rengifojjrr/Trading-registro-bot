@@ -244,10 +244,14 @@ export function GlobalSearch() {
                   <span className="w-20 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
                     {KIND_LABELS[result.kind]}
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{result.title}</span>
-                  {result.subtitle ? (
-                    <span className="shrink-0 text-xs text-muted-foreground">{result.subtitle}</span>
-                  ) : null}
+                  {/* El subtítulo va debajo, no al lado: al lado aplastaba el
+                      título a ancho cero en el teléfono. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{result.title}</span>
+                    {result.subtitle ? (
+                      <span className="truncate text-xs text-muted-foreground">{result.subtitle}</span>
+                    ) : null}
+                  </span>
                 </button>
               </li>
             ))}
