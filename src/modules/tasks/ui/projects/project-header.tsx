@@ -261,14 +261,14 @@ function EditProject({ project, onDone }: { project: HeaderProps["project"]; onD
           <Input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={8} />
         </Campo>
         <Campo label="Otros nombres (separados por comas)">
-          <Input value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="finca, el campo" />
+          <Input value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="p. ej. finca, el campo" />
         </Campo>
       </div>
       <Campo label="Color">
         <select
           value={color}
           onChange={(e) => setColor(e.target.value as ProjectColor)}
-          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+          className="h-11 rounded-md border border-input bg-transparent px-2 text-sm text-foreground"
         >
           {PROJECT_COLORS.map((c) => (
             <option key={c} value={c}>
@@ -291,8 +291,8 @@ function EditProject({ project, onDone }: { project: HeaderProps["project"]; onD
 
 export function Campo({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
-    <label className={cn("flex flex-col gap-1 text-xs text-muted-foreground", className)}>
-      {label}
+    <label className={cn("flex flex-col gap-1 text-sm text-foreground", className)}>
+      <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </label>
   );

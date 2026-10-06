@@ -324,7 +324,7 @@ export function LogPanel({
               aria-pressed={kind === k}
               onClick={() => setKind(k)}
               className={cn(
-                "min-h-9 rounded-full border px-3 text-sm",
+                "min-h-11 rounded-full border px-3 text-sm",
                 kind === k ? "border-primary bg-accent font-medium text-primary" : "border-border text-muted-foreground",
               )}
             >

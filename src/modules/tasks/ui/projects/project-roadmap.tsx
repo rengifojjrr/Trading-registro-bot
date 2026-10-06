@@ -186,7 +186,7 @@ function Hito({
           disabled={pending}
           onChange={(e) => cambiar(e.target.value as MilestoneStatus)}
           aria-label={`Estado de ${hito.title}`}
-          className="h-9 shrink-0 rounded-md border border-input bg-transparent px-1.5 text-xs"
+          className="h-11 shrink-0 rounded-md border border-input bg-transparent px-1.5 text-xs text-foreground"
         >
           {MILESTONE_STATUSES.map((s) => (
             <option key={s} value={s}>

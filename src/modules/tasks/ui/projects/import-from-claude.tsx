@@ -179,9 +179,11 @@ export function PlanPreview({
   const [titulo, ...resto] = plan.lineas;
   const nada = plan.operaciones === 0;
   const revisar = plan.revisar ?? [];
-  const [visto, setVisto] = useState(false);
-  // Un plan nuevo (otra lectura, o «algo cambió») se vuelve a mirar.
-  useEffect(() => setVisto(false), [plan.huella]);
+  // Lo visto vale para un plan: uno nuevo (otra lectura, o «algo cambió») se
+  // vuelve a mirar. Se guarda la huella que se marcó, no un sí suelto.
+  const [vistoDe, setVistoDe] = useState<string | null>(null);
+  const visto = vistoDe === plan.huella;
+  const setVisto = (si: boolean) => setVistoDe(si ? plan.huella : null);
   const falta = revisar.length > 0 && !visto && !nada;
   return (
     <section aria-label="Así lo entendí" className="flex flex-col gap-3 rounded-[14px] border border-border bg-card p-4">
