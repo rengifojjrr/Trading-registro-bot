@@ -65,10 +65,13 @@ import {
   computeHealth,
   freeSlug,
   nextUp,
+  compareProjectTasks,
+  humanSourceLabel,
   originOf,
   progressOf,
   progressLabel,
   slugify,
+  waitingLabel,
   waitingOnOthers,
   type HealthInput,
   type ProjectMilestoneFacts,
@@ -277,5 +280,40 @@ describe("de dónde salió una tarea", () => {
   it("las de antes: Notion si vinieron de allí, tuyas si no", () => {
     expect(originOf({ origin: null, source_kind: null, source_label: null, notion_page_id: "abc" }).key).toBe("NOTION");
     expect(originOf({ origin: null, source_kind: null, source_label: null, notion_page_id: null }).key).toBe("A_MANO");
+  });
+});
+
+describe("textos de un vistazo", () => {
+  it("cuánto lleva esperando, sin «0 d»", () => {
+    expect(waitingLabel(0)).toBe("esperando desde hoy");
+    expect(waitingLabel(1)).toBe("esperando 1 día");
+    expect(waitingLabel(9)).toBe("esperando 9 días");
+  });
+
+  it("el origen con la fecha como la dice la app", () => {
+    expect(humanSourceLabel("llamada 2026-09-28", "2026-10-06")).toBe("una llamada del 28 sept");
+    expect(humanSourceLabel("reunión del 2026-10-01", "2026-10-06")).toBe("una reunión del 1 oct");
+    expect(humanSourceLabel("la llamada con Lucía del 5 oct", "2026-10-06")).toBe("la llamada con Lucía del 5 oct");
+    expect(originOf({ origin: "CLAUDE", source_kind: "LLAMADA", source_label: "llamada 2026-09-28" }, "2026-10-06").text).toBe(
+      "Salió de una llamada del 28 sept",
+    );
+  });
+
+  it("una tarea de Notion con el origen por defecto sigue diciendo Notion", () => {
+    expect(originOf({ origin: "A_MANO", source_kind: null, source_label: null, notion_page_id: "abc" }).key).toBe("NOTION");
+  });
+
+  it("dentro de un grupo, lo vencido primero, luego por fecha y prioridad", () => {
+    const hoy = "2026-10-06";
+    const t = (due: string | null, priority: "ALTA" | "MEDIA" | "BAJA" = "MEDIA") => ({ due_date: due, priority });
+    const lista = [t("2026-11-18"), t(null, "ALTA"), t("2026-10-25"), t("2026-10-01"), t("2026-10-13"), t("2026-10-13", "ALTA")];
+    expect([...lista].sort((a, b) => compareProjectTasks(a, b, hoy))).toEqual([
+      t("2026-10-01"),
+      t("2026-10-13", "ALTA"),
+      t("2026-10-13"),
+      t("2026-10-25"),
+      t("2026-11-18"),
+      t(null, "ALTA"),
+    ]);
   });
 });

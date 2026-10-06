@@ -12,7 +12,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { projectNameSchema } from "@/modules/tasks/domain/projects";
 import { titulosDeAntes } from "@/modules/tasks/domain/renames";
-import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
+import { PRIORITIES, STATUSES, countTasks, countsAsMine } from "@/modules/tasks/domain/tasks";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importTasksFromNotion } from "@/modules/tasks/notion-import";
 import type { FieldSrc, ProjectColor } from "@/types/database";
@@ -465,13 +465,16 @@ async function republish(): Promise<void> {
   const supabase = await createClient();
   const today = todayIn(await userTimezone());
 
-  const { data } = await supabase
-    .from("tasks_items")
-    .select("status, priority, due_date")
-    .eq("user_id", user.id);
+  const [{ data }, { data: yo }] = await Promise.all([
+    supabase.from("tasks_items").select("status, priority, due_date, assignee_id, parent_id").eq("user_id", user.id),
+    supabase.from("core_people").select("id").eq("user_id", user.id).eq("is_owner", true).maybeSingle(),
+  ]);
 
+  // Las cifras del día son las tuyas: sin las de otros ni las subtareas.
   const counts = countTasks(
-    (data ?? []).map((t) => ({ status: t.status, priority: t.priority, dueDate: t.due_date })),
+    (data ?? [])
+      .filter((t) => countsAsMine(t, yo?.id ?? null))
+      .map((t) => ({ status: t.status, priority: t.priority, dueDate: t.due_date })),
     today,
   );
 

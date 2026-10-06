@@ -239,3 +239,46 @@ export function compareWithinGroup(a: TaskLike, b: TaskLike): number {
   if (b.dueDate === null) return -1;
   return a.dueDate < b.dueDate ? -1 : 1;
 }
+
+// ------------------------------------------------------------ de quién es
+
+/**
+ * De quién es una tarea.
+ *
+ * Desde que los proyectos tienen gente, una tarea puede ser de otra persona
+ * («Tomás: mandar el presupuesto»). Las cifras y las listas «tuyas» -- la
+ * portada, Hoy, Todas -- cuentan sólo lo tuyo: las que no tienen responsable
+ * y las de tu fila «Yo». Las de otros son lo que esperas de ellos, no lo que
+ * te toca hacer, y mezclarlas convertía «5 pasadas de fecha» en una cifra que
+ * no era tuya.
+ */
+export function isMine(task: { assignee_id: string | null }, ownerId: string | null): boolean {
+  return task.assignee_id === null || (ownerId !== null && task.assignee_id === ownerId);
+}
+
+/**
+ * Lo que entra en tus cuentas: tuya y sin tarea madre. Una subtarea va debajo
+ * de su madre y no suma aparte (si no, «Mandar el presupuesto» con dos
+ * subtareas contaba como tres cosas por hacer).
+ */
+export function countsAsMine(task: { assignee_id: string | null; parent_id: string | null }, ownerId: string | null): boolean {
+  return isMine(task, ownerId) && task.parent_id === null;
+}
+
+export const WHOSE = ["MIAS", "OTROS", "TODAS"] as const;
+export type Whose = (typeof WHOSE)[number];
+
+export const WHOSE_LABELS: Record<Whose, string> = {
+  MIAS: "Mías",
+  OTROS: "De otros",
+  TODAS: "Todas",
+};
+
+export function isWhose(value: string | undefined): value is Whose {
+  return value !== undefined && (WHOSE as readonly string[]).includes(value);
+}
+
+export function matchesWhose(task: { assignee_id: string | null }, ownerId: string | null, whose: Whose): boolean {
+  if (whose === "TODAS") return true;
+  return whose === "MIAS" ? isMine(task, ownerId) : !isMine(task, ownerId);
+}

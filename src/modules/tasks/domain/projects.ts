@@ -184,6 +184,37 @@ export function dayLabel(date: string, today: string): string {
   return shortDate(date, today);
 }
 
+/**
+ * Cuánto lleva esperando algo, dicho en palabras: «desde hoy», «1 día», «9
+ * días». Nunca «0 d»: un cero con una abreviatura no se entiende de un vistazo.
+ */
+export function waitingLabel(days: number): string {
+  if (days <= 0) return "esperando desde hoy";
+  return `esperando ${days} ${days === 1 ? "día" : "días"}`;
+}
+
+const PESO_PRIORIDAD = { ALTA: 0, MEDIA: 1, BAJA: 2 } as const;
+
+/**
+ * El orden de las tareas dentro de un grupo de un proyecto: lo vencido
+ * primero, luego por fecha (sin fecha al final) y, a igual fecha, por
+ * prioridad.
+ */
+export function compareProjectTasks(
+  a: { due_date: string | null; priority: "ALTA" | "MEDIA" | "BAJA" },
+  b: { due_date: string | null; priority: "ALTA" | "MEDIA" | "BAJA" },
+  today: string,
+): number {
+  const vencida = (t: { due_date: string | null }) => t.due_date !== null && t.due_date < today;
+  if (vencida(a) !== vencida(b)) return vencida(a) ? -1 : 1;
+  if (a.due_date !== b.due_date) {
+    if (a.due_date === null) return 1;
+    if (b.due_date === null) return -1;
+    return a.due_date < b.due_date ? -1 : 1;
+  }
+  return PESO_PRIORIDAD[a.priority] - PESO_PRIORIDAD[b.priority];
+}
+
 // ----------------------------------------------------------- lo que entra
 
 export interface ProjectTaskFacts {
@@ -482,6 +513,34 @@ export function waitingOnOthers(
 
 // ----------------------------------------------------------------- origen
 
+const SUSTANTIVOS_DE_ORIGEN: Record<string, string> = {
+  llamada: "una llamada",
+  reunion: "una reunión",
+  reunión: "una reunión",
+  videollamada: "una videollamada",
+  mensaje: "un mensaje",
+  mensajes: "unos mensajes",
+  chat: "un chat",
+  audio: "un audio",
+  correo: "un correo",
+  documento: "un documento",
+  nota: "una nota",
+};
+
+/**
+ * La etiqueta de origen tal como la escribió el archivo, dicha como la app:
+ * «llamada 2026-09-28» → «una llamada del 28 sept»; una fecha ISO suelta pasa
+ * a «28 sept». Lo que no encaja se deja como está.
+ */
+export function humanSourceLabel(label: string, today?: string): string {
+  const fecha = (iso: string) => (today ? shortDate(iso, today) : shortDate(iso, iso));
+  const m = label.trim().match(/^(\p{L}+)\s+(?:del?\s+)?(\d{4}-\d{2}-\d{2})$/u);
+  if (m && SUSTANTIVOS_DE_ORIGEN[m[1].toLowerCase()]) {
+    return `${SUSTANTIVOS_DE_ORIGEN[m[1].toLowerCase()]} del ${fecha(m[2])}`;
+  }
+  return label.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (iso) => fecha(iso));
+}
+
 export type OriginKey =
   | "LLAMADA"
   | "REUNION"
@@ -513,21 +572,25 @@ export const ORIGIN_LABELS: Record<OriginKey, string> = {
  * el que entró. Las de antes de que existiera el campo salen como Notion si
  * vinieron de allí, o como tuyas.
  */
-export function originOf(task: {
-  origin: TaskOrigin | null;
-  source_kind: SourceKind | null;
-  source_label: string | null;
-  notion_page_id?: string | null;
-}): { key: OriginKey; text: string } {
+export function originOf(
+  task: {
+    origin: TaskOrigin | null;
+    source_kind: SourceKind | null;
+    source_label: string | null;
+    notion_page_id?: string | null;
+  },
+  today?: string,
+): { key: OriginKey; text: string } {
   const kind = task.source_kind;
+  const label = task.source_label ? humanSourceLabel(task.source_label, today) : null;
   if (kind && kind !== "CLAUDE") {
     const key = kind as OriginKey;
-    return { key, text: task.source_label ? `Salió de ${task.source_label}` : `Salió de ${ORIGIN_LABELS[key]}` };
+    return { key, text: label ? `Salió de ${label}` : `Salió de ${ORIGIN_LABELS[key]}` };
   }
   switch (task.origin) {
     case "CLAUDE":
     case "IMPORTAR":
-      return { key: "CLAUDE", text: task.source_label ? `La apuntó Claude: ${task.source_label}` : "La apuntó Claude" };
+      return { key: "CLAUDE", text: label ? `La apuntó Claude: ${label}` : "La apuntó Claude" };
     case "WHATSAPP":
     case "ANALISIS":
       return { key: "BOT", text: "La propuso el bot y la aceptaste" };
@@ -540,7 +603,11 @@ export function originOf(task: {
     case "NOTION":
       return { key: "NOTION", text: "Vino de Notion" };
     case "A_MANO":
-      return { key: "A_MANO", text: "La escribiste tú" };
+      // Las que trajo la importación de Notion antes de marcar su origen nacían
+      // con el valor por defecto: su enlace a Notion dice la verdad.
+      return task.notion_page_id
+        ? { key: "NOTION", text: "Vino de Notion" }
+        : { key: "A_MANO", text: "La escribiste tú" };
     default:
       return task.notion_page_id
         ? { key: "NOTION", text: "Vino de Notion" }

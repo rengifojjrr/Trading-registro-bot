@@ -9,9 +9,11 @@ import {
   inRange,
   isTaskGrouping,
   isTaskRange,
+  isWhose,
   matchesSearch,
   type TaskGrouping,
   type TaskRange,
+  type Whose,
 } from "@/modules/tasks/domain/tasks";
 import { fetchTasks } from "@/modules/tasks/queries";
 import { TaskFilters } from "@/modules/tasks/ui/task-filters";
@@ -31,12 +33,14 @@ import { TaskList } from "@/modules/tasks/ui/task-list";
 export default async function AllTasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rango?: string; agrupar?: string; q?: string }>;
+  searchParams: Promise<{ rango?: string; agrupar?: string; q?: string; de?: string }>;
 }) {
-  const { rango, agrupar, q } = await searchParams;
+  const { rango, agrupar, q, de } = await searchParams;
 
   const range: TaskRange = isTaskRange(rango) ? rango : "TODO";
   const grouping: TaskGrouping = isTaskGrouping(agrupar) ? agrupar : "URGENCIA";
+  // Por defecto, las tuyas: las de otros tienen su propio filtro.
+  const whose: Whose = isWhose(de) ? de : "MIAS";
   const term = q ?? "";
 
   const timezone = await userTimezone();
@@ -45,7 +49,10 @@ export default async function AllTasksPage({
   const [tasks, views] = await Promise.all([fetchTasks(), fetchModuleViews("tasks")]);
 
   const visible = tasks.filter(
-    (task) => inRange(task.due_date, today, range) && matchesSearch(task, term),
+    (task) =>
+      inRange(task.due_date, today, range) &&
+      matchesSearch(task, term) &&
+      (whose === "TODAS" || (whose === "MIAS" ? task.mine : !task.mine)),
   );
 
   return (
@@ -57,7 +64,7 @@ export default async function AllTasksPage({
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <TaskFilters range={range} grouping={grouping} />
+          <TaskFilters range={range} grouping={grouping} whose={whose} />
           <SearchBox placeholder="Buscar una tarea…" />
         </div>
 
@@ -73,7 +80,9 @@ export default async function AllTasksPage({
             emptyLabel={
               term !== ""
                 ? `Nada que coincida con «${term}».`
-                : "No hay tareas en esta ventana."
+                : whose === "OTROS"
+                  ? "Nadie más tiene tareas en esta ventana."
+                  : "No hay tareas en esta ventana."
             }
           />
         </CardContent>

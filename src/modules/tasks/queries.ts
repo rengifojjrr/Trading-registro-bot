@@ -3,7 +3,7 @@ import "server-only";
 import { colorForName } from "@/core/notion-colors";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
-import type { TaskPriority, TaskStatus } from "@/modules/tasks/domain/tasks";
+import { isMine, type TaskPriority, type TaskStatus } from "@/modules/tasks/domain/tasks";
 import type { ProjectColor } from "@/types/database";
 
 export interface ProjectRow {
@@ -35,10 +35,50 @@ export interface TaskRow {
   created_at: string;
   /** Cuándo se marcó como hecha. Es lo que permite medir el ritmo de cierre. */
   completed_at: string | null;
+  /** Quién la hace: nulo es sin asignar; tu fila «Yo» es tuya. */
+  assignee_id: string | null;
+  /** Su tarea madre, si es una subtarea. */
+  parent_id: string | null;
+  /** La persona que la hace, si no eres tú. Para enseñar su círculo y su nombre. */
+  assignee: TaskPerson | null;
+  /** Tuya (sin responsable o con tu fila «Yo»): es lo que cuentan Hoy y Todas. */
+  mine: boolean;
+}
+
+export interface TaskPerson {
+  id: string;
+  name: string;
+  is_owner: boolean;
+  color: ProjectColor | null;
+  has_whatsapp: boolean;
+  whatsapp_hint: "SI" | "NO" | null;
 }
 
 const TASK_COLUMNS =
-  "id, title, status, priority, due_date, due_end, due_time, categories, notes, description, icon, project_id, created_at, completed_at";
+  "id, title, status, priority, due_date, due_end, due_time, categories, notes, description, icon, project_id, created_at, completed_at, assignee_id, parent_id";
+
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/** Las personas, para saber de quién es cada tarea. Son pocas: van enteras. */
+async function fetchTaskPeople(supabase: Supabase, userId: string): Promise<{ ownerId: string | null; byId: Map<string, TaskPerson> }> {
+  const { data } = await supabase
+    .from("core_people")
+    .select("id, name, is_owner, color, has_whatsapp, whatsapp_hint")
+    .eq("user_id", userId);
+  const people = (data ?? []) as TaskPerson[];
+  return {
+    ownerId: people.find((p) => p.is_owner)?.id ?? null,
+    byId: new Map(people.map((p) => [p.id, p])),
+  };
+}
+
+function withOwner<T extends { assignee_id: string | null }>(
+  task: T,
+  people: { ownerId: string | null; byId: Map<string, TaskPerson> },
+): T & { assignee: TaskPerson | null; mine: boolean } {
+  const mine = isMine(task, people.ownerId);
+  return { ...task, mine, assignee: !mine && task.assignee_id ? (people.byId.get(task.assignee_id) ?? null) : null };
+}
 
 /**
  * Los proyectos.
@@ -74,7 +114,7 @@ export async function fetchTasks(): Promise<TaskRow[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
-  const [{ data: tasks }, projects] = await Promise.all([
+  const [{ data: tasks }, projects, people] = await Promise.all([
     supabase
       .from("tasks_items")
       .select(TASK_COLUMNS)
@@ -83,17 +123,34 @@ export async function fetchTasks(): Promise<TaskRow[]> {
     // Con los archivados: una tarea vieja puede colgar de un proyecto que ya
     // se archivó, y sin él la tarjeta perdería la etiqueta que la sitúa.
     fetchProjects(true),
+    fetchTaskPeople(supabase, user.id),
   ]);
 
   const byId = new Map(projects.map((p) => [p.id, p]));
   return (tasks ?? []).map((t) => {
     const project = t.project_id ? byId.get(t.project_id) : undefined;
-    return {
-      ...t,
-      projectName: project?.name ?? null,
-      projectColor: project?.color ?? null,
-    };
+    return withOwner(
+      {
+        ...t,
+        projectName: project?.name ?? null,
+        projectColor: project?.color ?? null,
+      },
+      people,
+    );
   });
+}
+
+/** Tu fila «Yo», si existe: lo que decide qué tareas son tuyas. */
+export async function fetchOwnerPersonId(): Promise<string | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("core_people")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("is_owner", true)
+    .maybeSingle();
+  return data?.id ?? null;
 }
 
 /** Una tarea sola, para su ficha. */
@@ -110,14 +167,17 @@ export async function fetchTask(id: string): Promise<TaskRow | null> {
 
   if (!data) return null;
 
-  const projects = await fetchProjects(true);
+  const [projects, people] = await Promise.all([fetchProjects(true), fetchTaskPeople(supabase, user.id)]);
   const project = data.project_id ? projects.find((p) => p.id === data.project_id) : undefined;
 
-  return {
-    ...data,
-    projectName: project?.name ?? null,
-    projectColor: project?.color ?? null,
-  };
+  return withOwner(
+    {
+      ...data,
+      projectName: project?.name ?? null,
+      projectColor: project?.color ?? null,
+    },
+    people,
+  );
 }
 
 /** Un proyecto solo, con sus tareas, para su ficha. */
@@ -136,21 +196,29 @@ export async function fetchProject(
 
   if (!project) return null;
 
-  const { data: tasks } = await supabase
-    .from("tasks_items")
-    .select(TASK_COLUMNS)
-    .eq("user_id", user.id)
-    .eq("project_id", id)
-    .order("created_at", { ascending: false });
+  const [{ data: tasks }, people] = await Promise.all([
+    supabase
+      .from("tasks_items")
+      .select(TASK_COLUMNS)
+      .eq("user_id", user.id)
+      .eq("project_id", id)
+      .order("created_at", { ascending: false }),
+    fetchTaskPeople(supabase, user.id),
+  ]);
 
   const withColor: ProjectRow = { ...project, color: project.color ?? colorForName(project.name) };
 
   return {
     project: withColor,
-    tasks: (tasks ?? []).map((t) => ({
-      ...t,
-      projectName: withColor.name,
-      projectColor: withColor.color,
-    })),
+    tasks: (tasks ?? []).map((t) =>
+      withOwner(
+        {
+          ...t,
+          projectName: withColor.name,
+          projectColor: withColor.color,
+        },
+        people,
+      ),
+    ),
   };
 }

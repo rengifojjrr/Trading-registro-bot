@@ -4,6 +4,7 @@ import { todayIn } from "@/core/today";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 
+import { overdueTaskItems } from "./tasks-overdue";
 import type { PendingItem } from "./types";
 
 /**
@@ -39,40 +40,30 @@ export async function gatherLifePending(): Promise<PendingItem[]> {
 
   const items: PendingItem[] = [];
 
-  const { data: vencidas } = await supabase
-    .from("tasks_items")
-    .select("id, title, due_date")
-    .eq("user_id", user.id)
-    .neq("status", "HECHA")
-    .not("due_date", "is", null)
-    .lt("due_date", hoy)
-    .order("due_date")
-    .limit(50);
+  const [{ data: vencidas }, { data: gente }] = await Promise.all([
+    supabase
+      .from("tasks_items")
+      .select("title, due_date, assignee_id, parent_id")
+      .eq("user_id", user.id)
+      .neq("status", "HECHA")
+      .not("due_date", "is", null)
+      .lt("due_date", hoy)
+      .order("due_date")
+      .limit(200),
+    supabase.from("core_people").select("id, name, is_owner").eq("user_id", user.id),
+  ]);
 
-  if (vencidas && vencidas.length > 0) {
-    const masVieja = vencidas[0];
-    const dias = Math.max(
-      0,
-      Math.round(
-        (Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${masVieja.due_date}T00:00:00Z`)) / 86400000,
-      ),
-    );
-
-    items.push({
-      id: "tasks-overdue",
-      title: `${vencidas.length} tarea${vencidas.length === 1 ? "" : "s"} pasada${vencidas.length === 1 ? "" : "s"} de fecha`,
-      // Se nombra la más vieja: un número solo se archiva mentalmente, un
-      // título concreto obliga a decidir si todavía importa o si se descarta.
-      detail:
-        dias >= 1
-          ? `La más antigua lleva ${dias} día${dias === 1 ? "" : "s"}: «${masVieja.title}». Si ya no aplica, cerrarla también vale.`
-          : `Entre ellas: «${masVieja.title}».`,
-      href: "/tareas",
-      actionLabel: "Ver tareas",
-      severity: "AVISO",
-      weight: 50,
-    });
-  }
+  const personas = gente ?? [];
+  const ownerId = personas.find((p) => p.is_owner)?.id ?? null;
+  const nombres = new Map(personas.map((p) => [p.id, p.name]));
+  items.push(
+    ...overdueTaskItems(
+      (vencidas ?? []).filter((t): t is typeof t & { due_date: string } => t.due_date !== null),
+      ownerId,
+      hoy,
+      (id) => nombres.get(id) ?? null,
+    ),
+  );
 
   return items;
 }

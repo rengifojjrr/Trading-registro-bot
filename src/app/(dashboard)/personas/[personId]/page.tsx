@@ -122,7 +122,7 @@ export default async function PersonPage({ params }: { params: Promise<{ personI
                       </span>
                     ) : null}
                     <span className={cn("shrink-0 text-xs tabular-nums", atrasada ? "text-negative" : "text-muted-foreground")}>
-                      {t.due_date ? dayLabel(t.due_date, today) : `${espera} d`}
+                      {t.due_date ? dayLabel(t.due_date, today) : espera <= 0 ? "de hoy" : `hace ${espera} ${espera === 1 ? "día" : "días"}`}
                     </span>
                   </li>
                 );

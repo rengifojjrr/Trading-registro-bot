@@ -10,8 +10,11 @@ import {
   GROUPING_LABELS,
   RANGES,
   RANGE_LABELS,
+  WHOSE,
+  WHOSE_LABELS,
   type TaskGrouping,
   type TaskRange,
+  type Whose,
 } from "@/modules/tasks/domain/tasks";
 
 /**
@@ -24,9 +27,11 @@ import {
 export function TaskFilters({
   range,
   grouping,
+  whose = "MIAS",
 }: {
   range: TaskRange;
   grouping: TaskGrouping;
+  whose?: Whose;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -36,7 +41,7 @@ export function TaskFilters({
     // El valor por defecto se quita en lugar de escribirse: así «todas, por
     // urgencia» es la ruta desnuda y no una URL llena de parámetros que no
     // cambian nada.
-    if (value === "TODO" || value === "URGENCIA") next.delete(key);
+    if (value === "TODO" || value === "URGENCIA" || value === "MIAS") next.delete(key);
     else next.set(key, value);
 
     const query = next.toString();
@@ -45,6 +50,12 @@ export function TaskFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <Row
+        label="De quién"
+        options={WHOSE.map((value) => ({ value, label: WHOSE_LABELS[value] }))}
+        current={whose}
+        hrefWith={(value) => hrefWith("de", value)}
+      />
       <Row
         label="Cuándo"
         options={RANGES.map((value) => ({ value, label: RANGE_LABELS[value] }))}

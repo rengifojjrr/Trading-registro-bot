@@ -78,6 +78,15 @@ export function personColor(person: { id: string; color?: ProjectColor | null })
   return person.color && person.color !== "default" ? person.color : colorForName(person.id);
 }
 
+/**
+ * Un nombre que cabe en un botón: las dos primeras palabras («María Fernanda
+ * de los Ángeles Castellanos» → «María Fernanda»), cortado a 24 caracteres.
+ */
+export function shortName(name: string): string {
+  const dos = name.trim().split(/\s+/).slice(0, 2).join(" ");
+  return dos.length > 24 ? `${dos.slice(0, 23).trimEnd()}…` : dos;
+}
+
 /** Cómo se llama en una lista: tú eres «Tú», no «Yo». */
 export function displayName(person: { name: string; is_owner?: boolean }): string {
   return person.is_owner ? "Tú" : person.name;

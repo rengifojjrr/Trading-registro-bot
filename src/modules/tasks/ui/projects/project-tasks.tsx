@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Circle, CircleDot, Loader2, Plus, SlidersHorizontal } from "lucide-react";
+import { ArrowRightLeft, Check, Circle, CircleDot, Loader2, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useState, useTransition } from "react";
@@ -8,10 +8,10 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { displayName } from "@/core/people";
+import { displayName, shortName } from "@/core/people";
 import { PersonAvatar } from "@/core/ui/person-avatar";
 import { cn } from "@/lib/utils";
-import { PROJECT_LIMITS, dayLabel, originOf } from "@/modules/tasks/domain/projects";
+import { PROJECT_LIMITS, compareProjectTasks, dayLabel, originOf, waitingLabel } from "@/modules/tasks/domain/projects";
 import { PRIORITY_LABELS, STATUS_LABELS, type TaskPriority } from "@/modules/tasks/domain/tasks";
 import { addProjectTask, setProjectTaskStatus, updateProjectTask } from "@/modules/tasks/project-actions";
 import type { MilestoneRow, PersonRow, ProjectTaskRow, StreamRow } from "@/modules/tasks/project-queries";
@@ -61,14 +61,27 @@ export function ProjectTasks(props: ProjectTasksProps) {
   const [para, setPara] = useState<string | null>(props.prefillAssignee ?? null);
 
   const personas = new Map(props.people.map((p) => [p.id, p]));
+  /** Quién la hace, para la tarjeta cuando no se agrupa por persona. */
+  const quienHace = (id: string | null): { person: PersonRow | null; nombre: string } =>
+    id === null
+      ? { person: null, nombre: "Sin asignar" }
+      : { person: personas.get(id) ?? null, nombre: personas.get(id) ? displayName(personas.get(id)!) : "Alguien" };
   const hitos = milestones.filter((m) => m.kind === "HITO");
   const etapaDe = new Map(milestones.map((m) => [m.id, m.kind === "ETAPA" ? m.id : m.stage_id]));
   const tituloDe = new Map(milestones.map((m) => [m.id, m.title]));
 
   const madres = tasks.filter((t) => t.parent_id === null || !tasks.some((x) => x.id === t.parent_id));
   const hijas = (id: string) => tasks.filter((t) => t.parent_id === id);
-  const abiertas = madres.filter((t) => t.status !== "HECHA");
+  // Dentro de cada grupo: lo vencido primero, luego por fecha y prioridad. En
+  // el orden en que se crearon, con cuarenta tareas lo atrasado quedaba en
+  // medio de la lista.
+  const abiertas = madres.filter((t) => t.status !== "HECHA").sort((a, b) => compareProjectTasks(a, b, props.today));
   const hechas = madres.filter((t) => t.status === "HECHA");
+  // «Etapa» sólo tiene sentido si alguna tarea cuelga de un hito; si no, todo
+  // caía en «Sin etapa».
+  const hayEtapas = abiertas.some((t) => t.milestone_id !== null);
+  const opcionesAgrupar = (Object.keys(AGRUPAR_LABELS) as Agrupar[]).filter((a) => a !== "ETAPA" || hayEtapas);
+  const agruparVisto: Agrupar = opcionesAgrupar.includes(agrupar) ? agrupar : "PERSONA";
 
   // Sin useMemo: el compilador de React ya memoriza lo que hace falta.
   const grupos = (() => {
@@ -82,12 +95,12 @@ export function ProjectTasks(props: ProjectTasksProps) {
       if (task) g.items.push(task);
     };
 
-    if (agrupar === "PERSONA") {
+    if (agruparVisto === "PERSONA") {
       if (ownerId) push(ownerId, "Tú", null, { persona: personas.get(ownerId) });
       for (const m of members.filter((m) => m.person.id !== ownerId)) {
         push(m.person.id, m.person.name, null, {
           persona: m.person,
-          sub: [m.role, m.waitingDays !== null ? `esperando ${m.waitingDays} d` : null].filter(Boolean).join(" · "),
+          sub: [m.role, m.waitingDays !== null ? waitingLabel(m.waitingDays) : null].filter(Boolean).join(" · "),
         });
       }
       for (const t of abiertas) {
@@ -97,13 +110,13 @@ export function ProjectTasks(props: ProjectTasksProps) {
           push(t.assignee_id, p ? displayName(p) : "Alguien", t, { persona: p });
         }
       }
-    } else if (agrupar === "FRENTE") {
+    } else if (agruparVisto === "FRENTE") {
       for (const s of streams) push(s.id, s.name, null);
       for (const t of abiertas) {
         const s = streams.find((x) => x.id === t.stream_id);
         push(s?.id ?? "~sin", s?.name ?? "Sin frente", t);
       }
-    } else if (agrupar === "ETAPA") {
+    } else if (agruparVisto === "ETAPA") {
       for (const t of abiertas) {
         const etapa = t.milestone_id ? etapaDe.get(t.milestone_id) : null;
         push(etapa ?? "~sin", etapa ? (tituloDe.get(etapa) ?? "Etapa") : "Sin etapa", t);
@@ -113,7 +126,7 @@ export function ProjectTasks(props: ProjectTasksProps) {
     }
     // Las vacías sólo cuentan cuando son personas (que no tengan nada es dato).
     return out
-      .filter((g) => g.items.length > 0 || agrupar === "PERSONA")
+      .filter((g) => g.items.length > 0 || agruparVisto === "PERSONA")
       .sort((a, b) => Number(a.key.startsWith("~")) - Number(b.key.startsWith("~")));
   })();
 
@@ -137,15 +150,15 @@ export function ProjectTasks(props: ProjectTasksProps) {
 
       <div role="group" aria-label="Agrupar" className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1">
         <span className="shrink-0 text-xs text-muted-foreground">Agrupar:</span>
-        {(Object.keys(AGRUPAR_LABELS) as Agrupar[]).map((a) => (
+        {opcionesAgrupar.map((a) => (
           <button
             key={a}
             type="button"
-            aria-pressed={agrupar === a}
+            aria-pressed={agruparVisto === a}
             onClick={() => setAgrupar(a)}
             className={cn(
-              "min-h-9 shrink-0 rounded-full border px-3 text-sm",
-              agrupar === a ? "border-primary bg-accent font-medium text-primary" : "border-border text-muted-foreground",
+              "min-h-11 shrink-0 rounded-full border px-3 text-sm",
+              agruparVisto === a ? "border-primary bg-accent font-medium text-primary" : "border-border text-muted-foreground",
             )}
           >
             {AGRUPAR_LABELS[a]}
@@ -153,7 +166,7 @@ export function ProjectTasks(props: ProjectTasksProps) {
         ))}
       </div>
 
-      {abiertas.length === 0 && grupos.every((g) => g.items.length === 0) && agrupar !== "PERSONA" ? (
+      {abiertas.length === 0 && grupos.every((g) => g.items.length === 0) && agruparVisto !== "PERSONA" ? (
         <p className="text-sm text-muted-foreground">Nada pendiente en este proyecto.</p>
       ) : null}
 
@@ -161,12 +174,19 @@ export function ProjectTasks(props: ProjectTasksProps) {
         <section key={g.key} className="flex flex-col gap-1.5">
           <h3 className="flex flex-wrap items-center gap-2 text-sm font-medium">
             {g.persona ? <PersonAvatar person={g.persona} size="sm" /> : null}
-            <span>{g.titulo}</span>
+            <span className="min-w-0 break-words">{g.titulo}</span>
             {g.sub ? <span className="text-xs font-normal text-muted-foreground">· {g.sub}</span> : null}
             <span className="text-xs font-normal text-muted-foreground">· {g.items.length}</span>
           </h3>
           {g.items.map((t) => (
-            <TaskRow key={t.id} task={t} subtasks={hijas(t.id)} props={props} opcionesPersona={opcionesPersona} />
+            <TaskRow
+              key={t.id}
+              task={t}
+              subtasks={hijas(t.id)}
+              props={props}
+              opcionesPersona={opcionesPersona}
+              quien={agruparVisto === "PERSONA" ? null : quienHace(t.assignee_id)}
+            />
           ))}
           {g.items.length === 0 && g.persona ? (
             <button
@@ -174,7 +194,8 @@ export function ProjectTasks(props: ProjectTasksProps) {
               onClick={() => setPara(g.key === ownerId ? "YO" : g.key)}
               className="flex min-h-11 w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
-              <Plus className="size-4" aria-hidden /> tarea para {g.titulo === "Tú" ? "ti" : g.titulo}
+              <Plus className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">tarea para {g.titulo === "Tú" ? "ti" : shortName(g.titulo)}</span>
             </button>
           ) : null}
         </section>
@@ -191,7 +212,16 @@ export function ProjectTasks(props: ProjectTasksProps) {
             <span aria-hidden>{verHechas ? "▾" : "▸"}</span> Hechas ({hechas.length})
           </button>
           {verHechas
-            ? hechas.map((t) => <TaskRow key={t.id} task={t} subtasks={hijas(t.id)} props={props} opcionesPersona={opcionesPersona} />)
+            ? hechas.map((t) => (
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  subtasks={hijas(t.id)}
+                  props={props}
+                  opcionesPersona={opcionesPersona}
+                  quien={quienHace(t.assignee_id)}
+                />
+              ))
             : null}
         </section>
       ) : null}
@@ -289,7 +319,7 @@ function NuevaTarea({
           type="button"
           onClick={() => setMas((m) => !m)}
           aria-expanded={mas}
-          className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          className="flex min-h-11 w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <SlidersHorizontal className="size-3.5" aria-hidden /> Frente, hito y prioridad
         </button>
@@ -331,18 +361,21 @@ function TaskRow({
   props,
   opcionesPersona,
   esSubtarea = false,
+  quien = null,
 }: {
   task: ProjectTaskRow;
   subtasks: ProjectTaskRow[];
   props: ProjectTasksProps;
   opcionesPersona: { value: string; label: string }[];
   esSubtarea?: boolean;
+  /** Quién la hace, cuando la lista no va agrupada por persona. */
+  quien?: { person: PersonRow | null; nombre: string } | null;
 }) {
   const [pending, start] = useTransition();
   const [abierta, setAbierta] = useState(false);
   const hecha = task.status === "HECHA";
   const atrasada = !hecha && task.due_date !== null && task.due_date < props.today;
-  const origen = originOf(task);
+  const origen = originOf(task, props.today);
 
   const alternar = () =>
     start(async () => {
@@ -368,7 +401,7 @@ function TaskRow({
           disabled={pending}
           aria-pressed={hecha}
           aria-label={hecha ? `Desmarcar ${task.title}` : `Marcar ${task.title} como hecha`}
-          className="flex size-9 shrink-0 items-center justify-center text-muted-foreground"
+          className="flex size-11 shrink-0 items-center justify-center text-muted-foreground"
         >
           {pending ? (
             <Loader2 className="size-5 animate-spin" aria-hidden />
@@ -388,6 +421,12 @@ function TaskRow({
             {task.title}
           </Link>
           <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            {quien ? (
+              <span className="inline-flex min-w-0 items-center gap-1 text-foreground">
+                {quien.person ? <PersonAvatar person={quien.person} size="sm" /> : null}
+                <span className="max-w-[9rem] truncate">{quien.nombre}</span>
+              </span>
+            ) : null}
             {task.due_date ? (
               <span className={cn("tabular-nums", atrasada && "text-negative")}>{dayLabel(task.due_date, props.today)}</span>
             ) : null}
@@ -404,10 +443,11 @@ function TaskRow({
           type="button"
           onClick={() => setAbierta((a) => !a)}
           aria-expanded={abierta}
-          aria-label={`Mover ${task.title}`}
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          aria-label={`Mover ${task.title}: quién, fecha, frente o hito`}
+          title="Mover"
+          className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
         >
-          <SlidersHorizontal className="size-4" aria-hidden />
+          <ArrowRightLeft className="size-4" aria-hidden />
         </button>
       </div>
 

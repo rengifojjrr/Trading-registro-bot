@@ -8,6 +8,7 @@ import type { Route } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { colorVars } from "@/core/notion-colors";
+import { PersonAvatar } from "@/core/ui/person-avatar";
 import { DeleteButton } from "@/core/ui/delete-button";
 import { cn } from "@/lib/utils";
 import { afterTaskRemoved, setTaskStatus, setTasksStatus } from "@/modules/tasks/actions";
@@ -61,10 +62,23 @@ export function TaskList({
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkPending, startBulk] = useTransition();
 
+  // Las subtareas van debajo de su madre, no sueltas: se reparten primero las
+  // que no cuelgan de nada que esté en la lista y, si una madre no sale (por
+  // la ventana de «Hoy», por ejemplo), su subtarea sale por su cuenta.
+  const ids = new Set(tasks.map((t) => t.id));
+  const conMadre = (t: TaskRow) => t.parent_id !== null && ids.has(t.parent_id);
   const open = tasks.filter((t) => t.status !== "HECHA");
   const done = tasks.filter((t) => t.status === "HECHA");
 
-  const groups = buildGroups(open, today, grouping, only);
+  const primero = buildGroups(open.filter((t) => !conMadre(t)), today, grouping, only);
+  const visibles = new Set(primero.flatMap((g) => g.items.map((t) => t.id)));
+  const huerfanas = open.filter((t) => conMadre(t) && !visibles.has(t.parent_id as string));
+  const groups =
+    huerfanas.length > 0 ? buildGroups([...open.filter((t) => !conMadre(t)), ...huerfanas], today, grouping, only) : primero;
+  const pintadas = new Set(groups.flatMap((g) => g.items.map((t) => t.id)));
+  const hijasDe = (id: string, lista: TaskRow[]) =>
+    lista.filter((t) => t.parent_id === id && !pintadas.has(t.id));
+  const doneTop = done.filter((t) => !conMadre(t) || !done.some((m) => m.id === t.parent_id));
 
   const toggleSelected = (id: string) =>
     setSelected((current) =>
@@ -133,13 +147,24 @@ export function TaskList({
             {group.label} · {group.items.length}
           </h3>
           {group.items.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              today={today}
-              selected={selected.includes(task.id)}
-              onToggleSelected={() => toggleSelected(task.id)}
-            />
+            <div key={task.id} className="flex flex-col gap-2">
+              <TaskItem
+                task={task}
+                today={today}
+                selected={selected.includes(task.id)}
+                onToggleSelected={() => toggleSelected(task.id)}
+              />
+              {hijasDe(task.id, open).map((sub) => (
+                <div key={sub.id} className="ml-6 border-l border-border pl-2">
+                  <TaskItem
+                    task={sub}
+                    today={today}
+                    selected={selected.includes(sub.id)}
+                    onToggleSelected={() => toggleSelected(sub.id)}
+                  />
+                </div>
+              ))}
+            </div>
           ))}
         </div>
       ))}
@@ -152,18 +177,31 @@ export function TaskList({
             aria-expanded={doneOpen}
             className="flex w-fit items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
           >
-            Hechas · {done.length}
+            Hechas · {doneTop.length}
             <span aria-hidden>{doneOpen ? "▾" : "▸"}</span>
           </button>
           {doneOpen
-            ? done.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  today={today}
-                  selected={selected.includes(task.id)}
-                  onToggleSelected={() => toggleSelected(task.id)}
-                />
+            ? doneTop.map((task) => (
+                <div key={task.id} className="flex flex-col gap-2">
+                  <TaskItem
+                    task={task}
+                    today={today}
+                    selected={selected.includes(task.id)}
+                    onToggleSelected={() => toggleSelected(task.id)}
+                  />
+                  {done
+                    .filter((t) => t.parent_id === task.id)
+                    .map((sub) => (
+                      <div key={sub.id} className="ml-6 border-l border-border pl-2">
+                        <TaskItem
+                          task={sub}
+                          today={today}
+                          selected={selected.includes(sub.id)}
+                          onToggleSelected={() => toggleSelected(sub.id)}
+                        />
+                      </div>
+                    ))}
+                </div>
               ))
             : null}
         </div>
@@ -318,6 +356,12 @@ function TaskItem({
         </Link>
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          {task.assignee ? (
+            <span className="inline-flex items-center gap-1 text-foreground">
+              <PersonAvatar person={task.assignee} size="sm" />
+              <span className="max-w-[10rem] truncate">{task.assignee.name}</span>
+            </span>
+          ) : null}
           {task.projectName ? (
             <span
               className="rounded-full border px-2 py-0.5"

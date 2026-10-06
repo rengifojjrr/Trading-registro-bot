@@ -14,6 +14,7 @@ import { CIRCLE_LABELS, displayName, normalizeName } from "@/core/people";
 import { PersonAvatar } from "@/core/ui/person-avatar";
 import { cn } from "@/lib/utils";
 import { createPerson } from "@/modules/tasks/project-actions";
+import { waitingLabel } from "@/modules/tasks/domain/projects";
 import type { PersonListItem } from "@/modules/tasks/project-queries";
 
 /**
@@ -108,9 +109,13 @@ export function PeopleList({ people }: { people: PersonListItem[] }) {
                     </span>
                   </div>
                   <span className="flex shrink-0 flex-col items-end text-xs text-muted-foreground">
-                    {p.openTasks > 0 ? <span>le toca {p.openTasks}</span> : null}
+                    {(() => {
+                      // Agrupado por proyecto, lo de ese proyecto; si no, el total.
+                      const n = agrupar === "PROYECTO" ? (p.openByProject?.[g.key] ?? 0) : p.openTasks;
+                      return n > 0 ? <span>le toca {n}</span> : null;
+                    })()}
                     {p.waitingDays !== null && !p.is_owner ? (
-                      <span className={p.waitingDays > 7 ? "text-warning" : undefined}>esperando {p.waitingDays} d</span>
+                      <span className={p.waitingDays > 7 ? "text-warning" : undefined}>{waitingLabel(p.waitingDays)}</span>
                     ) : null}
                   </span>
                   {agrupar === "CIRCULO" && p.projects[0] ? (

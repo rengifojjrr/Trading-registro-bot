@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { todayIn } from "@/core/today";
 import { userTimezone } from "@/core/user-settings";
 import { countTasks } from "@/modules/tasks/domain/tasks";
+import type { Route } from "next";
 import { fetchProjects, fetchTasks } from "@/modules/tasks/queries";
 import { NewTask } from "@/modules/tasks/ui/new-task";
 import { TaskList } from "@/modules/tasks/ui/task-list";
@@ -25,10 +26,17 @@ export default async function TasksPage() {
   const today = todayIn(timezone);
   const [tasks, projects] = await Promise.all([fetchTasks(), fetchProjects()]);
 
+  // Sólo lo tuyo: las de otros son lo que esperas de ellos, no lo que te toca.
+  // Y las subtareas suman con su madre, no aparte.
+  const mias = tasks.filter((t) => t.mine);
   const counts = countTasks(
-    tasks.map((t) => ({ status: t.status, priority: t.priority, dueDate: t.due_date })),
+    mias
+      .filter((t) => t.parent_id === null)
+      .map((t) => ({ status: t.status, priority: t.priority, dueDate: t.due_date })),
     today,
   );
+  const deOtros = tasks.filter((t) => !t.mine && t.parent_id === null && t.status !== "HECHA");
+  const deOtrosVencidas = deOtros.filter((t) => t.due_date !== null && t.due_date < today).length;
 
   return (
     <>
@@ -59,7 +67,7 @@ export default async function TasksPage() {
       <Card>
         <CardContent className="pt-5">
           <TaskList
-            tasks={tasks}
+            tasks={mias}
             today={today}
             only={["VENCIDA", "HOY"]}
             showDone={false}
@@ -67,6 +75,29 @@ export default async function TasksPage() {
           />
         </CardContent>
       </Card>
+
+      {deOtros.length > 0 ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 pt-5 text-sm">
+            <span>
+              <span className="font-medium">Esperando a otros:</span>{" "}
+              {deOtros.length === 1 ? "1 tarea" : `${deOtros.length} tareas`}
+              {deOtrosVencidas > 0 ? (
+                <span className="text-negative">
+                  {" "}
+                  · {deOtrosVencidas === 1 ? "1 pasada de fecha" : `${deOtrosVencidas} pasadas de fecha`}
+                </span>
+              ) : null}
+            </span>
+            <Link
+              href={"/tareas/todas?de=OTROS" as Route}
+              className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-foreground"
+            >
+              Ver de quién
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <NotionImportCard
         title="Desde Notion"

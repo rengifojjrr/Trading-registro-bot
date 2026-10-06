@@ -176,7 +176,7 @@ export default async function ProjectDetailPage({
                         {w.count > 1 ? ` y ${w.count - 1} más` : ""}
                       </span>
                       <span className={cn("shrink-0 text-xs tabular-nums", w.days > 7 ? "text-warning" : "text-muted-foreground")}>
-                        {w.days} {w.days === 1 ? "día" : "días"}
+                        {w.days <= 0 ? "desde hoy" : `${w.days} ${w.days === 1 ? "día" : "días"}`}
                       </span>
                     </li>
                   );

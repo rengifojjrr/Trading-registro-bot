@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SIDES, SIDE_LABELS, displayName } from "@/core/people";
 import { PersonAvatar } from "@/core/ui/person-avatar";
-import { PROJECT_LIMITS } from "@/modules/tasks/domain/projects";
+import { PROJECT_LIMITS, waitingLabel } from "@/modules/tasks/domain/projects";
 import { addMember, setMemberActive, updateMember } from "@/modules/tasks/project-actions";
 import type { MemberView, PersonRow } from "@/modules/tasks/project-queries";
 import type { MemberSide } from "@/types/database";
@@ -128,7 +128,7 @@ function Miembro({ member, projectId }: { member: MemberView; projectId: string 
             {member.openTasks === 0
               ? "Sin tareas abiertas"
               : `Le ${member.openTasks === 1 ? "toca 1" : `tocan ${member.openTasks}`}`}
-            {member.waitingDays !== null && !p.is_owner ? ` · lo suyo más viejo lleva ${member.waitingDays} días` : ""}
+            {member.waitingDays !== null && !p.is_owner ? ` · ${waitingLabel(member.waitingDays)}` : ""}
           </p>
         </div>
         <div className="flex shrink-0 gap-1">

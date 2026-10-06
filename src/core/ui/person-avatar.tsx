@@ -36,7 +36,10 @@ export function PersonAvatar({
       style={{
         ...colorVars(personColor(person)),
         color: "var(--tag-color)",
-        backgroundColor: "color-mix(in srgb, var(--tag-color) 14%, transparent)",
+        // Opaco (mezclado con el fondo de la tarjeta, no con «transparent»): en
+        // una pila de círculos el de debajo no puede asomar por el de encima, o
+        // «Yo» se leía «Yc» y «TO» se leía «TC».
+        backgroundColor: "color-mix(in srgb, var(--tag-color) 14%, var(--card))",
         borderColor: "var(--tag-color)",
       }}
       className={cn(
@@ -65,7 +68,7 @@ export function PeopleStack({
   const visibles = people.slice(0, max);
   const resto = people.length - visibles.length;
   return (
-    <span className="flex items-center -space-x-1.5">
+    <span className="flex items-center -space-x-1">
       {visibles.map((p) => (
         <PersonAvatar key={p.id} person={p} size="sm" className="ring-2 ring-card" />
       ))}

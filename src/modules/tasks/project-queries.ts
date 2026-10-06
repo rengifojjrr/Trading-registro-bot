@@ -495,6 +495,8 @@ export async function fetchProjectFull(id: string): Promise<ProjectFull | null> 
 export interface PersonListItem extends PersonRow {
   projects: { id: string; name: string; color: ProjectColor; role: string | null }[];
   openTasks: number;
+  /** Las abiertas en cada proyecto: agrupado por proyecto, «le toca» es de ése. */
+  openByProject: Record<string, number>;
   /** Lo que se le espera: tareas suyas abiertas y la más vieja, en días. */
   waitingDays: number | null;
 }
@@ -511,7 +513,7 @@ export async function fetchPeopleList(): Promise<{ people: PersonListItem[]; tod
     supabase.from("tasks_projects").select("id, name, color, is_active").eq("user_id", user.id),
     supabase
       .from("tasks_items")
-      .select("id, title, status, priority, due_date, assignee_id, milestone_id, parent_id, created_at, completed_at")
+      .select("id, title, status, priority, due_date, project_id, assignee_id, milestone_id, parent_id, created_at, completed_at")
       .eq("user_id", user.id)
       .not("assignee_id", "is", null)
       .neq("status", "HECHA"),
@@ -535,6 +537,12 @@ export async function fetchPeopleList(): Promise<{ people: PersonListItem[]; tod
         })
         .filter((x): x is NonNullable<typeof x> => x !== null),
       openTasks: facts.filter((t) => t.assigneeId === p.id).length,
+      openByProject: ((tasks.data ?? []) as ProjectTaskRow[])
+        .filter((t) => t.assignee_id === p.id && t.project_id !== null)
+        .reduce<Record<string, number>>((acc, t) => {
+          acc[t.project_id as string] = (acc[t.project_id as string] ?? 0) + 1;
+          return acc;
+        }, {}),
       waitingDays: espera.get(p.id) ?? null,
     })),
   };

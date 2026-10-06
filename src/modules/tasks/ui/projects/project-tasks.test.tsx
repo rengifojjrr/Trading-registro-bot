@@ -105,7 +105,7 @@ describe("las tareas por persona", () => {
     expect(titulos[0]).toContain("Tú");
     expect(titulos[1]).toContain("Lucía");
     expect(titulos[1]).toContain("Arquitecta");
-    expect(titulos[1]).toContain("esperando 5 d");
+    expect(titulos[1]).toContain("esperando 5 días");
     expect(titulos[2]).toContain("Inés");
     expect(titulos[titulos.length - 1]).toContain("Sin asignar");
   });
@@ -141,6 +141,55 @@ describe("las tareas por persona", () => {
     pintar();
     await userEvent.setup().click(screen.getByRole("button", { name: "Estado" }));
     expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent("Sin empezar");
+  });
+
+  it("el porqué del origen sale en una burbuja aparte y se cierra al tocar fuera", async () => {
+    const user = userEvent.setup();
+    pintar();
+    await user.click(screen.getByRole("button", { name: "Salió de la llamada del 5 oct" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Salió de la llamada del 5 oct");
+    await user.click(document.body);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("agrupado por estado, cada tarea dice quién la hace", async () => {
+    pintar();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Estado" }));
+    const fila = screen.getByText("Mandar los planos").closest("div.flex.min-w-0")!;
+    expect(fila).toHaveTextContent("Lucía");
+    const sinDueno = screen.getByText("Algo sin dueño").closest("div.flex.min-w-0")!;
+    expect(sinDueno).toHaveTextContent("Sin asignar");
+  });
+
+  it("«Etapa» sólo sale si alguna tarea cuelga de un hito", () => {
+    pintar();
+    expect(screen.queryByRole("button", { name: "Etapa" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Frente" })).toBeInTheDocument();
+  });
+
+  it("dentro de un grupo, lo vencido primero y luego por fecha", async () => {
+    render(
+      <ProjectTasks
+        projectId="p1"
+        tasks={[
+          tarea("a", "Para noviembre", { due_date: "2026-11-18" }),
+          tarea("b", "Sin fecha"),
+          tarea("c", "Vencida", { due_date: "2026-10-01" }),
+          tarea("d", "Para la semana", { due_date: "2026-10-13" }),
+        ]}
+        members={[]}
+        people={[YO]}
+        ownerId={YO.id}
+        streams={[]}
+        milestones={[]}
+        today="2026-10-06"
+      />,
+    );
+    const grupo = screen.getByRole("heading", { level: 3, name: /Sin asignar/ }).closest("section")!;
+    const orden = within(grupo)
+      .getAllByRole("link")
+      .map((a) => a.textContent);
+    expect(orden).toEqual(["Vencida", "Para la semana", "Para noviembre", "Sin fecha"]);
   });
 
   it("es accesible", async () => {

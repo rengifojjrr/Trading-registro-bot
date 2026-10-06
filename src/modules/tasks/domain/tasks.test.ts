@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { compareWithinGroup, countTasks, urgencyOf, type TaskLike } from "./tasks";
+import {
+  compareWithinGroup,
+  countTasks,
+  countsAsMine,
+  isMine,
+  isWhose,
+  matchesWhose,
+  urgencyOf,
+  type TaskLike,
+} from "./tasks";
 
 const TODAY = "2026-08-19";
 
@@ -65,5 +74,37 @@ describe("compareWithinGroup", () => {
     const conFecha = task({ dueDate: "2026-12-31" });
     const sinFecha = task({ dueDate: null });
     expect(compareWithinGroup(conFecha, sinFecha)).toBeLessThan(0);
+  });
+});
+
+describe("de quién es una tarea", () => {
+  const YO = "yo-0001";
+  const tuya = { assignee_id: YO, parent_id: null };
+  const sinNadie = { assignee_id: null, parent_id: null };
+  const deTomas = { assignee_id: "tomas-01", parent_id: null };
+  const subtarea = { assignee_id: YO, parent_id: "madre" };
+
+  it("tuyas son las tuyas y las que no tienen responsable", () => {
+    expect(isMine(tuya, YO)).toBe(true);
+    expect(isMine(sinNadie, YO)).toBe(true);
+    expect(isMine(deTomas, YO)).toBe(false);
+    // Sin fila «Yo» todavía, lo asignado es de otros.
+    expect(isMine(deTomas, null)).toBe(false);
+    expect(isMine(sinNadie, null)).toBe(true);
+  });
+
+  it("las subtareas no cuentan aparte", () => {
+    expect(countsAsMine(tuya, YO)).toBe(true);
+    expect(countsAsMine(subtarea, YO)).toBe(false);
+    expect(countsAsMine(deTomas, YO)).toBe(false);
+  });
+
+  it("el filtro «Mías · De otros · Todas»", () => {
+    expect(matchesWhose(deTomas, YO, "MIAS")).toBe(false);
+    expect(matchesWhose(deTomas, YO, "OTROS")).toBe(true);
+    expect(matchesWhose(tuya, YO, "OTROS")).toBe(false);
+    expect(matchesWhose(tuya, YO, "TODAS")).toBe(true);
+    expect(isWhose("OTROS")).toBe(true);
+    expect(isWhose("otros")).toBe(false);
   });
 });
