@@ -14,7 +14,7 @@ import { projectNameSchema } from "@/modules/tasks/domain/projects";
 import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importTasksFromNotion } from "@/modules/tasks/notion-import";
-import type { ProjectColor } from "@/types/database";
+import type { FieldSrc, ProjectColor } from "@/types/database";
 
 export type TaskFormState = { error: string | null; success: boolean };
 
@@ -203,6 +203,10 @@ export async function saveTaskAnswer(
 
   const supabase = await createClient();
 
+  // Lo que contestas aquí queda como tuyo: importar un archivo de Claude
+  // después ya no lo pisa (ver domain/project-import.ts).
+  const marca = await marcarComoTuyo(supabase, parsed.data.task_id, user.id, Object.keys(parche));
+
   // Marcar «hecha» desde la ficha tiene que sellar el cierre igual que lo hace
   // el círculo de la lista, o la gráfica de «entra y sale» se quedaría sin la
   // mitad de los cierres. Y desmarcarla tiene que borrar el sello.
@@ -222,7 +226,7 @@ export async function saveTaskAnswer(
 
   const { error } = await supabase
     .from("tasks_items")
-    .update({ ...parche, updated_at: new Date().toISOString() })
+    .update({ ...parche, ...marca, updated_at: new Date().toISOString() })
     .eq("id", parsed.data.task_id)
     .eq("user_id", user.id);
 
@@ -239,9 +243,11 @@ export async function setTaskStatus(taskId: string, status: string): Promise<voi
   if (!(STATUSES as readonly string[]).includes(status)) return;
 
   const supabase = await createClient();
+  const marca = await marcarComoTuyo(supabase, taskId, user.id, ["status"]);
   await supabase
     .from("tasks_items")
     .update({
+      ...marca,
       status: status as (typeof STATUSES)[number],
       // Se sella cuándo se terminó, no sólo que está terminada: sin eso no
       // se puede saber cuántas cerraste esta semana.
@@ -355,9 +361,19 @@ export async function updateProject(
   if (patch.color !== undefined && !PROJECT_COLORS.includes(patch.color)) return;
 
   const supabase = await createClient();
+  const { data: antes } = await supabase
+    .from("tasks_projects")
+    .select("field_src")
+    .eq("id", projectId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const field_src: FieldSrc = { ...(antes?.field_src ?? {}) };
+  for (const campo of Object.keys(patch)) field_src[campo] = "owner";
   await supabase
     .from("tasks_projects")
-    .update(patch)
+    // Sin la fila leída (o sin la columna, en una base sin la migración de
+    // proyectos) no se toca la marca: el cambio de color o icono sale igual.
+    .update(antes ? { ...patch, field_src } : patch)
     .eq("id", projectId)
     .eq("user_id", user.id);
 
@@ -383,11 +399,41 @@ export async function setProjectActive(projectId: string, isActive: boolean): Pr
   revalidateTasks();
 }
 
-/** Las cuatro pantallas del módulo miran las mismas tareas. */
+/**
+ * Los campos de una tarea, marcados como tuyos.
+ *
+ * Se lee la marca que ya tenía y se le añaden éstos. Devuelve el trozo de
+ * `update` que la escribe, o nada si la tarea no se encuentra (la RLS no la
+ * deja ver): entonces el `update` de al lado tampoco tocará nada.
+ */
+async function marcarComoTuyo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  taskId: string,
+  userId: string,
+  campos: string[],
+): Promise<{ field_src?: FieldSrc }> {
+  const { data } = await supabase
+    .from("tasks_items")
+    .select("field_src")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data) return {};
+  const field_src: FieldSrc = { ...(data.field_src ?? {}) };
+  for (const campo of campos) {
+    if (campo !== "completed_at") field_src[campo] = "owner";
+  }
+  return { field_src };
+}
+
+/** Las pantallas del módulo miran las mismas tareas. */
 function revalidateTasks(): void {
   revalidatePath("/tareas");
   revalidatePath("/tareas/todas");
   revalidatePath("/tareas/proyectos");
+  // La ficha de cada proyecto y de cada persona enseña sus tareas.
+  revalidatePath("/tareas/proyectos/[projectId]", "page");
+  revalidatePath("/personas", "layout");
   revalidatePath("/tareas/analisis");
   revalidatePath("/");
 }

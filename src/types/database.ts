@@ -89,7 +89,9 @@ export type EntityKind =
   | "CONTENIDO"
   // Las dos que borraban de verdad mientras todo lo demás tenía red debajo.
   | "ESTRATEGIA"
-  | "ETIQUETA";
+  | "ETIQUETA"
+  // La persona de tus proyectos tiene su ficha, con comentarios y papelera.
+  | "PERSONA";
 
 /** Los diez nombres de color de Notion, copiados en lugar de traducidos. */
 export type ProjectColor =
@@ -103,6 +105,75 @@ export type ProjectColor =
   | "purple"
   | "pink"
   | "red";
+
+// ------------------------------------------------ Proyectos de verdad (E1)
+// Espejan los check de `20261006120000_proyectos_de_verdad.sql`.
+
+export type ProjectStatus =
+  | "IDEA"
+  | "EN_MARCHA"
+  | "ESPERANDO"
+  | "ATASCADO"
+  | "EN_PAUSA"
+  | "TERMINADO"
+  | "DESCARTADO";
+
+export type ProjectHealth = "VERDE" | "AMARILLO" | "ROJO";
+
+/** Cuánto de un proyecto sube a la nube. Hoy sólo se construye `COMPLETA`. */
+export type CloudLevel = "COMPLETA" | "TITULOS" | "RESERVADO";
+
+/** Quién escribió un texto entero: «Cómo va», la ficha. */
+export type AuthorKind = "OWNER" | "CLAUDE" | "BOT";
+
+/**
+ * Quién escribió cada campo de una fila: tú en la aplicación, un archivo de
+ * Claude o el bot. Importar nunca pisa un campo `owner`.
+ */
+export type FieldAuthor = "owner" | "claude" | "bot";
+export type FieldSrc = Record<string, FieldAuthor>;
+
+export type PersonCircle = "FAMILIA" | "AMIGOS" | "TRABAJO" | "CLIENTES" | "SERVICIOS" | "OTROS";
+export type MemberSide = "NOSOTROS" | "CONTRAPARTE" | "ASESOR" | "OTRO";
+export type MilestoneKind = "ETAPA" | "HITO";
+export type MilestoneStatus = "PENDIENTE" | "EN_CURSO" | "HECHO" | "BLOQUEADO" | "SALTADO";
+export type DuePrecision = "DIA" | "SEMANA" | "MES" | "TRIMESTRE";
+
+/** De dónde salió una tarea. Nulo en las de antes de que existiera. */
+export type TaskOrigin =
+  | "A_MANO"
+  | "NOTION"
+  | "WHATSAPP"
+  | "VOZ"
+  | "CLAUDE"
+  | "ANALISIS"
+  | "REUNION"
+  | "LLAMADA"
+  | "IMPORTAR";
+
+/** El tipo de la evidencia de una tarea. La evidencia en sí nunca sube. */
+export type SourceKind = "LLAMADA" | "REUNION" | "MENSAJE" | "DICTADO" | "DOCUMENTO" | "CLAUDE";
+
+export type LogKind =
+  | "NOTA"
+  | "AVANCE"
+  | "DECISION"
+  | "BLOQUEO"
+  | "LLAMADA"
+  | "REUNION"
+  | "MENSAJE"
+  | "ESTADO";
+
+export type ProjectDocKind = "FICHA" | "HOJA_DE_RUTA" | "ACTA" | "NOTA" | "OTRO";
+
+export type ProjectSourceKind =
+  | "CHAT"
+  | "GRUPO"
+  | "LLAMADA"
+  | "REUNION"
+  | "DOCUMENTO"
+  | "ENLACE"
+  | "ARCHIVO_MAC";
 
 /**
  * Lo que se archiva al borrar, para poder devolverlo con su mismo
@@ -307,6 +378,28 @@ export interface Database {
           is_active: boolean;
           sort_order: number;
           created_at: string;
+          /** `finca-el-roble`: único por usuario. Nulo en los proyectos de antes. */
+          slug: string | null;
+          aliases: string[];
+          status: ProjectStatus;
+          /** Nulo = lo calcula la aplicación. Puesto a mano vale hasta `health_until`. */
+          health: ProjectHealth | null;
+          health_until: string | null;
+          objective: string | null;
+          /** «Cómo va», en un párrafo. */
+          how_md: string | null;
+          how_at: string | null;
+          how_by: AuthorKind | null;
+          cloud_level: CloudLevel;
+          started_on: string | null;
+          target_on: string | null;
+          closed_on: string | null;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          /** La sube un disparador en cada cambio. */
+          version: number;
+          updated_at: string;
         },
         {
           id?: string;
@@ -316,6 +409,22 @@ export interface Database {
           icon?: string | null;
           is_active?: boolean;
           sort_order?: number;
+          slug?: string | null;
+          aliases?: string[];
+          status?: ProjectStatus;
+          health?: ProjectHealth | null;
+          health_until?: string | null;
+          objective?: string | null;
+          how_md?: string | null;
+          how_at?: string | null;
+          how_by?: AuthorKind | null;
+          cloud_level?: CloudLevel;
+          started_on?: string | null;
+          target_on?: string | null;
+          closed_on?: string | null;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
         }
       >;
 
@@ -341,12 +450,43 @@ export interface Database {
           notion_page_id: string | null;
           created_at: string;
           updated_at: string;
+          /** La fila «Yo» de core_people = tuya; nulo = sin asignar. */
+          assignee_id: string | null;
+          with_ids: string[];
+          stream_id: string | null;
+          milestone_id: string | null;
+          /** Subtareas, un nivel. */
+          parent_id: string | null;
+          /** Nulo en las tareas de antes de que existiera la columna. */
+          origin: TaskOrigin | null;
+          source_kind: SourceKind | null;
+          /** Opaca. Nunca el texto de un mensaje. */
+          source_ref: string | null;
+          source_label: string | null;
+          source_at: string | null;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
         },
         {
           id?: string;
           user_id: string;
           project_id?: string | null;
           title: string;
+          assignee_id?: string | null;
+          with_ids?: string[];
+          stream_id?: string | null;
+          milestone_id?: string | null;
+          parent_id?: string | null;
+          origin?: TaskOrigin | null;
+          source_kind?: SourceKind | null;
+          source_ref?: string | null;
+          source_label?: string | null;
+          source_at?: string | null;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
           status?: "NO_INICIADA" | "EN_CURSO" | "HECHA";
           priority?: "ALTA" | "MEDIA" | "BAJA";
           due_date?: string | null;
@@ -361,6 +501,294 @@ export interface Database {
           /** Se escribe sólo al importar, para conservar la fecha de Notion. */
           created_at?: string;
           updated_at?: string;
+        }
+      >;
+
+      // ------------------------------------- Vida: proyectos de verdad (E1)
+
+      /** Personas que entran en algo tuyo. Nunca la agenda ni teléfonos enteros. */
+      core_people: Table<
+        {
+          id: string;
+          user_id: string;
+          name: string;
+          aliases: string[];
+          is_owner: boolean;
+          relation: string | null;
+          org: string | null;
+          circle: PersonCircle | null;
+          note: string | null;
+          /** El enlace verificado con su WhatsApp. Sólo lo pone el bot. */
+          has_whatsapp: boolean;
+          /** Lo que dijiste tú: si tiene WhatsApp. No enlaza nada. */
+          whatsapp_hint: "SI" | "NO" | null;
+          phone_tail: string | null;
+          color: ProjectColor | null;
+          archived_at: string | null;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          name: string;
+          aliases?: string[];
+          is_owner?: boolean;
+          relation?: string | null;
+          org?: string | null;
+          circle?: PersonCircle | null;
+          note?: string | null;
+          whatsapp_hint?: "SI" | "NO" | null;
+          phone_tail?: string | null;
+          color?: ProjectColor | null;
+          archived_at?: string | null;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      tasks_project_members: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          person_id: string;
+          role: string | null;
+          does_md: string | null;
+          side: MemberSide | null;
+          is_lead: boolean;
+          since: string | null;
+          active: boolean;
+          sort_order: number;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          person_id: string;
+          role?: string | null;
+          does_md?: string | null;
+          side?: MemberSide | null;
+          is_lead?: boolean;
+          since?: string | null;
+          active?: boolean;
+          sort_order?: number;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      tasks_streams: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          name: string;
+          lead_person_id: string | null;
+          sort_order: number;
+          active: boolean;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          name: string;
+          lead_person_id?: string | null;
+          sort_order?: number;
+          active?: boolean;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      tasks_milestones: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          kind: MilestoneKind;
+          /** La etapa de un hito. Las etapas no cuelgan de nada. */
+          stage_id: string | null;
+          title: string;
+          detail: string | null;
+          starts_on: string | null;
+          due_on: string | null;
+          due_precision: DuePrecision;
+          status: MilestoneStatus;
+          blocked_why: string | null;
+          done_at: string | null;
+          owner_person_id: string | null;
+          sort_order: number;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          kind: MilestoneKind;
+          stage_id?: string | null;
+          title: string;
+          detail?: string | null;
+          starts_on?: string | null;
+          due_on?: string | null;
+          due_precision?: DuePrecision;
+          status?: MilestoneStatus;
+          blocked_why?: string | null;
+          done_at?: string | null;
+          owner_person_id?: string | null;
+          sort_order?: number;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      tasks_project_log: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          /** Cuándo pasó, que no es cuándo se apuntó. */
+          at: string;
+          kind: LogKind;
+          title: string;
+          body: string | null;
+          person_ids: string[];
+          source_kind: SourceKind | null;
+          source_ref: string | null;
+          source_label: string | null;
+          origin: TaskOrigin;
+          /** Lo apuntó la aplicación sola (un cambio de estado). */
+          auto: boolean;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          at?: string;
+          kind: LogKind;
+          title: string;
+          body?: string | null;
+          person_ids?: string[];
+          source_kind?: SourceKind | null;
+          source_ref?: string | null;
+          source_label?: string | null;
+          origin?: TaskOrigin;
+          auto?: boolean;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      tasks_project_docs: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          kind: ProjectDocKind;
+          title: string;
+          body_md: string;
+          made_by: AuthorKind;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          kind: ProjectDocKind;
+          title: string;
+          body_md: string;
+          made_by: AuthorKind;
+        }
+      >;
+
+      /** Las versiones anteriores de un documento. Las escribe un disparador. */
+      tasks_project_doc_versions: Table<
+        {
+          doc_id: string;
+          user_id: string;
+          version: number;
+          body_md: string;
+          made_by: AuthorKind;
+          created_at: string;
+        },
+        {
+          doc_id: string;
+          user_id: string;
+          version: number;
+          body_md: string;
+          made_by: AuthorKind;
+          created_at?: string;
+        }
+      >;
+
+      tasks_project_sources: Table<
+        {
+          id: string;
+          user_id: string;
+          project_id: string;
+          kind: ProjectSourceKind;
+          label: string;
+          /** Opaca (del bot), una dirección web o un adjunto. */
+          ref: string | null;
+          lives: "NUBE" | "MAC";
+          person_ids: string[];
+          at: string | null;
+          duration_sec: number | null;
+          confirmed: boolean;
+          origin: TaskOrigin;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          project_id: string;
+          kind: ProjectSourceKind;
+          label: string;
+          ref?: string | null;
+          lives: "NUBE" | "MAC";
+          person_ids?: string[];
+          at?: string | null;
+          duration_sec?: number | null;
+          confirmed?: boolean;
+          origin?: TaskOrigin;
+          ext_source?: string | null;
+          ext_id?: string | null;
         }
       >;
 

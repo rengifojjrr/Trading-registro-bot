@@ -10,6 +10,7 @@ import {
   averageDaysToDone,
   flowSeries,
   openByCategory,
+  openByProject,
   stalest,
   type AnalysableTask,
 } from "@/modules/tasks/domain/tasks-analysis";
@@ -44,6 +45,9 @@ export default async function TasksAnalysisPage() {
 
   const flow = flowSeries(tasks, from, today, timezone);
   const categories = openByCategory(tasks);
+  // La carga por proyecto vivía en la lista de proyectos; allí ahora va el
+  // semáforo de cada uno, y esto es análisis.
+  const load = openByProject(tasks);
   const stale = stalest(tasks, today, timezone);
   const counts = countTasks(
     tasks.map((t) => ({ status: t.status, priority: t.priority, dueDate: t.dueDate })),
@@ -105,6 +109,19 @@ export default async function TasksAnalysisPage() {
           data={categories}
           colorToken="--mod-tasks"
           height={Math.max(160, categories.length * 34 + 40)}
+        />
+      </ChartFrame>
+
+      <ChartFrame
+        title="Carga por proyecto"
+        question="Tareas pendientes de cada uno."
+        empty={load.length === 0}
+        emptyLabel="Sin tareas pendientes que repartir."
+      >
+        <RankSeries
+          data={load}
+          colorToken="--mod-tasks"
+          height={Math.max(160, load.length * 34 + 40)}
         />
       </ChartFrame>
 

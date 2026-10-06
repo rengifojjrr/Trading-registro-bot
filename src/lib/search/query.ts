@@ -48,6 +48,8 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
     sleeps,
     sessions,
     comments,
+    projects,
+    people,
   ] =
     await Promise.all([
     supabase
@@ -126,6 +128,22 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       .eq("user_id", user.id)
       .ilike("body", patron)
       .order("created_at", { ascending: false })
+      .limit(10),
+    // Los proyectos y las personas: por nombre, objetivo o «quién es». Los
+    // alias se miran en el ordenador (`rank.ts`), que sí ve el array entero.
+    supabase
+      .from("tasks_projects")
+      .select("id, name, objective, aliases, status")
+      .eq("user_id", user.id)
+      .or(`name.ilike.${patron},objective.ilike.${patron},slug.ilike.${patron}`)
+      .limit(10),
+    supabase
+      .from("core_people")
+      .select("id, name, aliases, relation, is_owner")
+      .eq("user_id", user.id)
+      .is("archived_at", null)
+      .eq("is_owner", false)
+      .or(`name.ilike.${patron},relation.ilike.${patron}`)
       .limit(10),
   ]);
 
@@ -224,6 +242,28 @@ export async function searchEverything(query: string): Promise<RankedResult[]> {
       href: `/contenido/${c.id}`,
       haystack: c.title,
       when: c.updated_at,
+    });
+  }
+
+  for (const p of projects.data ?? []) {
+    candidatos.push({
+      kind: "project",
+      id: p.id,
+      title: p.name,
+      subtitle: p.objective ? firstLine(p.objective) : "Proyecto",
+      href: `/tareas/proyectos/${p.id}`,
+      haystack: `${p.name} ${p.aliases.join(" ")} ${p.objective ?? ""}`,
+    });
+  }
+
+  for (const p of people.data ?? []) {
+    candidatos.push({
+      kind: "person",
+      id: p.id,
+      title: p.name,
+      subtitle: p.relation ?? "Persona",
+      href: `/personas/${p.id}`,
+      haystack: `${p.name} ${p.aliases.join(" ")} ${p.relation ?? ""}`,
     });
   }
 

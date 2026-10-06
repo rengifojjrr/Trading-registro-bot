@@ -127,6 +127,8 @@ describe("el buscador cubre los ocho módulos", () => {
       "reading",
       "content",
       "habit",
+      "project",
+      "person",
     ];
     for (const tipo of tipos) {
       expect(KIND_LABELS[tipo], `${tipo} sin etiqueta`).toBeTruthy();

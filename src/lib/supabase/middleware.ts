@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { RUTA_DEL_CODIGO, aalDeToken, esRutaDelCodigo, necesitaCodigo } from "@/lib/auth/mfa";
 import { publicEnv } from "@/lib/env";
 import { authCookieOptions } from "@/lib/supabase/cookie-options";
 
@@ -133,5 +134,30 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // El segundo factor. Sin factor inscrito no se pide nada (la app invita a
+  // inscribirlo); con uno, ninguna ruta privada se ve hasta que la sesión está
+  // en aal2. El token que se lee aquí es el que `getUser()` acaba de validar.
+  if (user && !isPublicPath(pathname) && !esRutaDelCodigo(pathname)) {
+    const aal = necesitaCodigoPosible(user)
+      ? aalDeToken((await supabase.auth.getSession()).data.session?.access_token)
+      : null;
+    if (necesitaCodigo(user, aal)) {
+      const url = request.nextUrl.clone();
+      url.pathname = RUTA_DEL_CODIGO;
+      url.search = "";
+      url.searchParams.set("next", pathname);
+      const redirect = NextResponse.redirect(url);
+      // Lo que `getUser()` haya refrescado tiene que viajar también en la
+      // redirección, o el teléfono se quedaría con la sesión vieja.
+      for (const cookie of supabaseResponse.cookies.getAll()) redirect.cookies.set(cookie);
+      return redirect;
+    }
+  }
+
   return supabaseResponse;
+}
+
+/** Sólo se lee la sesión si hay algún factor verificado: lo normal es que no. */
+function necesitaCodigoPosible(user: { factors?: { status: string }[] | null }): boolean {
+  return (user.factors ?? []).some((f) => f.status === "verified");
 }

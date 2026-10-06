@@ -42,6 +42,35 @@ jobs:
       - name: Presupuesto de tamaño del cliente
         run: node scripts/check-bundle-budget.mjs
 
+  # Todas las migraciones, aplicadas en orden sobre un Postgres 17 vacío (con
+  # lo mínimo de Supabase de cartón: roles, auth.uid()), y las pruebas SQL de
+  # supabase/tests/*.prueba.sql: RLS, claves y disparadores contra una base de
+  # verdad. No toca ninguna base real ni necesita secretos.
+  migraciones:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Migraciones y pruebas SQL
+        run: bash scripts/probar-migraciones-local.sh
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
   # End-to-end tests need a real Supabase project: nearly every page goes
   # through auth middleware and RLS, so a run against a placeholder project
   # would only prove that a broken database renders an error page. Rather

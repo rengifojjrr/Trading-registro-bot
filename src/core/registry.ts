@@ -177,9 +177,12 @@ export const MODULES: ModuleManifest[] = [
     emptyLabel: "Todo al día",
     sections: [
       { href: "/tareas", label: "Hoy" },
+      { href: "/tareas/proyectos", label: "Proyectos" },
+      // Las personas viven en el núcleo (las usarán otros módulos), pero hoy
+      // se llega a ellas desde los proyectos.
+      { href: "/personas", label: "Personas" },
       { href: "/tareas/todas", label: "Todas" },
       { href: "/tareas/calendario", label: "Calendario" },
-      { href: "/tareas/proyectos", label: "Proyectos" },
       { href: "/tareas/analisis", label: "Análisis" },
     ],
   },

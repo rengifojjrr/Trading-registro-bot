@@ -1,92 +1,120 @@
+import Link from "next/link";
+import type { Route } from "next";
+
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartFrame } from "@/core/ui/chart-frame";
-import { RankSeries } from "@/core/ui/charts";
-import { todayIn } from "@/core/today";
-import { userTimezone } from "@/core/user-settings";
-import { openByProject, type AnalysableTask } from "@/modules/tasks/domain/tasks-analysis";
-import { fetchProjects, fetchTasks } from "@/modules/tasks/queries";
-import { ProjectManager } from "@/modules/tasks/ui/project-manager";
-import { TaskList } from "@/modules/tasks/ui/task-list";
+import { EmptyState } from "@/components/shared/empty-state";
+import { cn } from "@/lib/utils";
+import { SecondFactorInvite } from "@/components/settings/second-factor-invite";
+import { PROJECT_STATUS_LABELS, isClosedStatus } from "@/modules/tasks/domain/projects";
+import { fetchProjectsOverview, type ProjectCard as Card } from "@/modules/tasks/project-queries";
+import { NewProjectActions } from "@/modules/tasks/ui/projects/new-project";
+import { ProjectCard } from "@/modules/tasks/ui/projects/project-card";
+import type { ProjectStatus } from "@/types/database";
+import { FolderKanban } from "lucide-react";
 
 /**
- * Tareas: proyectos.
+ * Proyectos: la lista con su semáforo.
  *
- * Un proyecto es sólo un nombre bajo el que agrupar tareas -- fechas, avance
- * y carga se deducen de las tareas que cuelgan de él, así que no hay nada más
- * que rellenar. La gráfica de carga es la que dice si hay uno que se está
- * comiendo la lista entera.
+ * Ordenada por lo que pide atención -- rojo, amarillo, verde -- y no por
+ * nombre: la pregunta al abrirla es «¿qué se está torciendo?». Los terminados,
+ * descartados y archivados van plegados al final; siguen ahí, no estorban.
+ *
+ * La gráfica de carga por proyecto vive ahora en «Análisis».
  */
-export default async function ProjectsPage() {
-  const timezone = await userTimezone();
-  const today = todayIn(timezone);
-  const [tasks, projects] = await Promise.all([fetchTasks(), fetchProjects(true)]);
+const ORDEN_SALUD: Record<string, number> = { ROJO: 0, AMARILLO: 1, VERDE: 2 };
+const FILTROS: ProjectStatus[] = ["EN_MARCHA", "ESPERANDO", "ATASCADO", "EN_PAUSA", "IDEA"];
 
-  const counts: Record<string, { open: number; done: number }> = {};
-  for (const task of tasks) {
-    if (!task.project_id) continue;
-    const entry = counts[task.project_id] ?? { open: 0, done: 0 };
-    if (task.status === "HECHA") entry.done += 1;
-    else entry.open += 1;
-    counts[task.project_id] = entry;
-  }
+export default async function ProjectsPage(props: PageProps<"/tareas/proyectos">) {
+  const searchParams = await props.searchParams;
+  const estado = typeof searchParams.estado === "string" ? searchParams.estado : null;
+  const { cards, today, timezone } = await fetchProjectsOverview();
 
-  const analysable: AnalysableTask[] = tasks.map((t) => ({
-    status: t.status,
-    priority: t.priority,
-    dueDate: t.due_date,
-    createdAt: t.created_at,
-    completedAt: t.completed_at,
-    categories: t.categories,
-    projectName: t.projectName,
-  }));
-  const load = openByProject(analysable);
+  const vivos = cards.filter((c) => c.project.is_active && !isClosedStatus(c.project.status));
+  const cerrados = cards.filter((c) => c.project.is_active && isClosedStatus(c.project.status));
+  const archivados = cards.filter((c) => !c.project.is_active);
 
-  const unassigned = tasks.filter((t) => t.project_id === null && t.status !== "HECHA");
+  const filtrados = (estado ? vivos.filter((c) => c.project.status === estado) : vivos).sort(
+    (a, b) =>
+      (ORDEN_SALUD[a.computed.health.level ?? ""] ?? 3) - (ORDEN_SALUD[b.computed.health.level ?? ""] ?? 3) ||
+      a.project.name.localeCompare(b.project.name, "es"),
+  );
+  const cuenta = (s: ProjectStatus) => vivos.filter((c) => c.project.status === s).length;
 
   return (
     <>
-      <PageHeader title="Proyectos" description="Bajo qué se agrupan tus tareas y cuánto carga cada uno." />
+      <PageHeader
+        title="Proyectos"
+        description="Cómo va cada uno, quién está y qué viene."
+        action={<NewProjectActions />}
+      />
 
-      <ChartFrame
-        title="Carga por proyecto"
-        question="Tareas pendientes de cada uno."
-        empty={load.length === 0}
-        emptyLabel="Sin tareas pendientes que repartir."
-      >
-        <RankSeries
-          data={load}
-          colorToken="--mod-tasks"
-          height={Math.max(160, load.length * 34 + 40)}
-        />
-      </ChartFrame>
+      <SecondFactorInvite />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Tus proyectos</CardTitle>
-          <CardDescription>
-            Archivar no borra: las tareas que colgaban de él siguen ahí, con su historial intacto.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProjectManager projects={projects} counts={counts} />
-        </CardContent>
-      </Card>
-
-      {unassigned.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Sin proyecto · {unassigned.length}</CardTitle>
-            <CardDescription>
-              No es un problema -- muchas tareas no pertenecen a nada -- pero si son demasiadas suele
-              faltar un proyecto.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TaskList tasks={unassigned} today={today} showDone={false} />
-          </CardContent>
-        </Card>
+      {vivos.length > 0 ? (
+        <nav aria-label="Filtrar por estado" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
+          <Chip href="/tareas/proyectos" activo={estado === null}>
+            Todos {vivos.length}
+          </Chip>
+          {FILTROS.filter((s) => cuenta(s) > 0).map((s) => (
+            <Chip key={s} href={`/tareas/proyectos?estado=${s}`} activo={estado === s}>
+              {PROJECT_STATUS_LABELS[s]} {cuenta(s)}
+            </Chip>
+          ))}
+        </nav>
       ) : null}
+
+      {cards.length === 0 ? (
+        <EmptyState
+          icon={FolderKanban}
+          title="Aún no tienes proyectos"
+          description="Crea uno o cárgalo desde un archivo de Claude: la ficha, la gente, la hoja de ruta y las tareas de una vez."
+        />
+      ) : filtrados.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Ninguno en este estado.</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtrados.map((card) => (
+            <ProjectCard key={card.project.id} card={card} today={today} timezone={timezone} />
+          ))}
+        </div>
+      )}
+
+      <Plegados titulo="Terminados y descartados" cards={cerrados} today={today} timezone={timezone} />
+      <Plegados titulo="Archivados" cards={archivados} today={today} timezone={timezone} />
     </>
+  );
+}
+
+function Chip({ href, activo, children }: { href: string; activo: boolean; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href as Route}
+      aria-current={activo ? "page" : undefined}
+      className={cn(
+        "flex min-h-11 shrink-0 items-center rounded-full border px-3 text-sm whitespace-nowrap transition-colors",
+        activo
+          ? "border-primary bg-accent font-medium text-primary"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function Plegados({ titulo, cards, today, timezone }: { titulo: string; cards: Card[]; today: string; timezone: string }) {
+  if (cards.length === 0) return null;
+  return (
+    <details className="group">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+        <span aria-hidden className="transition-transform group-open:rotate-90">▸</span>
+        {titulo} ({cards.length})
+      </summary>
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
+          <ProjectCard key={card.project.id} card={card} today={today} timezone={timezone} />
+        ))}
+      </div>
+    </details>
   );
 }

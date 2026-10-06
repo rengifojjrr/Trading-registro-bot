@@ -1,11 +1,11 @@
 "use client";
 
 import {
+  FolderKanban,
   Home,
   ListChecks,
   Search,
   TrendingUp,
-  UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,16 +44,23 @@ interface Destino {
   prefijos?: string[];
 }
 
+/**
+ * Hoy · Proyectos · Tareas · Trading · Buscar.
+ *
+ * Proyectos entró en el sitio de Comidas: es lo que se abre a diario desde el
+ * teléfono para ver cómo va cada negocio y qué le toca a cada uno. Comidas
+ * sigue a dos toques, en el menú.
+ */
 const DESTINOS: Destino[] = [
   { href: "/", label: "Hoy", icon: Home, exact: true },
+  { href: "/tareas/proyectos", label: "Proyectos", icon: FolderKanban, prefijos: ["/personas", "/tareas/hitos"] },
+  { href: "/tareas", label: "Tareas", icon: ListChecks },
   {
     href: "/trading",
     label: "Trading",
     icon: TrendingUp,
     prefijos: ["/trades", "/journal", "/analytics", "/risk", "/bots", "/backtest", "/behaviour", "/review"],
   },
-  { href: "/tareas", label: "Tareas", icon: ListChecks },
-  { href: "/comidas", label: "Comidas", icon: UtensilsCrossed },
 ];
 
 export function BottomNav() {
@@ -68,11 +75,7 @@ export function BottomNav() {
       className="sticky bottom-0 z-30 flex shrink-0 items-stretch border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {DESTINOS.map((destino) => {
-        const activo = destino.exact
-          ? pathname === destino.href
-          : pathname === destino.href ||
-            pathname.startsWith(`${destino.href}/`) ||
-            (destino.prefijos?.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ?? false);
+        const activo = destinoActivo(destino, pathname);
 
         const Icon = destino.icon;
         return (
@@ -102,4 +105,20 @@ export function BottomNav() {
       </button>
     </nav>
   );
+}
+
+/**
+ * ¿Es este el destino de la ruta? Gana el más largo: dentro de un proyecto
+ * (`/tareas/proyectos/…`) está marcado «Proyectos», no «Tareas», aunque la
+ * ruta empiece por `/tareas`.
+ */
+export function destinoActivo(destino: Destino, pathname: string, todos: Destino[] = DESTINOS): boolean {
+  const largo = (d: Destino): number => {
+    if (d.exact) return pathname === d.href ? d.href.length : -1;
+    const rutas = [d.href, ...(d.prefijos ?? [])];
+    return Math.max(-1, ...rutas.filter((r) => pathname === r || pathname.startsWith(`${r}/`)).map((r) => r.length));
+  };
+  const mio = largo(destino);
+  if (mio < 0) return false;
+  return todos.every((otro) => otro === destino || largo(otro) <= mio);
 }

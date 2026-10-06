@@ -18,7 +18,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * añade una sin `verifyCronRequest`, quedaría abierta a internet).
  */
 
-const sesion = vi.hoisted(() => ({ usuario: null as { id: string } | null }));
+const sesion = vi.hoisted(() => ({
+  usuario: null as { id: string; factors?: { status: string; factor_type: string }[] } | null,
+  token: null as string | null,
+}));
 
 vi.mock("@/lib/env", () => ({
   publicEnv: () => ({
@@ -30,7 +33,12 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({
-    auth: { getUser: async () => ({ data: { user: sesion.usuario } }) },
+    auth: {
+      getUser: async () => ({ data: { user: sesion.usuario } }),
+      getSession: async () => ({
+        data: { session: sesion.token ? { access_token: sesion.token } : null },
+      }),
+    },
   }),
 }));
 
@@ -38,6 +46,7 @@ import { isPublicPath, updateSession } from "./middleware";
 
 beforeEach(() => {
   sesion.usuario = null;
+  sesion.token = null;
 });
 
 function pide(ruta: string, cabeceras: Record<string, string> = {}) {
@@ -116,4 +125,69 @@ describe("cada ruta de /api/cron exige su secreto antes de nada", () => {
       }
     },
   );
+});
+
+describe("el segundo factor, una vez inscrito", () => {
+  /** Un JWT de mentira: el guardián sólo lee `aal` de uno que getUser ya validó. */
+  function token(aal: "aal1" | "aal2") {
+    const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    return `${b64({ alg: "HS256" })}.${b64({ sub: "u-1", aal })}.firma`;
+  }
+  const CON_FACTOR = { id: "u-1", factors: [{ status: "verified", factor_type: "totp" }] };
+
+  const PRIVADAS = ["/", "/tareas/proyectos", "/tareas/proyectos/abc", "/personas", "/trades", "/settings", "/api/push/pending"];
+
+  it("sin aal2 no se ve ninguna ruta privada: todas van a pedir el código", async () => {
+    sesion.usuario = CON_FACTOR;
+    sesion.token = token("aal1");
+    for (const ruta of PRIVADAS) {
+      const respuesta = await pide(ruta);
+      expect(respuesta.status, ruta).toBe(307);
+      const destino = new URL(respuesta.headers.get("location") ?? "");
+      expect(destino.pathname, ruta).toBe("/verificar");
+      expect(destino.searchParams.get("next"), ruta).toBe(ruta);
+    }
+  });
+
+  it("con aal2 pasa a todas", async () => {
+    sesion.usuario = CON_FACTOR;
+    sesion.token = token("aal2");
+    for (const ruta of PRIVADAS) {
+      const respuesta = await pide(ruta);
+      expect(respuesta.headers.get("x-middleware-next"), ruta).toBe("1");
+    }
+  });
+
+  it("la pantalla del código sí se ve con aal1 (si no, nadie podría escribirlo)", async () => {
+    sesion.usuario = CON_FACTOR;
+    sesion.token = token("aal1");
+    expect((await pide("/verificar")).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("sin factor inscrito no se pide nada: nadie se queda fuera", async () => {
+    sesion.usuario = { id: "u-1", factors: [] };
+    sesion.token = token("aal1");
+    for (const ruta of PRIVADAS) {
+      expect((await pide(ruta)).headers.get("x-middleware-next"), ruta).toBe("1");
+    }
+  });
+
+  it("un factor a medio inscribir tampoco bloquea", async () => {
+    sesion.usuario = { id: "u-1", factors: [{ status: "unverified", factor_type: "totp" }] };
+    sesion.token = token("aal1");
+    expect((await pide("/tareas/proyectos")).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("un token que no se entiende cuenta como aal1", async () => {
+    sesion.usuario = CON_FACTOR;
+    sesion.token = "esto-no-es-un-jwt";
+    expect((await pide("/tareas")).status).toBe(307);
+  });
+
+  it("los crons y lo público siguen sin pedir nada", async () => {
+    sesion.usuario = CON_FACTOR;
+    sesion.token = token("aal1");
+    expect((await pide("/api/cron/sync")).headers.get("x-middleware-next")).toBe("1");
+    expect((await pide("/manifest.webmanifest")).headers.get("x-middleware-next")).toBe("1");
+  });
 });

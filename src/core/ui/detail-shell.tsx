@@ -40,6 +40,7 @@ export function DetailShell({
   attachments,
   attachmentSlots,
   related,
+  header,
 }: {
   kind: EntityKind;
   entityId: string;
@@ -56,9 +57,18 @@ export function DetailShell({
   attachments: AttachmentRow[];
   attachmentSlots?: readonly AttachmentSlot[];
   related: RelatedRow[];
+  /**
+   * Una cabecera propia en lugar de la de siempre.
+   *
+   * La del proyecto cambia el estado y el semáforo de un toque y lleva su
+   * propio menú; las cajas del pie (vínculos, ficheros, comentarios) son las
+   * mismas que en todas las fichas.
+   */
+  header?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-5">
+      {header ?? (
       <div className="flex flex-col gap-3">
         <Link
           href={backHref}
@@ -97,6 +107,7 @@ export function DetailShell({
           />
         </div>
       </div>
+      )}
 
       {children}
 

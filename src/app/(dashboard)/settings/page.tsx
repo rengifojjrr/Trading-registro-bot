@@ -9,6 +9,7 @@ import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
 import { PushToggle } from "@/components/settings/push-toggle";
+import { SecondFactor } from "@/components/settings/second-factor";
 import { RebuildHistory } from "@/components/settings/rebuild-history";
 import { SyncNow } from "@/components/settings/sync-now";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
 import { createClient } from "@/lib/supabase/server";
+import { formatDate } from "@/lib/format";
 import { readGateEvidence } from "@/lib/validation/evidence";
 import { evaluateValidationGate } from "@/lib/validation/gate";
 
@@ -47,6 +49,16 @@ export default async function SettingsPage() {
 
   const gate = evaluateValidationGate(await readGateEvidence(user.id));
 
+  // Los teléfonos del segundo factor. Sólo los verificados: uno a medio
+  // inscribir no protege nada y se limpia solo al empezar otro.
+  const factores = (user.factors ?? [])
+    .filter((f) => f.status === "verified" && f.factor_type === "totp")
+    .map((f) => ({
+      id: f.id,
+      nombre: f.friendly_name ?? "Teléfono",
+      desde: formatDate(f.created_at, settings?.timezone || "UTC"),
+    }));
+
   return (
     <>
       <PageHeader title="Configuración" />
@@ -68,6 +80,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <AppearancePanel appearance={readAppearance((name) => store.get(name)?.value)} />
+        </CardContent>
+      </Card>
+
+      <Card id="segundo-factor" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Segundo factor</CardTitle>
+          <CardDescription>
+            Un código de seis cifras de una app del teléfono, además de la contraseña. Se pide una vez en
+            cada teléfono; después la sesión se queda.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SecondFactor factores={factores} />
         </CardContent>
       </Card>
 

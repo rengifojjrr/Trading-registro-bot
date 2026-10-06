@@ -88,6 +88,19 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     detailBase: "/tareas",
     colorToken: "--mod-tasks",
   },
+  /**
+   * El proyecto, con todo lo que cuelga de él y no tiene sentido sin él.
+   *
+   * Sin estos hijos, borrar un proyecto y deshacerlo devolvía el nombre y nada
+   * más: la gente, los frentes, la hoja de ruta, la bitácora y la ficha se iban
+   * por la cascada de la base y no volvían. El orden importa: al devolverlos
+   * se insertan en este orden, y los hitos necesitan su etapa y los miembros a
+   * su proyecto.
+   *
+   * Lo que no vuelve: el hito y el frente de cada tarea (las tareas no son
+   * hijas, se quedan sin proyecto como siempre, y al borrar el hito pierden el
+   * enlace) y las versiones viejas de la ficha.
+   */
   PROYECTO: {
     kind: "PROYECTO",
     label: "Proyecto",
@@ -96,6 +109,28 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     iconColumn: "icon",
     detailBase: "/tareas/proyectos",
     colorToken: "--mod-tasks",
+    children: [
+      { table: "tasks_streams", foreignKey: "project_id" },
+      { table: "tasks_milestones", foreignKey: "project_id" },
+      { table: "tasks_project_members", foreignKey: "project_id" },
+      { table: "tasks_project_log", foreignKey: "project_id" },
+      { table: "tasks_project_docs", foreignKey: "project_id" },
+      { table: "tasks_project_sources", foreignKey: "project_id" },
+    ],
+  },
+  /**
+   * Una persona de tus proyectos. Su papel en cada uno vuelve con ella; sus
+   * tareas no son hijas: al borrarla se quedan «sin asignar», no se borran.
+   */
+  PERSONA: {
+    kind: "PERSONA",
+    label: "Persona",
+    table: "core_people",
+    titleColumn: "name",
+    iconColumn: null,
+    detailBase: "/personas",
+    colorToken: "--mod-tasks",
+    children: [{ table: "tasks_project_members", foreignKey: "person_id" }],
   },
   COMIDA: {
     kind: "COMIDA",

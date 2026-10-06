@@ -22,6 +22,8 @@ export type ResultKind =
   | "reading"
   | "content"
   | "habit"
+  | "project"
+  | "person"
   // La paleta deja de sólo navegar: «apuntar una tarea» o «sincronizar ahora»
   // son el camino más corto para la mitad de lo que se hace a diario.
   | "action";
@@ -117,7 +119,11 @@ export const PAGES: { title: string; href: string; keywords: string }[] = [
   { title: "Configuración", href: "/settings", keywords: "ajustes cuenta respaldo copia" },
   { title: "Sueño", href: "/sueno", keywords: "dormir descanso" },
   { title: "Hábitos", href: "/habitos", keywords: "rutinas" },
-  { title: "Tareas", href: "/tareas", keywords: "pendientes proyectos" },
+  { title: "Tareas", href: "/tareas", keywords: "pendientes" },
+  { title: "Proyectos", href: "/tareas/proyectos", keywords: "negocios hoja de ruta semáforo" },
+  { title: "Personas", href: "/personas", keywords: "gente socios contactos quién" },
+  { title: "Importar desde Claude", href: "/tareas/proyectos/importar", keywords: "archivo proyecto markdown" },
+  { title: "Segundo factor", href: "/settings#segundo-factor", keywords: "código teléfono seguridad totp autenticación" },
   { title: "Comidas", href: "/comidas", keywords: "alimentación recetas" },
   { title: "Lecturas", href: "/lecturas", keywords: "libros leer" },
   { title: "Contenido", href: "/contenido", keywords: "vídeos artículos" },
@@ -196,5 +202,7 @@ export const KIND_LABELS: Record<ResultKind, string> = {
   reading: "Lectura",
   content: "Contenido",
   habit: "Hábito",
+  project: "Proyecto",
+  person: "Persona",
   action: "Acción",
 };
