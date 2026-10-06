@@ -116,6 +116,10 @@ self.addEventListener("fetch", (event) => {
  * y decir algo que ya no es cierto -- «la sincronización falló» cuando la
  * siguiente ya fue bien --. Preguntando al despertar, se enseña lo que hay.
  *
+ * Un recordatorio que acaba de sonar viene con sus botones, «Hecho» y «En 1 h»,
+ * y su propia etiqueta: dos recordatorios a la misma hora son dos avisos, no
+ * uno que tapa al otro.
+ *
  * Si la petición falla -- sin red justo en ese momento, o la sesión caducó --
  * se enseña un aviso genérico en vez de ninguno: el sistema operativo exige
  * mostrar algo tras despertar por un push, y no hacerlo hace que deje de
@@ -126,6 +130,7 @@ self.addEventListener("push", (event) => {
     (async () => {
       let titulo = "Vida";
       let cuerpo = "Tienes algo pendiente.";
+      let href = "/activity";
 
       try {
         const res = await fetch("/api/push/pending", { credentials: "include" });
@@ -133,8 +138,28 @@ self.addEventListener("push", (event) => {
           const datos = await res.json();
           // Ya se leyó desde otro sitio: no se enseña nada nuevo.
           if (!datos.hay) return;
+
+          if (Array.isArray(datos.avisos) && datos.avisos.length > 0) {
+            await Promise.all(
+              datos.avisos.slice(0, 3).map((aviso) =>
+                self.registration.showNotification(aviso.title || "Recordatorio", {
+                  body: aviso.body || "",
+                  icon: "/icons/icon-192.png",
+                  badge: "/icons/icon-192.png",
+                  tag: aviso.tag || "vida-recordatorio",
+                  renotify: true,
+                  // Lo que necesitan los botones y el toque: qué disparo es y a dónde ir.
+                  data: { href: aviso.href || "/tareas/recordatorios", recordatorio: aviso.recordatorio || null },
+                  actions: (aviso.acciones || []).slice(0, 2).map((a) => ({ action: a.action, title: a.title })),
+                }),
+              ),
+            );
+            return;
+          }
+
           titulo = datos.title || titulo;
           cuerpo = datos.body || cuerpo;
+          href = datos.href || href;
         }
       } catch {
         // Se queda el genérico.
@@ -148,25 +173,65 @@ self.addEventListener("push", (event) => {
         // que falla cada cinco minutos son cinco veces la misma noticia.
         tag: "vida-aviso",
         renotify: true,
+        data: { href },
       });
     })(),
   );
 });
 
-/** Al pulsar el aviso, a Actividad -- reutilizando la pestaña si ya está abierta. */
+/** Una ruta de la propia aplicación, nunca otra web (`//otro.sitio` tampoco). */
+function rutaPropia(href) {
+  return typeof href === "string" && /^\/(?!\/)/.test(href) ? href : "/activity";
+}
+
+/**
+ * Al pulsar el aviso, a donde lleva (Actividad, o el recordatorio) --
+ * reutilizando la pestaña si ya está abierta.
+ *
+ * Los botones de un recordatorio no abren nada: «Hecho» lo cierra y «En 1 h» lo
+ * pospone desde aquí, con la sesión del teléfono. Si no se puede (sin red, o la
+ * sesión caducó), se abre la aplicación en el recordatorio para hacerlo a mano.
+ */
 self.addEventListener("notificationclick", (event) => {
+  const datos = event.notification.data || {};
+  const destino = rutaPropia(datos.href);
   event.notification.close();
-  event.waitUntil(
-    (async () => {
-      const abiertas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const cliente of abiertas) {
-        if ("focus" in cliente) {
-          await cliente.focus();
-          if ("navigate" in cliente) await cliente.navigate("/activity");
-          return;
-        }
+
+  const abrir = async () => {
+    const abiertas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const cliente of abiertas) {
+      if ("focus" in cliente) {
+        await cliente.focus();
+        if ("navigate" in cliente) await cliente.navigate(destino);
+        return;
       }
-      await self.clients.openWindow("/activity");
-    })(),
-  );
+    }
+    await self.clients.openWindow(destino);
+  };
+
+  if ((event.action === "hecho" || event.action === "posponer") && datos.recordatorio) {
+    event.waitUntil(
+      (async () => {
+        try {
+          const res = await fetch("/api/recordatorios/accion", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: datos.recordatorio.id,
+              fireAt: datos.recordatorio.fireAt,
+              accion: event.action,
+              minutos: 60,
+            }),
+          });
+          if (!res.ok) await abrir();
+        } catch {
+          await abrir();
+        }
+      })(),
+    );
+    return;
+  }
+
+  event.waitUntil(abrir());
 });

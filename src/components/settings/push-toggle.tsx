@@ -116,9 +116,8 @@ export function PushToggle({ publicKey }: { publicKey: string | null }) {
   if (!publicKey) {
     return (
       <p className="text-xs text-muted-foreground">
-        Falta configurar las claves de avisos en el servidor (<code>VAPID_PUBLIC_KEY</code>,{" "}
-        <code>VAPID_PRIVATE_KEY</code> y <code>VAPID_SUBJECT</code>). Hasta entonces los avisos sólo
-        se ven dentro de la aplicación.
+        Los avisos al teléfono no están listos en el servidor. Mientras tanto, los avisos y los
+        recordatorios se ven dentro de la aplicación (en Hoy y en la campana).
       </p>
     );
   }

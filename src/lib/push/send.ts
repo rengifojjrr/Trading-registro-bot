@@ -4,6 +4,8 @@ import { SignJWT, importPKCS8 } from "jose";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { vapidKeys } from "./keys";
+
 /**
  * Avisos que llegan al teléfono.
  *
@@ -22,8 +24,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * enseña **lo que hay ahora**, no lo que había cuando se mandó. Un push con
  * cuerpo puede llegar veinte minutos tarde y decir algo que ya no es cierto.
  *
- * Sin claves VAPID configuradas no hace nada y lo dice en el registro: es una
- * mejora, no un requisito, y la aplicación tiene que funcionar igual sin ella.
+ * Sin claves VAPID no hace nada: es una mejora, no un requisito, y la
+ * aplicación tiene que funcionar igual sin ella. Las claves salen del entorno
+ * o, si no están, de la base (`lib/push/keys.ts`).
  */
 
 /** Cuánto vale el JWT de VAPID. El estándar no admite más de 24 horas. */
@@ -36,17 +39,9 @@ interface Suscripcion {
   auth: string;
 }
 
-function claves() {
-  const publica = process.env.VAPID_PUBLIC_KEY;
-  const privada = process.env.VAPID_PRIVATE_KEY;
-  const contacto = process.env.VAPID_SUBJECT;
-  if (!publica || !privada || !contacto) return null;
-  return { publica, privada, contacto };
-}
-
-/** Si el envío de avisos está configurado. Lo usa la pantalla de ajustes. */
-export function pushConfigured(): boolean {
-  return claves() !== null;
+/** Si el envío de avisos está configurado (en el entorno o en la base). */
+export async function pushConfigured(): Promise<boolean> {
+  return (await vapidKeys()) !== null;
 }
 
 /**
@@ -76,7 +71,7 @@ async function firmarVapid(endpoint: string, privadaPem: string, contacto: strin
  * borran, que es lo que el estándar pide hacer con un 404 o un 410.
  */
 export async function sendPushToUser(userId: string): Promise<{ sent: number }> {
-  const config = claves();
+  const config = await vapidKeys();
   if (!config) return { sent: 0 };
 
   const supabase = createAdminClient();
@@ -117,7 +112,11 @@ export async function sendPushToUser(userId: string): Promise<{ sent: number }> 
           return;
         }
 
-        console.error("[push] respuesta inesperada", res.status, await res.text());
+        // Sólo el código: el cuerpo lo escribe el servicio de push y no hace
+        // falta en un registro. Un 401/403 casi siempre es una suscripción
+        // hecha con otro par de claves (se cambiaron): hay que volver a
+        // activar los avisos en ese dispositivo.
+        console.error("[push] respuesta inesperada", res.status);
       } catch (error) {
         console.error("[push] fallo al enviar", error);
       }

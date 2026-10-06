@@ -43,6 +43,13 @@ const PUBLIC_PATH_PREFIXES = [
   // `/api/export/backup` NO va aquí: es la descarga del botón de Ajustes, con
   // la sesión de quien la pulsa. El respaldo programado es `/api/cron/backup`.
   "/api/cron",
+  // El reloj de los recordatorios (pg_cron + pg_net desde la base) pide aquí
+  // que suene el teléfono. Sin sesión, como los crons; la ruta exige el
+  // secreto de `core_reloj` en tiempo constante. Sólo esta: los botones de la
+  // notificación (`/api/recordatorios/accion`) van con la sesión.
+  "/api/recordatorios/disparar",
+  // Sí o no: ¿puede este despliegue mandar push? Sin claves ni datos.
+  "/api/push/estado",
   "/auth/confirm",
   "/auth/auth-code-error",
   "/sw.js",

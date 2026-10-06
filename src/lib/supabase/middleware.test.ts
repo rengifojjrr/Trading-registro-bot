@@ -65,6 +65,19 @@ describe("lo que el guardián deja pasar sin sesión", () => {
     expect(isPublicPath("/api/cron-falso/sync")).toBe(false);
   });
 
+  it("el reloj de los recordatorios llega a su ruta; sus botones, no", () => {
+    // El reloj (pg_cron) llama sin sesión y la ruta exige el secreto de la base.
+    expect(isPublicPath("/api/recordatorios/disparar")).toBe(true);
+    // «Hecho» y «En 1 h» van con la sesión del teléfono: nunca sin ella.
+    expect(isPublicPath("/api/recordatorios/accion")).toBe(false);
+    expect(isPublicPath("/api/recordatorios")).toBe(false);
+    expect(isPublicPath("/api/recordatorios/disparar-otro")).toBe(false);
+    // Si el push está listo, sí o no: público. Lo que enseña cada aviso, no.
+    expect(isPublicPath("/api/push/estado")).toBe(true);
+    expect(isPublicPath("/api/push/pending")).toBe(false);
+    expect(isPublicPath("/api/push/subscribe")).toBe(false);
+  });
+
   it("la descarga del respaldo sigue detrás de la sesión: es el botón de Ajustes", () => {
     expect(isPublicPath("/api/export/backup")).toBe(false);
     expect(isPublicPath("/api/export/trades")).toBe(false);
@@ -86,7 +99,7 @@ describe("updateSession sin sesión", () => {
   });
 
   it("lo demás sigue yendo a /login", async () => {
-    for (const ruta of ["/api/export/backup", "/tareas", "/api/push/pending"]) {
+    for (const ruta of ["/api/export/backup", "/tareas", "/api/push/pending", "/api/recordatorios/accion", "/tareas/recordatorios"]) {
       const respuesta = await pide(ruta);
       expect(respuesta.status, ruta).toBe(307);
       expect(new URL(respuesta.headers.get("location") ?? "").pathname, ruta).toBe("/login");

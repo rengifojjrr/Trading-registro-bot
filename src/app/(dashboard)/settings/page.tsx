@@ -13,9 +13,11 @@ import { SecondFactor } from "@/components/settings/second-factor";
 import { RebuildHistory } from "@/components/settings/rebuild-history";
 import { SyncNow } from "@/components/settings/sync-now";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { appOrigin } from "@/lib/app-url";
 import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
+import { ensureVapidKeys } from "@/lib/push/keys";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
 import { readGateEvidence } from "@/lib/validation/evidence";
@@ -27,6 +29,9 @@ export default async function SettingsPage() {
   const user = await requireUser();
   const supabase = await createClient();
   const store = await cookies();
+  // Las claves de los avisos: las del entorno o, si no están, las de la base
+  // (se generan la primera vez). Sin ellas no hay botón de activar.
+  const vapidPublica = (await ensureVapidKeys(await appOrigin()))?.publica ?? null;
 
   const [{ data: settings }, { data: fieldMappingRows }] = await Promise.all([
       supabase
@@ -116,7 +121,7 @@ export default async function SettingsPage() {
               blockedReason={gate.blockedReason}
             />
           }
-          pushSlot={<PushToggle publicKey={process.env.VAPID_PUBLIC_KEY ?? null} />}
+          pushSlot={<PushToggle publicKey={vapidPublica} />}
           notionMappingsSlot={<NotionFieldMappings mappings={fieldMappings} />}
           backupSlot={
             <>
