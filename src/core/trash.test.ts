@@ -116,3 +116,76 @@ describe("la papelera de una persona", () => {
     expect(db.t.tasks_items.find((t) => t.id === "t2")?.assignee_id).toBe(TOMAS);
   });
 });
+
+describe("la papelera de un proyecto", () => {
+  const P = "00000000-0000-7000-8000-0000000000e1";
+
+  beforeEach(() => {
+    db.t.tasks_projects = [{ id: P, user_id: USER, name: "Finca inventada" }];
+    db.t.tasks_milestones = [
+      { id: "e1", user_id: USER, project_id: P, kind: "ETAPA", title: "Etapa uno", stage_id: null },
+      { id: "h2", user_id: USER, project_id: P, kind: "HITO", title: "Planos", stage_id: "e1" },
+    ];
+    db.t.tasks_streams = [{ id: "f2", user_id: USER, project_id: P, name: "Obra" }];
+    db.t.tasks_project_members = [{ id: "m2", user_id: USER, project_id: P, person_id: LUCIA }];
+    db.t.tasks_project_log = [];
+    db.t.tasks_project_docs = [];
+    db.t.tasks_project_sources = [];
+    db.t.tasks_items = [
+      { id: "t1", user_id: USER, title: "Pedir planos", project_id: P, milestone_id: "h2", stream_id: "f2" },
+      { id: "t2", user_id: USER, title: "Licencia", project_id: P, milestone_id: null, stream_id: "f2" },
+      { id: "t3", user_id: USER, title: "Suelta", project_id: null, milestone_id: null, stream_id: null },
+    ];
+  });
+
+  /** Lo que haría la base al borrar el proyecto: cascada a sus hijos y soltar las tareas. */
+  function borrarProyecto() {
+    for (const t of db.t.tasks_items) {
+      if (t.project_id === P) t.project_id = null;
+      if (t.milestone_id === "h2" || t.milestone_id === "e1") t.milestone_id = null;
+      if (t.stream_id === "f2") t.stream_id = null;
+    }
+    for (const tabla of ["tasks_milestones", "tasks_streams", "tasks_project_members"]) {
+      db.t[tabla] = db.t[tabla].filter((f) => f.project_id !== P);
+    }
+  }
+
+  it("deshacer devuelve las tareas a su proyecto, a su hito y a su frente", async () => {
+    const trashId = await moveToTrash("PROYECTO", P);
+    expect(trashId).toBeTruthy();
+    borrarProyecto();
+    expect(db.t.tasks_items.filter((t) => t.project_id === P)).toHaveLength(0);
+
+    expect(await restoreFromTrash(trashId!)).toBe(true);
+    const t1 = db.t.tasks_items.find((t) => t.id === "t1")!;
+    const t2 = db.t.tasks_items.find((t) => t.id === "t2")!;
+    expect([t1.project_id, t1.milestone_id, t1.stream_id]).toEqual([P, "h2", "f2"]);
+    expect([t2.project_id, t2.milestone_id, t2.stream_id]).toEqual([P, null, "f2"]);
+    // La que no era del proyecto no se toca.
+    expect(db.t.tasks_items.find((t) => t.id === "t3")?.project_id).toBeNull();
+    expect(db.t.tasks_milestones.map((m) => m.id).sort()).toEqual(["e1", "h2"]);
+  });
+
+  it("lo que entretanto moviste a otro proyecto se queda donde lo pusiste", async () => {
+    const trashId = await moveToTrash("PROYECTO", P);
+    borrarProyecto();
+    db.t.tasks_items.find((t) => t.id === "t2")!.project_id = "otro";
+    await restoreFromTrash(trashId!);
+    expect(db.t.tasks_items.find((t) => t.id === "t2")?.project_id).toBe("otro");
+    expect(db.t.tasks_items.find((t) => t.id === "t1")?.project_id).toBe(P);
+  });
+
+  it("un enlace guardado que no es de la entidad no se aplica", async () => {
+    const trashId = await moveToTrash("PROYECTO", P);
+    borrarProyecto();
+    const entrada = db.t.core_trash.find((e) => e.id === trashId)!;
+    const payload = entrada.payload as { relinks: { table: string; column: string; ids: string[]; target?: string }[] };
+    // Alguien tocó la papelera para colgar una tarea de un hito que no vuelve.
+    payload.relinks.push({ table: "tasks_items", column: "milestone_id", ids: ["t3"], target: "hito-ajeno" });
+    payload.relinks.push({ table: "tasks_items", column: "assignee_id", ids: ["t3"] });
+    await restoreFromTrash(trashId!);
+    const t3 = db.t.tasks_items.find((t) => t.id === "t3")!;
+    expect(t3.milestone_id).toBeNull();
+    expect(t3.assignee_id).toBeUndefined();
+  });
+});

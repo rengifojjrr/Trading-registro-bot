@@ -1,7 +1,9 @@
 "use client";
 
-import { ArrowLeft, Archive, FileDown, FileUp, MoreHorizontal, Pencil, RotateCcw } from "lucide-react";
+import { ArrowLeft, Archive, BellPlus, FileDown, FileUp, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -15,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { restoreAction, trashAction } from "@/core/actions";
 import { PeopleStack } from "@/core/ui/person-avatar";
 import { cn } from "@/lib/utils";
 import { COLOR_LABELS, PROJECT_COLORS, colorVars } from "@/core/notion-colors";
@@ -51,6 +54,8 @@ export interface HeaderProps {
   progress: { done: number; total: number; label: string };
   people: Parameters<typeof PeopleStack>[0]["people"];
   today: string;
+  /** Cuántas tareas tiene, para decir qué pasa con ellas al borrarlo. */
+  taskCount?: number;
 }
 
 /**
@@ -59,8 +64,9 @@ export interface HeaderProps {
  * Lo que se cambia más -- el estado y el semáforo -- se cambia aquí mismo con
  * un toque, sin abrir un formulario. Lo demás está en «⋯ → Editar».
  */
-export function ProjectHeader({ project, health, progress, people, today }: HeaderProps) {
+export function ProjectHeader({ project, health, progress, people, today, taskCount = 0 }: HeaderProps) {
   const [pending, start] = useTransition();
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -82,6 +88,42 @@ export function ProjectHeader({ project, health, progress, people, today }: Head
     start(async () => {
       await setProjectActive(project.id, !project.is_active);
       toast.success(project.is_active ? "Proyecto archivado." : "Proyecto reactivado.");
+    });
+
+  // Borrar con red debajo, como todo: a la papelera, con «Deshacer», que lo
+  // devuelve con su gente, su hoja de ruta y sus tareas en su sitio (cada una a
+  // su hito y a su frente). Sin «¿seguro?»: deshacer protege más que un
+  // diálogo que se acepta sin leer.
+  const borrar = () =>
+    start(async () => {
+      const ruta = `/tareas/proyectos/${project.id}`;
+      const { trashId } = await trashAction("PROYECTO", project.id, "/tareas/proyectos");
+      if (!trashId) {
+        toast.error("No se pudo borrar.");
+        return;
+      }
+      toast.success(`«${project.name}» en la papelera.`, {
+        description:
+          taskCount > 0
+            ? `${taskCount === 1 ? "Su tarea se queda" : `Sus ${taskCount} tareas se quedan`} sin proyecto hasta que lo deshagas. Se guarda 30 días.`
+            : "Se guarda 30 días.",
+        duration: 12000,
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            void (async () => {
+              const ok = await restoreAction(trashId, ruta);
+              if (ok) {
+                toast.success("Recuperado, con sus tareas.");
+                router.push(ruta as Route);
+              } else {
+                toast.error("No se pudo recuperar. Está en la papelera.");
+              }
+            })();
+          },
+        },
+      });
+      router.push("/tareas/proyectos");
     });
 
   const fechas = [
@@ -118,10 +160,18 @@ export function ProjectHeader({ project, health, progress, people, today }: Head
                 <FileUp className="size-4" aria-hidden /> Importar desde Claude
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`/tareas/recordatorios?nuevo=1&proyecto=${project.id}` as Route}>
+                <BellPlus className="size-4" aria-hidden /> Recordatorio
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={archivar}>
               {project.is_active ? <Archive className="size-4" aria-hidden /> : <RotateCcw className="size-4" aria-hidden />}
               {project.is_active ? "Archivar" : "Reactivar"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={borrar} className="text-negative focus:text-negative">
+              <Trash2 className="size-4" aria-hidden /> Borrar
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

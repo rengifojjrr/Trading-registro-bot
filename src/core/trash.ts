@@ -52,6 +52,10 @@ function untypedSelect(builder: unknown): { select: (cols: string) => UntypedFil
   return builder as { select: (cols: string) => UntypedFilter<{ data: unknown[] | null }> };
 }
 
+function untypedSelectCols(builder: unknown): { select: (cols: string) => UntypedFilter<{ data: unknown[] | null }> } {
+  return builder as { select: (cols: string) => UntypedFilter<{ data: unknown[] | null }> };
+}
+
 function untypedUpdate(builder: unknown): { update: (values: Record<string, string>) => UntypedFilter<{ error: unknown }> } {
   return builder as { update: (values: Record<string, string>) => UntypedFilter<{ error: unknown }> };
 }
@@ -102,6 +106,25 @@ export async function moveToTrash(kind: EntityKind, id: string): Promise<string 
       .eq("user_id", user.id);
     const ids = ((data ?? []) as { id: string }[]).map((x) => x.id);
     if (ids.length > 0) relinks.push({ table: r.table, column: r.column, ids });
+  }
+
+  // Lo que colgaba de un hijo (la tarea de un hito del proyecto): se guarda de
+  // cuál, para volver a colgarla del mismo al deshacer.
+  for (const r of meta.childRelinks ?? []) {
+    const hijos = ((children[r.child] ?? []) as { id?: Json }[])
+      .map((h) => h.id)
+      .filter((x): x is string => typeof x === "string");
+    if (hijos.length === 0) continue;
+    const { data } = await untypedSelectCols(supabase.from(r.table))
+      .select(`id, ${r.column}`)
+      .in(r.column, hijos.slice(0, 1000))
+      .eq("user_id", user.id);
+    const porHijo = new Map<string, string[]>();
+    for (const fila of (data ?? []) as Record<string, string>[]) {
+      const hijo = fila[r.column];
+      porHijo.set(hijo, [...(porHijo.get(hijo) ?? []), fila.id]);
+    }
+    for (const [target, ids] of porHijo) relinks.push({ table: r.table, column: r.column, ids, target });
   }
 
   const payload: TrashPayload = {
@@ -159,16 +182,39 @@ export async function restoreFromTrash(trashId: string): Promise<boolean> {
     await untyped(supabase.from(table)).insert(rows);
   }
 
-  // Lo que apuntaba a ella vuelve a apuntar, si nadie lo ha cambiado entretanto
-  // (una tarea que ya pasaste a otra persona se queda con la otra).
+  // Lo que apuntaba a ella (o a uno de sus hijos) vuelve a apuntar, si nadie
+  // lo ha cambiado entretanto (una tarea que ya pasaste a otra persona se queda
+  // con la otra). Sólo los pares tabla/columna que la entidad declara: la
+  // papelera no escribe donde le diga lo guardado.
+  const hijosDevueltos = new Set(
+    Object.values(payload.children ?? {})
+      .flat()
+      .map((h) => (h as { id?: Json }).id)
+      .filter((x): x is string => typeof x === "string"),
+  );
   for (const r of payload.relinks ?? []) {
-    const entry = (meta.relinks ?? []).find((x) => x.table === r.table && x.column === r.column);
-    if (!entry || r.ids.length === 0) continue;
-    await untypedUpdate(supabase.from(entry.table))
-      .update({ [entry.column]: (payload.row as { id: string }).id })
+    if (r.ids.length === 0) continue;
+    let destino: string;
+    let tabla: string;
+    let columna: string;
+    if (r.target === undefined) {
+      const entry = (meta.relinks ?? []).find((x) => x.table === r.table && x.column === r.column);
+      if (!entry) continue;
+      destino = (payload.row as { id: string }).id;
+      tabla = entry.table;
+      columna = entry.column;
+    } else {
+      const entry = (meta.childRelinks ?? []).find((x) => x.table === r.table && x.column === r.column);
+      if (!entry || !hijosDevueltos.has(r.target)) continue;
+      destino = r.target;
+      tabla = entry.table;
+      columna = entry.column;
+    }
+    await untypedUpdate(supabase.from(tabla))
+      .update({ [columna]: destino })
       .in("id", r.ids.slice(0, 1000))
       .eq("user_id", user.id)
-      .is(entry.column, null);
+      .is(columna, null);
   }
 
   await supabase.from("core_trash").delete().eq("id", trashId).eq("user_id", user.id);

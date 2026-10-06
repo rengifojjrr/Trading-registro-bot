@@ -283,6 +283,12 @@ function NuevaTarea({
       toast.success("Tarea añadida.");
       setTitle("");
       setDue("");
+      // La siguiente empieza limpia: el frente, el hito y la prioridad de la
+      // anterior no se heredan sin que se vean (con «Frente, hito y prioridad»
+      // plegado, la segunda tarea acababa en el hito de la primera sin avisar).
+      setStream("");
+      setHito(hitoInicial ?? "");
+      setPriority("MEDIA");
       onDone?.();
     });
   };
@@ -323,6 +329,34 @@ function NuevaTarea({
         >
           <SlidersHorizontal className="size-3.5" aria-hidden /> Frente, hito y prioridad
         </button>
+      ) : null}
+      {/* Lo que va a llevar la tarea aunque el panel esté plegado: que nada
+          se cuele sin verse. */}
+      {!mas && !parentId && (stream || hito || priority !== "MEDIA") ? (
+        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" aria-live="polite">
+          <span>
+            Irá{" "}
+            {[
+              hito ? `en el hito «${hitos.find((h) => h.id === hito)?.title ?? "elegido"}»` : null,
+              stream ? `en el frente «${streams.find((x) => x.id === stream)?.name ?? "elegido"}»` : null,
+              priority !== "MEDIA" ? `con prioridad ${PRIORITY_LABELS[priority].toLowerCase()}` : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            .
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setStream("");
+              setHito("");
+              setPriority("MEDIA");
+            }}
+            className="min-h-11 underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Quitar
+          </button>
+        </p>
       ) : null}
       {mas ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">

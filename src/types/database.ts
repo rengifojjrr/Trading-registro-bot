@@ -91,7 +91,9 @@ export type EntityKind =
   | "ESTRATEGIA"
   | "ETIQUETA"
   // La persona de tus proyectos tiene su ficha, con comentarios y papelera.
-  | "PERSONA";
+  | "PERSONA"
+  // Borrar un recordatorio lo manda a la papelera, con «Deshacer».
+  | "RECORDATORIO";
 
 /** Los diez nombres de color de Notion, copiados en lugar de traducidos. */
 export type ProjectColor =
@@ -196,7 +198,16 @@ export interface TrashPayload {
   row: Record<string, Json>;
   children?: Record<string, Record<string, Json>[]>;
   /** Filas que apuntaban a ésta (`tabla.columna` → ids) y se vuelven a enlazar al restaurar. */
-  relinks?: { table: string; column: string; ids: string[] }[];
+  relinks?: {
+    table: string;
+    column: string;
+    ids: string[];
+    /**
+     * A quién vuelven a apuntar. Sin él, a la fila borrada; con él, a uno de
+     * sus hijos (la tarea que colgaba de un hito del proyecto borrado).
+     */
+    target?: string;
+  }[];
 }
 
 export interface Database {

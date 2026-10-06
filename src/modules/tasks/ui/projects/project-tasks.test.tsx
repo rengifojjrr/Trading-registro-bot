@@ -14,8 +14,13 @@ import { ProjectTasks } from "./project-tasks";
  * Personas inventadas.
  */
 
+const acciones = vi.hoisted(() => ({ altas: [] as Record<string, unknown>[] }));
+
 vi.mock("@/modules/tasks/project-actions", () => ({
-  addProjectTask: async () => ({ error: null }),
+  addProjectTask: async (_p: string, datos: Record<string, unknown>) => {
+    acciones.altas.push(datos);
+    return { error: null };
+  },
   setProjectTaskStatus: async () => ({ error: null }),
   updateProjectTask: async () => ({ error: null }),
 }));
@@ -208,5 +213,59 @@ describe("el semáforo", () => {
   it("sin semáforo (en pausa) dice el estado", () => {
     render(<HealthDot level={null} why="En pausa" />);
     expect(screen.getByText("En pausa")).toBeInTheDocument();
+  });
+});
+
+describe("«Nueva tarea» no hereda sin avisar", () => {
+  const FRENTE = { id: "00000000-0000-7000-8000-0000000000f1", name: "Obra" };
+  const HITO = { id: "00000000-0000-7000-8000-0000000000a1", title: "Planos aprobados" };
+
+  function pintarConFrentes(defaultMilestoneId?: string) {
+    return render(
+      <ProjectTasks
+        projectId="p1"
+        tasks={[]}
+        members={[{ person: YO, role: null, waitingDays: null }]}
+        people={[YO]}
+        ownerId={YO.id}
+        streams={[{ ...FRENTE, project_id: "p1", lead_person_id: null, sort_order: 0, active: true } as never]}
+        milestones={[{ ...HITO, kind: "HITO", project_id: "p1", stage_id: null, status: "PENDIENTE", due_on: null } as never]}
+        today="2026-10-06"
+        defaultMilestoneId={defaultMilestoneId}
+      />,
+    );
+  }
+
+  it("la segunda tarea no se queda con el hito ni el frente de la primera", async () => {
+    acciones.altas.length = 0;
+    const user = userEvent.setup();
+    pintarConFrentes();
+    await user.click(screen.getByRole("button", { name: /Frente, hito y prioridad/ }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Frente" }), FRENTE.id);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Hito" }), HITO.id);
+    await user.type(screen.getByRole("textbox", { name: "Nueva tarea" }), "Primera");
+    await user.click(screen.getByRole("button", { name: "Añadir" }));
+    await vi.waitFor(() => expect(acciones.altas).toHaveLength(1));
+    expect(acciones.altas[0]).toMatchObject({ stream_id: FRENTE.id, milestone_id: HITO.id });
+
+    // Se pliega el panel y se apunta otra: va limpia.
+    await user.click(screen.getByRole("button", { name: /Frente, hito y prioridad/ }));
+    await user.type(screen.getByRole("textbox", { name: "Nueva tarea" }), "Segunda");
+    await user.click(screen.getByRole("button", { name: "Añadir" }));
+    await vi.waitFor(() => expect(acciones.altas).toHaveLength(2));
+    expect(acciones.altas[1]).toMatchObject({ stream_id: "", milestone_id: "" });
+  });
+
+  it("en la página de un hito, lo que se hereda se ve y se puede quitar", async () => {
+    acciones.altas.length = 0;
+    const user = userEvent.setup();
+    pintarConFrentes(HITO.id);
+    expect(screen.getByText(/Irá en el hito «Planos aprobados»/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Quitar" }));
+    expect(screen.queryByText(/Irá en el hito/)).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Nueva tarea" }), "Suelta");
+    await user.click(screen.getByRole("button", { name: "Añadir" }));
+    await vi.waitFor(() => expect(acciones.altas).toHaveLength(1));
+    expect(acciones.altas[0]).toMatchObject({ milestone_id: "" });
   });
 });

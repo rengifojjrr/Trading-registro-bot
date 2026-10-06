@@ -63,6 +63,13 @@ export interface EntityMeta {
    * apuntaban y, al restaurar, las vuelve a enlazar (sólo si siguen vacías).
    */
   relinks?: { table: string; column: string }[];
+  /**
+   * Lo que apunta a un HIJO de esta fila, no a ella. Al borrar un proyecto sus
+   * hitos y frentes se archivan con él, y las tareas que colgaban de ellos se
+   * quedaban sin hito ni frente para siempre. La papelera guarda de qué hijo
+   * colgaba cada una y, al restaurar, las vuelve a colgar (si siguen vacías).
+   */
+  childRelinks?: { child: string; table: string; column: string }[];
 }
 
 export const ENTITIES: Record<EntityKind, EntityMeta> = {
@@ -106,9 +113,12 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
    * se insertan en este orden, y los hitos necesitan su etapa y los miembros a
    * su proyecto.
    *
-   * Lo que no vuelve: el hito y el frente de cada tarea (las tareas no son
-   * hijas, se quedan sin proyecto como siempre, y al borrar el hito pierden el
-   * enlace) y las versiones viejas de la ficha.
+   * Las tareas no son hijas: al borrar el proyecto se quedan sin él (la base
+   * suelta `project_id`, y su hito y su frente al irse estos), no se borran. Al
+   * deshacer vuelven a su proyecto, a su hito y a su frente (`relinks` y
+   * `childRelinks`), salvo las que entretanto moviste a otro sitio.
+   *
+   * Lo que no vuelve: las versiones viejas de la ficha.
    */
   PROYECTO: {
     kind: "PROYECTO",
@@ -125,6 +135,11 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
       { table: "tasks_project_log", foreignKey: "project_id" },
       { table: "tasks_project_docs", foreignKey: "project_id" },
       { table: "tasks_project_sources", foreignKey: "project_id" },
+    ],
+    relinks: [{ table: "tasks_items", column: "project_id" }],
+    childRelinks: [
+      { child: "tasks_milestones", table: "tasks_items", column: "milestone_id" },
+      { child: "tasks_streams", table: "tasks_items", column: "stream_id" },
     ],
   },
   /**
@@ -145,6 +160,20 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
       { table: "tasks_milestones", column: "owner_person_id" },
       { table: "tasks_streams", column: "lead_person_id" },
     ],
+  },
+  /**
+   * Un recordatorio. Vuelve con sus disparos; al volver, la base recalcula
+   * cuándo suena (no suena lo que pasó mientras estaba borrado).
+   */
+  RECORDATORIO: {
+    kind: "RECORDATORIO",
+    label: "Recordatorio",
+    table: "core_reminders",
+    titleColumn: "text",
+    iconColumn: null,
+    detailBase: "/tareas/recordatorios",
+    colorToken: "--mod-tasks",
+    children: [{ table: "core_reminder_fires", foreignKey: "reminder_id" }],
   },
   COMIDA: {
     kind: "COMIDA",

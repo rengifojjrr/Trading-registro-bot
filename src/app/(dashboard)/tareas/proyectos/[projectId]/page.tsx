@@ -92,6 +92,7 @@ export default async function ProjectDetailPage({
             progress={{ ...computed.progress, label: progressLabel(computed.progress) }}
             people={gente}
             today={today}
+            taskCount={datos.tasks.length}
           />
           <HowCard
             projectId={project.id}
