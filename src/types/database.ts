@@ -133,6 +133,26 @@ export type AuthorKind = "OWNER" | "CLAUDE" | "BOT";
 export type FieldAuthor = "owner" | "claude" | "bot";
 export type FieldSrc = Record<string, FieldAuthor>;
 
+// ------------------------------------------------ El puente con el bot (E4)
+// Espejan los check de `20261006200000_el_puente_con_el_bot.sql`.
+
+/** Quién habla por el puente: el bot en la Mac, el bot en un servidor, Claude Code. */
+export type PuenteCliente = "mac-1" | "vps-1" | "claude-1";
+
+export type InboxKind =
+  | "TAREA"
+  | "AVANCE"
+  | "DECISION"
+  | "HITO"
+  | "PERSONA"
+  | "MIEMBRO"
+  | "FUENTE"
+  | "COMO_VA"
+  | "CIERRE"
+  | "ORDEN";
+
+export type InboxStatus = "ABIERTA" | "ACEPTADA" | "DESCARTADA" | "CADUCADA";
+
 export type PersonCircle = "FAMILIA" | "AMIGOS" | "TRABAJO" | "CLIENTES" | "SERVICIOS" | "OTROS";
 export type MemberSide = "NOSOTROS" | "CONTRAPARTE" | "ASESOR" | "OTRO";
 export type MilestoneKind = "ETAPA" | "HITO";
@@ -548,6 +568,8 @@ export interface Database {
           circle?: PersonCircle | null;
           note?: string | null;
           whatsapp_hint?: "SI" | "NO" | null;
+          /** Sólo lo cambia el bot por el puente, tras el «sí» escrito del dueño. */
+          has_whatsapp?: boolean;
           phone_tail?: string | null;
           color?: ProjectColor | null;
           archived_at?: string | null;
@@ -797,6 +819,170 @@ export interface Database {
           origin?: TaskOrigin;
           ext_source?: string | null;
           ext_id?: string | null;
+        }
+      >;
+
+      // ------------------------------------------ El puente con el bot (E4)
+      // Ver supabase/migrations/20261006200000_el_puente_con_el_bot.sql.
+
+      /** Para revisar: lo que el bot propone, con título corto y tapado. */
+      core_inbox: Table<
+        {
+          id: string;
+          user_id: string;
+          kind: InboxKind;
+          project_id: string | null;
+          alt_project_ids: string[];
+          title: string;
+          payload: Json;
+          confidence: "FIRME" | "DUDOSA";
+          why: string | null;
+          source_kind: SourceKind | null;
+          /** Opaca: sólo la abre el panel de la Mac. */
+          source_ref: string | null;
+          source_label: string | null;
+          source_at: string | null;
+          status: InboxStatus;
+          decided_at: string | null;
+          decided_via: "WEB" | "WHATSAPP" | "VOZ" | "CLAUDE" | null;
+          dismiss_reason: "NO_ES_TAREA" | "OTRO_PROYECTO" | "YA_HECHA" | "OTRO" | null;
+          result_kind: string | null;
+          result_id: string | null;
+          expires_at: string;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          kind: InboxKind;
+          project_id?: string | null;
+          alt_project_ids?: string[];
+          title: string;
+          payload?: Json;
+          confidence?: "FIRME" | "DUDOSA";
+          why?: string | null;
+          source_kind?: SourceKind | null;
+          source_ref?: string | null;
+          source_label?: string | null;
+          source_at?: string | null;
+          status?: InboxStatus;
+          decided_at?: string | null;
+          decided_via?: "WEB" | "WHATSAPP" | "VOZ" | "CLAUDE" | null;
+          dismiss_reason?: "NO_ES_TAREA" | "OTRO_PROYECTO" | "YA_HECHA" | "OTRO" | null;
+          result_kind?: string | null;
+          result_id?: string | null;
+          expires_at?: string;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      /** Sal y huella de cada llave del puente: la llave se deriva, no se guarda. Sólo el rol de servicio. */
+      puente_llaves: Table<
+        {
+          id: string;
+          user_id: string;
+          cliente: PuenteCliente;
+          sal: string;
+          huella: string;
+          etiqueta: string | null;
+          creada_en: string;
+          usada_en: string | null;
+          revocada_en: string | null;
+        },
+        {
+          id?: string;
+          user_id: string;
+          cliente: PuenteCliente;
+          sal: string;
+          huella: string;
+          etiqueta?: string | null;
+          usada_en?: string | null;
+          revocada_en?: string | null;
+        }
+      >;
+
+      /** Nonces gastados (15 min). Sólo los toca `puente_usar_nonce`. */
+      puente_nonces: Table<
+        { llave_id: string; nonce: string; visto_en: string },
+        { llave_id: string; nonce: string; visto_en?: string }
+      >;
+
+      /** El latido de cada cliente. El dueño lo lee (la tarjeta de WhatsApp); escribe sólo el puente. */
+      puente_clientes: Table<
+        {
+          user_id: string;
+          cliente: PuenteCliente;
+          visto_en: string | null;
+          estado_en: string | null;
+          boot_id: string | null;
+          boot_anterior: string | null;
+          boot_cambio_en: string | null;
+          dos_motores_en: string | null;
+          version: string | null;
+          panel_url: string | null;
+          wa_conectado: boolean | null;
+          donde: "MAC" | "SERVIDOR" | null;
+        },
+        {
+          user_id: string;
+          cliente: PuenteCliente;
+          visto_en?: string | null;
+          estado_en?: string | null;
+          boot_id?: string | null;
+          boot_anterior?: string | null;
+          boot_cambio_en?: string | null;
+          dos_motores_en?: string | null;
+          version?: string | null;
+          panel_url?: string | null;
+          wa_conectado?: boolean | null;
+          donde?: "MAC" | "SERVIDOR" | null;
+        }
+      >;
+
+      /** Operaciones ya aplicadas y su resultado: un reenvío devuelve lo mismo. */
+      puente_ops: Table<
+        {
+          op_id: string;
+          user_id: string;
+          cliente: PuenteCliente;
+          kind: string;
+          aplicada_en: string;
+          resultado: Json;
+        },
+        {
+          op_id: string;
+          user_id: string;
+          cliente: PuenteCliente;
+          kind: string;
+          aplicada_en?: string;
+          resultado: Json;
+        }
+      >;
+
+      /** El feed: qué fila cambió y cuándo (la llenan disparadores). */
+      puente_cambios: Table<
+        {
+          seq: number;
+          user_id: string;
+          entidad: string;
+          entidad_id: string;
+          op: "upsert" | "delete";
+          version: number | null;
+          por: PuenteCliente | null;
+          cambiado_en: string;
+        },
+        {
+          user_id: string;
+          entidad: string;
+          entidad_id: string;
+          op: "upsert" | "delete";
+          version?: number | null;
+          por?: PuenteCliente | null;
         }
       >;
 
@@ -2916,6 +3102,14 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      /**
+       * Gasta un nonce del puente: true la primera vez, false si se repite.
+       * Sólo el rol de servicio. Ver `20261006200000_el_puente_con_el_bot.sql`.
+       */
+      puente_usar_nonce: {
+        Args: { p_llave: string; p_nonce: string };
+        Returns: boolean;
+      };
       /**
        * Escribe una reconstrucción completa en una sola transacción.
        *

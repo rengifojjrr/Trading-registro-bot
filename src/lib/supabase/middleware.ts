@@ -43,6 +43,12 @@ const PUBLIC_PATH_PREFIXES = [
   // `/api/export/backup` NO va aquí: es la descarga del botón de Ajustes, con
   // la sesión de quien la pulsa. El respaldo programado es `/api/cron/backup`.
   "/api/cron",
+  // El puente con el bot de WhatsApp (y con Claude Code en la Mac). Llaman sin
+  // sesión de Supabase, con una firma HMAC por cliente, hora y nonce; sin esta
+  // exención recibían el mismo 307 a /login que los crons. Cada ruta de ahí
+  // empieza por `abrirPeticion`, que comprueba la firma antes de nada (lo
+  // vigila middleware.test.ts) y sólo toca la lista blanca de tablas.
+  "/api/puente",
   "/auth/confirm",
   "/auth/auth-code-error",
   "/sw.js",

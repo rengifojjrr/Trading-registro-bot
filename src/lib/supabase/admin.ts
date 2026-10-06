@@ -20,7 +20,7 @@ import type { Database } from "@/types/database";
  * Throws if SUPABASE_SERVICE_ROLE_KEY is not configured, since callers of
  * this module only exist in code paths that require it.
  */
-export function createAdminClient() {
+export function createAdminClient(opciones: { cabeceras?: Record<string, string> } = {}) {
   const env = serverEnv();
   if (!env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
@@ -36,6 +36,9 @@ export function createAdminClient() {
         autoRefreshToken: false,
         persistSession: false,
       },
+      // El puente con el bot manda `x-puente-cliente`: el disparador del feed
+      // la lee para apuntar quién hizo el cambio (sólo con este rol).
+      ...(opciones.cabeceras ? { global: { headers: opciones.cabeceras } } : {}),
     },
   );
 }

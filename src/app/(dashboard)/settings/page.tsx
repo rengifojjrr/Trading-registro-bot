@@ -8,6 +8,7 @@ import { ModuleExports } from "@/components/settings/module-exports";
 import { BackupExport } from "@/components/settings/backup-export";
 import { ConnectionStatus } from "@/components/settings/connection-status";
 import { NotionFieldMappings, type FieldMappingState } from "@/components/settings/notion-field-mappings";
+import { PuenteLlaves } from "@/components/settings/puente-llaves";
 import { PushToggle } from "@/components/settings/push-toggle";
 import { SecondFactor } from "@/components/settings/second-factor";
 import { RebuildHistory } from "@/components/settings/rebuild-history";
@@ -16,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { readAppearance } from "@/lib/appearance/storage";
 import { requireUser } from "@/lib/auth/require-user";
 import { NOTION_FIELD_MAPPINGS } from "@/lib/notion/mapper";
+import { llavesDe } from "@/lib/puente/llaves";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
 import { readGateEvidence } from "@/lib/validation/evidence";
@@ -48,6 +50,9 @@ export default async function SettingsPage() {
   }));
 
   const gate = evaluateValidationGate(await readGateEvidence(user.id));
+
+  // Las llaves del puente con el bot: cuándo se crearon y usaron, nunca la llave.
+  const llavesDelPuente = await llavesDe(user.id).catch(() => []);
 
   // Los teléfonos del segundo factor. Sólo los verificados: uno a medio
   // inscribir no protege nada y se limpia solo al empezar otro.
@@ -93,6 +98,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <SecondFactor factores={factores} />
+        </CardContent>
+      </Card>
+
+      <Card id="puente" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>El puente con el bot</CardTitle>
+          <CardDescription>
+            Las llaves con las que el bot de WhatsApp y Claude Code en tu Mac hablan con la app. El bot siempre llama a la app;
+            la app nunca llama a tu Mac. Puedes tener dos a la vez para cambiarlas sin cortar, y revocar cada una cuando quieras.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PuenteLlaves llaves={llavesDelPuente} />
         </CardContent>
       </Card>
 

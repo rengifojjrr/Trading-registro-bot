@@ -14,6 +14,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { gatherPending } from "@/lib/pending/gather";
 import { readSystemHealth } from "@/lib/pending/setup";
 import { SetupPanel } from "@/components/vida/setup-panel";
+import { WhatsAppTile } from "@/components/vida/whatsapp-tile";
 
 import { quickLogReading, quickLogSleep } from "./quick-log-actions";
 
@@ -101,6 +102,8 @@ export default async function TodayPage({
           {MODULES.map((module) => (
             <ModuleCard key={module.id} module={module} value={formatModuleValue(module.id, metrics)} />
           ))}
+          {/* El bot de WhatsApp: sólo cifras y si da señales (el puente, E4). */}
+          <WhatsAppTile />
         </div>
       </section>
 
