@@ -1,13 +1,17 @@
 "use client";
 
-import { FileText, Loader2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { leerArchivoProyecto, type ArchivoProyecto } from "@/modules/tasks/domain/project-file";
+import {
+  leerArchivoProyecto,
+  nombreDeArchivoPrivado,
+  type ArchivoProyecto,
+} from "@/modules/tasks/domain/project-file";
 import { applyProjectImport, planProjectImport, type PlanVisible } from "@/modules/tasks/project-actions";
 
 /**
@@ -31,6 +35,16 @@ export function ImportFromClaude() {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
+  const planRef = useRef<HTMLDivElement>(null);
+
+  // En el teléfono el plan sale debajo del cuadro de texto, fuera de la
+  // pantalla: se baja hasta él en cuanto llega.
+  useEffect(() => {
+    if (!plan || !planRef.current) return;
+    const quieto =
+      typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    planRef.current.scrollIntoView?.({ behavior: quieto ? "auto" : "smooth", block: "start" });
+  }, [plan]);
 
   const reiniciar = () => {
     setArchivo(null);
@@ -42,7 +56,7 @@ export function ImportFromClaude() {
     const f = e.target.files?.[0];
     if (!f) return;
     reiniciar();
-    if (/\.privad[oa]\b/i.test(f.name)) {
+    if (nombreDeArchivoPrivado(f.name)) {
       setError("Ese es el archivo privado del proyecto: nunca sube a la app. Elige el otro, el que no dice «privado».");
       setTexto("");
       setNombreArchivo(undefined);
@@ -94,8 +108,12 @@ export function ImportFromClaude() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 rounded-[14px] border border-border bg-card p-4">
         <p className="text-sm text-muted-foreground">
-          Elige el archivo que te dejó Claude en <code className="text-xs">data/proyectos/</code> o pégalo
-          aquí. Antes de crear nada te enseño lo que entendí.
+          Pega aquí el archivo que te pasó Claude, o elígelo si lo tienes en este aparato
+          <span className="hidden md:inline">
+            {" "}
+            (en la Mac está en <code className="text-xs">data/proyectos/</code>)
+          </span>
+          . Antes de crear nada te enseño lo que entendí.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -138,7 +156,11 @@ export function ImportFromClaude() {
         </div>
       ) : null}
 
-      {plan ? <PlanPreview plan={plan} pending={pending} onCrear={crear} onCancelar={reiniciar} /> : null}
+      {plan ? (
+        <div ref={planRef} className="scroll-mt-4">
+          <PlanPreview plan={plan} pending={pending} onCrear={crear} onCancelar={reiniciar} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -156,6 +178,11 @@ export function PlanPreview({
 }) {
   const [titulo, ...resto] = plan.lineas;
   const nada = plan.operaciones === 0;
+  const revisar = plan.revisar ?? [];
+  const [visto, setVisto] = useState(false);
+  // Un plan nuevo (otra lectura, o «algo cambió») se vuelve a mirar.
+  useEffect(() => setVisto(false), [plan.huella]);
+  const falta = revisar.length > 0 && !visto && !nada;
   return (
     <section aria-label="Así lo entendí" className="flex flex-col gap-3 rounded-[14px] border border-border bg-card p-4">
       <h2 className="text-sm font-medium text-muted-foreground">Así lo entendí</h2>
@@ -177,9 +204,41 @@ export function PlanPreview({
       <Lista titulo="No se borra" items={plan.noSeBorra} />
       <Lista titulo="Avisos" items={plan.avisos} plegada />
 
+      {!plan.bloqueo && revisar.length > 0 ? (
+        <div
+          role="group"
+          aria-labelledby="mira-antes"
+          className="flex flex-col gap-2 rounded-xl border border-warning/50 bg-warning/10 p-3 text-sm"
+        >
+          <p id="mira-antes" className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="size-4 shrink-0 text-warning" aria-hidden />
+            Míralo antes de {plan.nuevo ? "crear" : "aplicar"}
+          </p>
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            {revisar.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+          <p className="text-muted-foreground">
+            Si el archivo no sigue el formato, pídele a Claude que lo pase al formato de proyecto y vuelve a pegarlo.
+          </p>
+          {!nada ? (
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={visto}
+                onChange={(e) => setVisto(e.target.checked)}
+                className="size-5 shrink-0"
+              />
+              Lo he mirado: {plan.nuevo ? "crear" : "aplicar"} igual
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+
       {!plan.bloqueo ? (
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={onCrear} disabled={pending || nada} className="min-h-11">
+          <Button type="button" onClick={onCrear} disabled={pending || nada || falta} className="min-h-11">
             {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
             {nada ? "No hay nada que cambiar" : plan.nuevo ? "Crear" : "Aplicar los cambios"}
           </Button>

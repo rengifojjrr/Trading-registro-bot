@@ -16,6 +16,7 @@ import { ImportFromClaude } from "./import-from-claude";
  */
 
 const llamadas = vi.hoisted(() => ({
+  revisar: [] as string[],
   plan: [] as unknown[],
   aplicar: [] as { archivo: unknown; huella: string }[],
   push: [] as string[],
@@ -44,7 +45,7 @@ const PLAN = {
 vi.mock("@/modules/tasks/project-actions", () => ({
   planProjectImport: async (archivo: unknown) => {
     llamadas.plan.push(archivo);
-    return { error: null, plan: PLAN };
+    return { error: null, plan: { ...PLAN, revisar: llamadas.revisar } };
   },
   applyProjectImport: async (archivo: unknown, huella: string) => {
     llamadas.aplicar.push({ archivo, huella });
@@ -72,6 +73,7 @@ proyecto: Finca El Roble
 `;
 
 beforeEach(() => {
+  llamadas.revisar = [];
   llamadas.plan = [];
   llamadas.aplicar = [];
   llamadas.push = [];
@@ -118,6 +120,32 @@ describe("Importar desde Claude", () => {
     await user.paste("## Tareas\n- [ ] algo sin proyecto\n");
     await user.click(screen.getByRole("button", { name: "Ver qué va a hacer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No encuentro el nombre del proyecto");
+    expect(llamadas.plan).toEqual([]);
+  });
+
+  it("lo que hay que mirar sale abierto encima del botón, y «Crear» espera a que digas que lo viste", async () => {
+    llamadas.revisar = ["Línea 3: No sé leer la sección «Presupuesto»: la salto entera."];
+    const user = userEvent.setup();
+    render(<ImportFromClaude />);
+    await user.click(screen.getByLabelText("El archivo del proyecto"));
+    await user.paste(ARCHIVO);
+    await user.click(screen.getByRole("button", { name: "Ver qué va a hacer" }));
+
+    const grupo = await screen.findByRole("group", { name: "Míralo antes de crear" });
+    expect(grupo).toHaveTextContent("«Presupuesto»");
+    const crear = screen.getByRole("button", { name: "Crear" });
+    expect(crear).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Lo he mirado: crear igual" }));
+    expect(crear).toBeEnabled();
+    await user.click(crear);
+    await waitFor(() => expect(llamadas.aplicar).toHaveLength(1));
+  });
+
+  it("un archivo que sólo dice «privado» en el nombre, con guion, también se para", async () => {
+    const user = userEvent.setup();
+    render(<ImportFromClaude />);
+    await user.upload(screen.getByLabelText("Elegir archivo"), new File([ARCHIVO], "finca-privado.md", { type: "text/markdown" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("nunca sube a la app");
     expect(llamadas.plan).toEqual([]);
   });
 

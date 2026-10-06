@@ -98,6 +98,8 @@ export interface HitoExistente {
   owner_person_id: string | null;
   detail: string | null;
   field_src: FieldSrc;
+  /** Los títulos que tuvo antes (al renombrarlo en la app): sirven para casarlo. */
+  former_titles?: string[];
 }
 
 export interface TareaExistente {
@@ -108,9 +110,12 @@ export interface TareaExistente {
   priority: TaskPriority;
   assignee_id: string | null;
   stream_id: string | null;
+  milestone_id?: string | null;
   parent_id: string | null;
   notes: string | null;
   field_src: FieldSrc;
+  /** Los títulos que tuvo antes (al renombrarla en la app): sirven para casarla. */
+  former_titles?: string[];
 }
 
 export interface EntradaExistente {
@@ -196,15 +201,25 @@ export interface Plan {
   /** Lo que no se borra aunque el archivo lo pida o no lo nombre. */
   noSeBorra: string[];
   avisos: string[];
+  /**
+   * Lo que hay que mirar antes de crear: secciones que se saltan, nombres que
+   * parecen frases, cosas que se parecen a otras que ya tienes. La pantalla lo
+   * enseña abierto encima del botón y pide «crear igual».
+   */
+  revisar: string[];
   /** Si no se puede importar, por qué. */
   bloqueo: string | null;
   cuentas: {
     personasNuevas: number;
     personas: number;
     miembros: number;
+    miembrosNuevos: number;
     frentes: number;
+    frentesNuevos: number;
     etapas: number;
+    etapasNuevas: number;
     hitos: number;
+    hitosNuevos: number;
     tareasNuevas: number;
     tareasHechas: number;
     tareasCambian: number;
@@ -271,6 +286,40 @@ function plural(n: number, uno: string, varios: string): string {
   return `${n} ${n === 1 ? uno : varios}`;
 }
 
+const PALABRAS_VACIAS = new Set(["el", "la", "los", "las", "lo", "de", "del", "a", "al", "y", "e", "o", "en", "un", "una", "con", "por", "para", "que", "mi", "su"]);
+
+function palabrasDe(texto: string): string[] {
+  return normalizeName(texto)
+    .split(" ")
+    .filter((w) => w !== "" && !PALABRAS_VACIAS.has(w));
+}
+
+/**
+ * ¿Se parecen dos nombres o títulos que no son iguales?
+ *
+ * Una contenida palabra por palabra en la otra («Lucía» y «Lucía Prado»,
+ * «Comprar pintura» y «Comprar pintura blanca»), o que compartan al menos el
+ * 60 % de sus palabras. Sólo sirve para avisar antes de crear algo que quizá
+ * ya está con otro nombre: nunca casa nada solo.
+ */
+export function seParecen(a: string, b: string): boolean {
+  const na = normalizeName(a);
+  const nb = normalizeName(b);
+  if (na === "" || nb === "" || na === nb) return false;
+  const pa = palabrasDe(a);
+  const pb = palabrasDe(b);
+  if (pa.length === 0 || pb.length === 0) return false;
+  const [corta, larga] = pa.length <= pb.length ? [pa, pb] : [pb, pa];
+  if (corta.every((w) => larga.includes(w))) return true;
+  const comunes = corta.filter((w) => larga.includes(w)).length;
+  return comunes / new Set([...pa, ...pb]).size >= 0.6;
+}
+
+/** «Lucía», ««A», «B» y 3 más»: títulos entre comillas, como mucho cuatro. */
+function titulos(lista: string[]): string {
+  return nombres(lista.map((t) => `«${t}»`));
+}
+
 // ------------------------------------------------------------- planear
 
 /**
@@ -289,7 +338,12 @@ export function planearImportacion(
   const cambios: string[] = [];
   const seQueda: string[] = [];
   const noSeBorra: string[] = [];
-  const avisos: string[] = archivo.avisos.map((a) => (a.linea ? `Línea ${a.linea}: ${a.texto}` : a.texto));
+  const avisos: string[] = archivo.avisos
+    .filter((a) => !a.importante)
+    .map((a) => (a.linea ? `Línea ${a.linea}: ${a.texto}` : a.texto));
+  const revisar: string[] = archivo.avisos
+    .filter((a) => a.importante)
+    .map((a) => (a.linea ? `Línea ${a.linea}: ${a.texto}` : a.texto));
 
   const existente = estado.proyecto;
   const proyectoId = existente?.id ?? archivo.nuevoId;
@@ -299,9 +353,13 @@ export function planearImportacion(
     personasNuevas: 0,
     personas: 0,
     miembros: 0,
+    miembrosNuevos: 0,
     frentes: 0,
+    frentesNuevos: 0,
     etapas: 0,
+    etapasNuevas: 0,
     hitos: 0,
+    hitosNuevos: 0,
     tareasNuevas: 0,
     tareasHechas: 0,
     tareasCambian: 0,
@@ -320,6 +378,7 @@ export function planearImportacion(
     seQueda: [],
     noSeBorra: [],
     avisos,
+    revisar,
     bloqueo: motivo,
     cuentas,
     huella: huellaDe([]),
@@ -427,6 +486,15 @@ export function planearImportacion(
       return elegida.id;
     }
 
+    const parecidas = personas.filter(
+      (x) => !x.is_owner && [x.name, ...x.aliases].some((n) => seParecen(n, p.nombre)),
+    );
+    if (parecidas.length > 0) {
+      revisar.push(
+        `«${p.nombre}» se parece a ${nombres(parecidas.map((x) => `«${x.name}»`))}, que ya tienes. La creo como persona nueva; si es la misma, pon su nombre igual en el archivo.`,
+      );
+    }
+
     const id = p.nuevoId;
     const fila: Record<string, unknown> = { id, name: p.nombre };
     const src: FieldSrc = { name: "claude" };
@@ -465,6 +533,17 @@ export function planearImportacion(
   };
 
   for (const p of archivo.personas) persona(p);
+
+  /** Cómo se llama alguien en una frase del plan: «ti» si eres tú. */
+  const quienEs = (id: string | null): string => {
+    if (!id) return "nadie";
+    const x = personas.find((y) => y.id === id);
+    if (!x) return "alguien";
+    return x.is_owner ? "ti" : x.name;
+  };
+  /** «responsable: Lucía» o «responsable de Lucía Prado a Lucía». */
+  const cambioDeResponsable = (antes: string | null, despues: string | null): string =>
+    antes ? `responsable de ${quienEs(antes)} a ${quienEs(despues)}` : `responsable: ${quienEs(despues)}`;
 
   const menciones: { personaId: string; nombre: string; linea: number }[] = [];
 
@@ -612,6 +691,7 @@ export function planearImportacion(
     cuentas.miembros += 1;
     const actual = miembroDe.get(personaId);
     if (!actual) {
+      cuentas.miembrosNuevos += 1;
       const fila: Record<string, unknown> = { id: nuevoId, project_id: proyectoId, person_id: personaId };
       const src: FieldSrc = {};
       if (datos.papel) {
@@ -666,6 +746,7 @@ export function planearImportacion(
     const lider = f.responsable ? mencion(f.responsable, idDerivado(f.nuevoId, "responsable"), f.linea) : null;
     cuentas.frentes += 1;
     if (!actual) {
+      cuentas.frentesNuevos += 1;
       const fila: Record<string, unknown> = { id: f.nuevoId, project_id: proyectoId, name: f.nombre, sort_order: cuentas.frentes };
       const src: FieldSrc = { name: "claude" };
       if (lider) {
@@ -687,7 +768,7 @@ export function planearImportacion(
         id: actual.id,
         cambios: { lead_person_id: lider, field_src: { ...actual.field_src, lead_person_id: "claude" } },
       });
-      cambios.push(`Frente ${actual.name}: responsable nuevo.`);
+      cambios.push(`Frente ${actual.name}: ${cambioDeResponsable(actual.lead_person_id, lider)}.`);
     } else if (d === "tuyo") {
       seQueda.push(`Frente ${actual.name}: el responsable lo pusiste tú.`);
     }
@@ -704,6 +785,7 @@ export function planearImportacion(
       etapasExistentes.find((x) => normalizeName(x.title) === normalizeName(e.titulo));
     cuentas.etapas += 1;
     if (!actual) {
+      cuentas.etapasNuevas += 1;
       const fila: Record<string, unknown> = {
         id: e.nuevoId,
         project_id: proyectoId,
@@ -728,6 +810,7 @@ export function planearImportacion(
     idDeEtapa.push(actual.id);
     const parche: Record<string, unknown> = {};
     const src: FieldSrc = { ...actual.field_src };
+    const detalles: string[] = [];
     for (const [campo, antes, nuevo] of [
       ["title", actual.title, e.ref === actual.id ? e.titulo : null],
       ["starts_on", actual.starts_on, e.inicio],
@@ -737,13 +820,18 @@ export function planearImportacion(
       if (d === "poner" || d === "cambiar") {
         parche[campo] = nuevo;
         src[campo] = "claude";
+        detalles.push(
+          campo === "title"
+            ? `se llama «${nuevo}»`
+            : `${campo === "starts_on" ? "empieza" : "acaba"} ${antes ? `${shortDate(antes, opciones.hoy)} → ` : ""}${shortDate(nuevo as string, opciones.hoy)}`,
+        );
       } else if (d === "tuyo") {
         seQueda.push(`Etapa «${actual.title}»: ${campo === "title" ? "el nombre" : "las fechas"} las pusiste tú.`);
       }
     }
     if (Object.keys(parche).length > 0) {
       ops.push({ tabla: "tasks_milestones", accion: "cambiar", id: actual.id, cambios: { ...parche, field_src: src } });
-      cambios.push(`Etapa «${actual.title}»: cambia.`);
+      cambios.push(`Etapa «${actual.title}»: ${detalles.join(", ")}.`);
     }
   });
 
@@ -753,9 +841,15 @@ export function planearImportacion(
     const responsable = h.responsable ? mencion(h.responsable, idDerivado(h.nuevoId, "responsable"), h.linea) : null;
     const actual =
       (h.ref ? hitosExistentes.find((x) => x.id === h.ref) : undefined) ??
-      hitosExistentes.find((x) => normalizeName(x.title) === normalizeName(h.titulo));
+      hitosExistentes.find((x) => normalizeName(x.title) === normalizeName(h.titulo)) ??
+      hitosExistentes.find((x) => (x.former_titles ?? []).some((t) => normalizeName(t) === normalizeName(h.titulo)));
     cuentas.hitos += 1;
     if (!actual) {
+      cuentas.hitosNuevos += 1;
+      const parecido = hitosExistentes.find((x) => seParecen(x.title, h.titulo));
+      if (parecido && existente) {
+        revisar.push(`El hito nuevo «${h.titulo}» se parece a «${parecido.title}», que ya está. Lo creo aparte; si es el mismo, pon el mismo título en el archivo.`);
+      }
       const fila: Record<string, unknown> = {
         id: h.nuevoId,
         project_id: proyectoId,
@@ -791,6 +885,7 @@ export function planearImportacion(
     idDeHito.set(normalizeName(h.titulo), actual.id);
     const parche: Record<string, unknown> = {};
     const src: FieldSrc = { ...actual.field_src };
+    const detalles: string[] = [];
     for (const [campo, antes, nuevo] of [
       ["title", actual.title, h.ref === actual.id ? h.titulo : null],
       ["due_on", actual.due_on, h.fecha],
@@ -803,6 +898,17 @@ export function planearImportacion(
         parche[campo] = nuevo;
         src[campo] = "claude";
         if (campo === "due_on") parche.due_precision = h.precision;
+        detalles.push(
+          campo === "title"
+            ? `se llama «${nuevo}»`
+            : campo === "due_on"
+              ? `fecha ${antes ? `${shortDate(antes, opciones.hoy)} → ` : ""}${shortDate(nuevo as string, opciones.hoy)}`
+              : campo === "owner_person_id"
+                ? cambioDeResponsable(antes, nuevo)
+                : campo === "stage_id"
+                  ? "cambia de etapa"
+                  : "detalle nuevo",
+        );
       } else if (d === "tuyo" && campo !== "stage_id") {
         seQueda.push(`Hito «${actual.title}»: ${campo === "due_on" ? "la fecha" : campo === "title" ? "el nombre" : campo === "detail" ? "el detalle" : "el responsable"} lo pusiste tú.`);
       }
@@ -821,11 +927,12 @@ export function planearImportacion(
         parche.status = h.estado;
         src.status = "claude";
         if (h.estado === "HECHO") parche.done_at = opciones.ahora;
+        detalles.push(h.estado === "HECHO" ? "hecho" : `pasa a ${h.estado === "EN_CURSO" ? "en curso" : h.estado === "BLOQUEADO" ? "bloqueado" : h.estado === "SALTADO" ? "saltado" : "pendiente"}`);
       }
     }
     if (Object.keys(parche).length > 0) {
       ops.push({ tabla: "tasks_milestones", accion: "cambiar", id: actual.id, cambios: { ...parche, field_src: src } });
-      cambios.push(`Hito «${actual.title}»: ${Object.keys(parche).filter((k) => k !== "done_at" && k !== "due_precision").map((k) => ({ title: "nombre", due_on: "fecha", owner_person_id: "responsable", stage_id: "etapa", detail: "detalle", status: "estado" })[k] ?? k).join(", ")}.`);
+      cambios.push(`Hito «${actual.title}»: ${detalles.join(", ")}.`);
     }
   });
 
@@ -833,13 +940,24 @@ export function planearImportacion(
   const tareasExistentes = estado.tareas;
   const idDeTarea: (string | null)[] = [];
   const tareasCasadas = new Set<string>();
+  const tareasNuevas: string[] = [];
+  // Los hitos de la base también, por su título y los de antes: una tarea del
+  // archivo puede colgar de uno que no viene en el archivo.
+  for (const h of hitosExistentes) {
+    for (const t of [h.title, ...(h.former_titles ?? [])]) {
+      if (!idDeHito.has(normalizeName(t))) idDeHito.set(normalizeName(t), h.id);
+    }
+  }
 
   archivo.tareas.forEach((t: TareaArchivo) => {
     const padre = t.padre !== null ? (idDeTarea[t.padre] ?? null) : null;
+    const libre = (x: TareaExistente) => !tareasCasadas.has(x.id) && x.parent_id === padre;
     const actual =
       (t.ref ? tareasExistentes.find((x) => x.id === t.ref) : undefined) ??
+      tareasExistentes.find((x) => libre(x) && normalizeName(x.title) === normalizeName(t.titulo)) ??
+      // Renombrada en la app: el archivo de Claude aún trae el título de antes.
       tareasExistentes.find(
-        (x) => !tareasCasadas.has(x.id) && normalizeName(x.title) === normalizeName(t.titulo) && x.parent_id === padre,
+        (x) => libre(x) && (x.former_titles ?? []).some((v) => normalizeName(v) === normalizeName(t.titulo)),
       );
 
     if (t.quitar) {
@@ -869,7 +987,18 @@ export function planearImportacion(
       }
     }
 
+    let hito: string | null = null;
+    if (t.hito) {
+      hito = idDeHito.get(normalizeName(t.hito)) ?? null;
+      if (!hito) avisos.push(`Línea ${t.linea}: no encuentro el hito «${t.hito}»; la tarea queda sin hito.`);
+    }
+
     if (!actual) {
+      const parecida = tareasExistentes.find((x) => !tareasCasadas.has(x.id) && seParecen(x.title, t.titulo));
+      if (parecida) {
+        revisar.push(`La tarea nueva «${t.titulo}» se parece a «${parecida.title}», que ya está. La creo aparte; si es la misma, pon el mismo título en el archivo.`);
+      }
+      tareasNuevas.push(t.titulo);
       const fila: Record<string, unknown> = {
         id: t.nuevoId,
         project_id: proyectoId,
@@ -888,6 +1017,7 @@ export function planearImportacion(
       poner("assignee_id", responsable);
       poner("due_date", t.fecha);
       poner("stream_id", frente);
+      poner("milestone_id", hito);
       poner("parent_id", padre);
       poner("notes", t.notas);
       if (t.origen) {
@@ -915,6 +1045,7 @@ export function planearImportacion(
       priority: "prioridad",
       assignee_id: "responsable",
       stream_id: "frente",
+      milestone_id: "hito",
       notes: "nota",
     };
     for (const [campo, antes, nuevo] of [
@@ -923,6 +1054,7 @@ export function planearImportacion(
       ["priority", actual.priority === "MEDIA" ? null : actual.priority, t.prioridad],
       ["assignee_id", actual.assignee_id, responsable],
       ["stream_id", actual.stream_id, frente],
+      ["milestone_id", actual.milestone_id ?? null, hito],
       ["notes", actual.notes, t.notas],
     ] as const) {
       const d = decidir(campo, antes, nuevo, actual.field_src);
@@ -931,6 +1063,10 @@ export function planearImportacion(
         src[campo] = "claude";
         if (campo === "due_date") {
           cambios.push(`«${actual.title}»: fecha ${antes ? `${shortDate(antes, opciones.hoy)} → ` : ""}${shortDate(nuevo as string, opciones.hoy)}.`);
+        } else if (campo === "assignee_id") {
+          cambios.push(`«${actual.title}»: ${cambioDeResponsable(antes, nuevo)}.`);
+        } else if (campo === "title") {
+          cambios.push(`«${actual.title}» pasa a llamarse «${nuevo}».`);
         } else {
           cambios.push(`«${actual.title}»: ${etiqueta[campo]} ${d === "poner" ? "nuevo" : "cambia"}.`);
         }
@@ -1054,19 +1190,38 @@ export function planearImportacion(
 
   const lineas: string[] = [];
   lineas.push(existente ? `${nombre} (ya existe: lo pongo al día)` : `${archivo.nombre} (nuevo)`);
-  const personasTexto = `Personas: ${cuentas.personas}${personasNuevas.length > 0 ? ` (${plural(personasNuevas.length, "nueva", "nuevas")}: ${nombres(personasNuevas)})` : ""}`;
-  lineas.push(personasTexto);
-  const tareasTexto = `Tareas: ${cuentas.tareasNuevas}${existente ? ` nuevas${cuentas.tareasCambian > 0 ? `, ${cuentas.tareasCambian} cambian` : ""}` : ""}${cuentas.tareasHechas > 0 ? ` (${plural(cuentas.tareasHechas, "hecha", "hechas")})` : ""}`;
-  lineas.push(
-    [
-      `Frentes: ${cuentas.frentes}`,
-      `Etapas: ${cuentas.etapas}`,
-      `Hitos: ${cuentas.hitos}`,
-      tareasTexto,
-      `Bitácora: ${cuentas.bitacora}`,
-      `Enlaces: ${cuentas.enlaces}`,
-    ].join(" · "),
-  );
+  if (!existente) {
+    // Un proyecto nuevo: todo es nuevo, así que basta con los totales.
+    lineas.push(
+      `Personas: ${cuentas.personas}${personasNuevas.length > 0 ? ` (${plural(personasNuevas.length, "nueva", "nuevas")}: ${nombres(personasNuevas)})` : ""}`,
+    );
+    lineas.push(
+      [
+        `Frentes: ${cuentas.frentes}`,
+        `Etapas: ${cuentas.etapas}`,
+        `Hitos: ${cuentas.hitos}`,
+        `Tareas: ${cuentas.tareasNuevas}${cuentas.tareasHechas > 0 ? ` (${plural(cuentas.tareasHechas, "hecha", "hechas")})` : ""}`,
+        `Bitácora: ${cuentas.bitacora}`,
+        `Enlaces: ${cuentas.enlaces}`,
+      ].join(" · "),
+    );
+  } else {
+    // Uno que ya existe: sólo lo nuevo, nunca mezclado con totales («Hitos: 5»
+    // al lado de «Tareas: 0 nuevas» hacía creer que se creaban cinco hitos).
+    const nuevo = [
+      personasNuevas.length > 0 ? `${plural(personasNuevas.length, "persona", "personas")} (${nombres(personasNuevas)})` : null,
+      cuentas.frentesNuevos > 0 ? plural(cuentas.frentesNuevos, "frente", "frentes") : null,
+      cuentas.etapasNuevas > 0 ? plural(cuentas.etapasNuevas, "etapa", "etapas") : null,
+      cuentas.hitosNuevos > 0 ? plural(cuentas.hitosNuevos, "hito", "hitos") : null,
+      cuentas.tareasNuevas > 0
+        ? `${plural(cuentas.tareasNuevas, "tarea", "tareas")}${cuentas.tareasHechas > 0 ? ` (${plural(cuentas.tareasHechas, "hecha", "hechas")})` : ""}`
+        : null,
+      cuentas.bitacora > 0 ? plural(cuentas.bitacora, "entrada de bitácora", "entradas de bitácora") : null,
+      cuentas.enlaces > 0 ? plural(cuentas.enlaces, "enlace", "enlaces") : null,
+    ].filter((x): x is string => x !== null);
+    lineas.push(`Nuevo: ${nuevo.length === 0 ? "nada" : nuevo.join(" · ")}`);
+    if (tareasNuevas.length > 0) lineas.push(`Tareas nuevas: ${titulos(tareasNuevas)}`);
+  }
   if (ficha !== null) {
     lineas.push(
       `Ficha técnica: ${{ nueva: "nueva", cambia: "cambia", igual: "igual que la de la app", tuya: "se queda la tuya" }[ficha]}`,
@@ -1092,6 +1247,7 @@ export function planearImportacion(
     seQueda,
     noSeBorra,
     avisos,
+    revisar,
     bloqueo: null,
     cuentas,
     huella: huellaDe(ops),

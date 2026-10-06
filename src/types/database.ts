@@ -465,6 +465,8 @@ export interface Database {
           source_label: string | null;
           source_at: string | null;
           field_src: FieldSrc;
+          /** Los títulos que tuvo antes de renombrarla: el importador casa con ellos. */
+          former_titles: string[];
           ext_source: string | null;
           ext_id: string | null;
           version: number;
@@ -474,6 +476,7 @@ export interface Database {
           user_id: string;
           project_id?: string | null;
           title: string;
+          former_titles?: string[];
           assignee_id?: string | null;
           with_ids?: string[];
           stream_id?: string | null;
@@ -639,6 +642,8 @@ export interface Database {
           owner_person_id: string | null;
           sort_order: number;
           field_src: FieldSrc;
+          /** Los títulos que tuvo antes de renombrarlo: el importador casa con ellos. */
+          former_titles: string[];
           ext_source: string | null;
           ext_id: string | null;
           version: number;
@@ -662,6 +667,7 @@ export interface Database {
           owner_person_id?: string | null;
           sort_order?: number;
           field_src?: FieldSrc;
+          former_titles?: string[];
           ext_source?: string | null;
           ext_id?: string | null;
         }

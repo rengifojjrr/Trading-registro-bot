@@ -31,7 +31,7 @@ import type { TaskPriority, TaskStatus } from "./tasks";
  *     ## Personas        (tabla: Persona | Papel | Lado | Qué hace | WhatsApp)
  *     ## Frentes         (- Permisos (Ana) · Obra (Luis))
  *     ## Hoja de ruta    (### Etapa 1 — Título (2026-10-01 → 2026-10-31) y sus hitos)
- *     ## Tareas          (- [ ] Título — @persona — 2026-10-15 — #Frente — (llamada 5 oct))
+ *     ## Tareas          (- [ ] Título — @persona — 2026-10-15 — #Frente — hito: Título — (llamada 5 oct))
  *     ## Recordatorios
  *     ## Bitácora        (- 2026-10-05 — decisión — Texto)
  *     ## Enlaces         (- Título — https://…)
@@ -51,6 +51,12 @@ export interface Aviso {
   /** Línea del archivo, empezando en 1, cuando la hay. */
   linea: number | null;
   texto: string;
+  /**
+   * Lo que hay que ver antes de crear: una sección entera que se salta, un
+   * nombre que parece una frase, algo que parece del archivo privado. La
+   * pantalla los enseña abiertos encima del botón y pide «crear igual».
+   */
+  importante?: boolean;
 }
 
 /** Cada cosa trae el id que ya tenía (si el archivo lo dice) y uno nuevo por si hace falta. */
@@ -112,6 +118,8 @@ export interface TareaArchivo extends ConId {
   responsable: string | null;
   fecha: string | null;
   frente: string | null;
+  /** El hito del que cuelga («hito: Presupuesto del techo»), por su título. */
+  hito: string | null;
   prioridad: TaskPriority | null;
   origen: OrigenArchivo | null;
   notas: string | null;
@@ -188,28 +196,47 @@ export const LIMITES_ARCHIVO = {
 // ------------------------------------------------------------- privacidad
 
 /**
+ * ¿El nombre del archivo dice que es privado?
+ *
+ * `x.privado.md`, `x-privado.md`, `privado.md`, `x.privados.md`, `x_privada.txt`:
+ * la palabra suelta, separada por punto, guion, guion bajo o espacio. «privacidad»
+ * no cuenta.
+ */
+export function nombreDeArchivoPrivado(nombreArchivo: string): boolean {
+  const base = nombreArchivo.split(/[\\/]/).pop() ?? nombreArchivo;
+  return /(^|[.\-_ ])privad[oa]s?([.\-_ ]|$)/i.test(base);
+}
+
+/**
  * ¿Es la mitad privada de un proyecto?
  *
- * Tres señales, cualquiera basta: el nombre del archivo lleva `.privado`, la
- * cabecera dice `privado: sí`, o uno de sus primeros encabezados o
- * comentarios dice PRIVADO en mayúsculas (así empieza la plantilla del
- * `.privado.md`). Pegar uno de éstos por error tiene que pararse aquí, antes
- * de que nada salga del navegador.
+ * Tres señales, cualquiera basta: el nombre del archivo lleva «privado», la
+ * cabecera dice `privado: sí` (aunque siga algo detrás, «sí (nunca sube)»), o
+ * uno de sus primeros encabezados o comentarios dice «privado», en mayúsculas
+ * o no (así empieza la plantilla del `.privado.md`). Pegar uno de éstos por
+ * error tiene que pararse aquí, antes de que nada salga del navegador.
  */
 export function esArchivoPrivado(texto: string, nombreArchivo?: string): boolean {
-  if (nombreArchivo && /\.privad[oa]\b/i.test(nombreArchivo)) return true;
+  if (nombreArchivo && nombreDeArchivoPrivado(nombreArchivo)) return true;
   const cabecera = leerCabecera(texto.replace(/\r\n?/g, "\n").split("\n"));
   const privado = cabecera?.valores.get("privado");
-  if (privado !== undefined && /^(si|sí|true|yes|1)$/i.test(privado.trim())) return true;
+  if (privado !== undefined && /^(s[ií]|true|yes|1)(?![\p{L}\p{N}])/iu.test(privado.trim())) return true;
   const primeras = texto
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .filter((l) => l.trim() !== "")
     .slice(0, 12);
   return primeras.some(
-    (linea) => /^\s*#{1,3}\s.*\bPRIVADO\b/.test(linea) || /<!--\s*PRIVADO\b/.test(linea),
+    (linea) => /^\s*#{1,6}\s.*(?<![\p{L}])privad[oa]s?(?![\p{L}])/iu.test(linea) || /<!--\s*privad[oa]\b/i.test(linea),
   );
 }
+
+/**
+ * Secciones que son del archivo privado (montos, contrapartes, contratos). No
+ * bloquean -- un proyecto puede tener una sección «Contratos» con los nombres
+ * de los documentos -- pero se avisan arriba antes de crear.
+ */
+const SECCIONES_DEL_PRIVADO = /^(montos?|cifras|dinero|contrapartes?|contratos?|condiciones)\b/;
 
 // ------------------------------------------------------------- utilidades
 
@@ -454,7 +481,9 @@ function seccionDe(titulo: string): Seccion | null {
   if (/^(personas|gente|quien es quien|equipo)/.test(t)) return "personas";
   if (/^frentes?/.test(t)) return "frentes";
   if (/^(hoja de ruta|ruta|etapas|hitos)/.test(t)) return "ruta";
-  if (/^(tareas|to do|todo|pendientes)/.test(t)) return "tareas";
+  if (/^(tareas|to do|todo|pendientes?|que falta|lo que falta|por hacer|que hay que hacer|siguientes pasos|proximos pasos)/.test(t)) {
+    return "tareas";
+  }
   if (/^recordatorios?/.test(t)) return "recordatorios";
   if (/^bitacora/.test(t)) return "bitacora";
   if (/^(enlaces|documentos|links)/.test(t)) return "enlaces";
@@ -654,8 +683,16 @@ export function leerArchivoProyecto(texto: string, opciones: OpcionesLectura = {
       const titulo = limpiarTokens(h2[1]);
       actual = seccionDe(titulo);
       ignorando = actual === null;
-      if (actual === null) avisos.push({ linea: n, texto: `No sé leer la sección «${titulo}»: la salto.` });
-      else if (!porSeccion.has(actual)) porSeccion.set(actual, []);
+      if (actual === null) {
+        const delPrivado = SECCIONES_DEL_PRIVADO.test(clave(titulo));
+        avisos.push({
+          linea: n,
+          texto: delPrivado
+            ? `La sección «${titulo}» parece del archivo privado: no la subo. Si es privada, va en el .privado.md.`
+            : `No sé leer la sección «${titulo}»: la salto entera.`,
+          importante: true,
+        });
+      } else if (!porSeccion.has(actual)) porSeccion.set(actual, []);
       continue;
     }
     if (actual !== null && !ignorando) porSeccion.get(actual)?.push({ n, texto });
@@ -793,7 +830,9 @@ export function leerArchivoProyecto(texto: string, opciones: OpcionesLectura = {
   archivo.faltan = faltan;
   // Los avisos citan trozos del archivo: se cortan para que ninguno sea un
   // párrafo, y como mucho doscientos.
-  archivo.avisos = avisos.slice(0, 200).map((a) => ({ linea: a.linea, texto: a.texto.slice(0, 280) }));
+  archivo.avisos = avisos
+    .slice(0, 200)
+    .map((a) => ({ linea: a.linea, texto: a.texto.slice(0, 280), ...(a.importante ? { importante: true } : {}) }));
   return { ok: true, archivo };
 }
 
@@ -832,6 +871,17 @@ function whatsappDe(texto: string): "SI" | "NO" | null {
   if (/^(si|yes|✓)/.test(t) || texto.trim().startsWith("✓")) return "SI";
   if (/^no\b/.test(t) || texto.trim().startsWith("✗")) return "NO";
   return null;
+}
+
+/**
+ * ¿Es una frase y no un nombre? Más de cuatro palabras, o con un verbo o una
+ * coma en medio. Sólo sirve para avisar: no decide nada.
+ */
+function pareceFrase(nombre: string): boolean {
+  const palabras = nombre.trim().split(/\s+/).filter(Boolean);
+  if (palabras.length > 4) return true;
+  if (/[,;:.!?]/.test(nombre)) return true;
+  return /(?<!\p{L})(tiene|hay|habla|hace|manda|consigue|llama|pide|debe|va|son|es|est[aá]n?)(?!\p{L})/iu.test(nombre);
 }
 
 function leerPersonas(
@@ -897,16 +947,37 @@ function leerPersonas(
     }
   }
 
-  // También como lista: «- **Ana** (yo) — papel — qué hace».
+  // También como lista: «- **Ana** (yo) — papel — qué hace». Y como lo
+  // escribe uno a mano: «- Marta: consigue las semillas» o «- Julián (vecino
+  // del 3º): habla con el ayuntamiento» (nombre, nota y qué hace).
   for (const item of items(lineas.filter((l) => !l.texto.trim().startsWith("|"))).items) {
     const { texto: sinId, ref } = sacarId(item.texto, "p");
-    const partes = segmentos(sinNegritas(sinId));
+    let partes = segmentos(sinNegritas(sinId));
     if (partes.length === 0) continue;
+    let haceSuelto: string | null = null;
+    const conDosPuntos = partes[0].match(/^(.{1,60}?)\s*:\s+(.+)$/);
+    const abre = (t: string, c: string) => t.split(c).length - 1;
+    if (
+      conDosPuntos &&
+      partes.length === 1 &&
+      !esFalta(conDosPuntos[1]) &&
+      abre(conDosPuntos[1], "(") === abre(conDosPuntos[1], ")")
+    ) {
+      partes = [conDosPuntos[1].trim()];
+      haceSuelto = conDosPuntos[2].trim();
+    }
     const cabeza = partes[0].match(/^(.*?)\s*(?:\((.*)\))?$/);
     const nombre = (cabeza?.[1] ?? partes[0]).trim();
     const entreParentesis = cabeza?.[2]?.trim() ?? "";
     if (nombre === "" || esFalta(nombre)) continue;
     const esYo = /^(yo|tú|tu)$/i.test(entreParentesis) || isMe(nombre);
+    if (!esYo && pareceFrase(nombre)) {
+      avisos.push({
+        linea: item.n,
+        texto: `«${nombre.slice(0, 80)}» no parece un nombre: lo creo como persona igual. Si no es alguien, quítalo del archivo.`,
+        importante: true,
+      });
+    }
     const resto = partes.slice(1).map((p) => {
       if (esFalta(p)) {
         falta();
@@ -914,6 +985,7 @@ function leerPersonas(
       }
       return p.replace(/\s*\(falta[^)]*\)\s*/gi, " ").trim() || null;
     });
+    if (haceSuelto !== null) resto.push(null, haceSuelto);
     const segundo = resto[0] ?? null;
     anadir({
       ref,
@@ -923,7 +995,7 @@ function leerPersonas(
       relacion: segundo !== null && segundo.length > 40 ? segundo.slice(0, 120) : null,
       papel: segundo !== null && segundo.length <= 40 ? segundo : null,
       lado: null,
-      hace: recortar(resto[1] ?? null, PROJECT_LIMITS.memberDoes, avisos, item.n, "«Qué hace»"),
+      hace: recortar(haceSuelto ?? resto[1] ?? null, PROJECT_LIMITS.memberDoes, avisos, item.n, "«Qué hace»"),
       whatsapp: null,
       nota: !esYo && entreParentesis !== "" ? entreParentesis.slice(0, 1000) : null,
       linea: item.n,
@@ -1059,6 +1131,7 @@ function leerTareas(
     let responsable: string | null = null;
     let fecha: string | null = null;
     let frente: string | null = null;
+    let hito: string | null = null;
     let prioridad: TaskPriority | null = null;
     let origen: OrigenArchivo | null = null;
     const notas: string[] = [];
@@ -1070,6 +1143,9 @@ function leerTareas(
         fecha = f.fecha;
         if (f.precision === "MES") avisos.push({ linea: item.n, texto: `«${titulo}» vence en un mes sin día: le pongo el último.` });
       } else if (parte.startsWith("#") && frente === null) frente = parte.slice(1).trim();
+      else if (/^(hito|◆)\s*:?\s*\S/i.test(parte) && hito === null) {
+        hito = parte.replace(/^(hito|◆)\s*:?\s*/i, "").trim().slice(0, PROJECT_LIMITS.milestoneTitle);
+      }
       else if (/^!\s*\S/.test(parte) && PRIORIDADES[clave(parte.slice(1))]) prioridad = PRIORIDADES[clave(parte.slice(1))];
       else if (/^prioridad\s*:/i.test(parte) && PRIORIDADES[clave(parte.replace(/^prioridad\s*:/i, ""))]) {
         prioridad = PRIORIDADES[clave(parte.replace(/^prioridad\s*:/i, ""))];
@@ -1105,6 +1181,7 @@ function leerTareas(
       responsable,
       fecha,
       frente,
+      hito,
       prioridad,
       origen,
       notas: notas.length > 0 ? notas.join(" — ").slice(0, 4000) : null,
@@ -1186,6 +1263,8 @@ export interface TareaParaEscribir {
   responsable: string | null;
   fecha: string | null;
   frente: string | null;
+  /** El título del hito del que cuelga, si cuelga de uno. */
+  hito?: string | null;
   prioridad: TaskPriority;
   origen: string | null;
   subtareas: Omit<TareaParaEscribir, "subtareas">[];
@@ -1348,6 +1427,7 @@ export function escribirArchivoProyecto(d: ArchivoParaEscribir): string {
       mencion(t.responsable),
       t.fecha,
       t.frente ? `#${enLinea(t.frente)}` : null,
+      t.hito ? `hito: ${enLinea(t.hito)}` : null,
       t.prioridad !== "MEDIA" ? `!${t.prioridad.toLowerCase()}` : null,
       t.origen ? `(${enLinea(t.origen).replace(/[()]/g, "")})` : null,
     ]

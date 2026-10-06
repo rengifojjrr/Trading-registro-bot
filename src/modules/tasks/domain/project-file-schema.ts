@@ -123,6 +123,7 @@ export const archivoProyectoSchema = z
             responsable: textoONulo(80),
             fecha: fecha.nullable(),
             frente: textoONulo(PROJECT_LIMITS.streamName),
+            hito: textoONulo(PROJECT_LIMITS.milestoneTitle),
             prioridad: z.enum(["ALTA", "MEDIA", "BAJA"]).nullable(),
             origen: z.object({ tipo: tipoOrigen, texto: texto(PROJECT_LIMITS.sourceLabelTask) }).strict().nullable(),
             notas: textoONulo(4000),
@@ -165,7 +166,9 @@ export const archivoProyectoSchema = z
           .strict(),
       )
       .max(LIMITES_ARCHIVO.enlaces),
-    avisos: z.array(z.object({ linea: linea.nullable(), texto: texto(300) }).strict()).max(200),
+    avisos: z
+      .array(z.object({ linea: linea.nullable(), texto: texto(300), importante: z.boolean().optional() }).strict())
+      .max(200),
     faltan: z.number().int().min(0).max(10_000),
   })
   .strict()

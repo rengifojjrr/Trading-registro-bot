@@ -37,6 +37,7 @@ import {
   freeSlug,
   projectNameSchema,
 } from "./domain/projects";
+import { aliasConNombreDeAntes, titulosDeAntes } from "./domain/renames";
 import { PRIORITIES, STATUSES } from "./domain/tasks";
 
 /**
@@ -83,6 +84,26 @@ async function marcaDelDueno(
   const src: FieldSrc = { ...((data as { field_src: FieldSrc }).field_src ?? {}) };
   for (const campo of campos) src[campo] = "owner";
   return src;
+}
+
+/**
+ * Si el cambio renombra una tarea o un hito, el título de antes se guarda en
+ * `former_titles` (ver domain/renames.ts): así el archivo de Claude de la vuelta
+ * siguiente, que aún trae el título viejo, casa con ella en vez de duplicarla.
+ */
+async function titulosDeAntesSiRenombra(
+  supabase: Supabase,
+  tabla: "tasks_items" | "tasks_milestones",
+  id: string,
+  userId: string,
+  nuevo: string | undefined,
+): Promise<{ former_titles?: string[] }> {
+  if (nuevo === undefined) return {};
+  const { data } = await supabase.from(tabla).select("title, former_titles").eq("id", id).eq("user_id", userId).maybeSingle();
+  if (!data) return {};
+  const fila = data as { title: string; former_titles: string[] | null };
+  const lista = titulosDeAntes(fila.title, fila.former_titles ?? [], nuevo);
+  return lista ? { former_titles: lista } : {};
 }
 
 /** Lo que cada cambio tiene que refrescar: la lista, la ficha, Hoy y personas. */
@@ -343,9 +364,27 @@ export async function updatePerson(personId: string, patch: PersonPatch): Promis
   const supabase = await createClient();
   const src = await marcaDelDueno(supabase, "core_people", personId, user.id, Object.keys(parsed.data));
   if (!src) return { error: "Persona no encontrada." };
+  // Renombrar: el nombre de antes pasa a sus alias, para que el archivo de
+  // Claude que aún la llama así la encuentre en vez de crear otra.
+  const extra: { aliases?: string[] } = {};
+  if (parsed.data.name !== undefined) {
+    const { data: antes } = await supabase
+      .from("core_people")
+      .select("name, aliases, is_owner")
+      .eq("id", personId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (antes && !antes.is_owner) {
+      const alias = aliasConNombreDeAntes(antes.name, parsed.data.aliases ?? antes.aliases ?? [], parsed.data.name);
+      if (alias) {
+        extra.aliases = alias;
+        src.aliases = "owner";
+      }
+    }
+  }
   const { error } = await supabase
     .from("core_people")
-    .update({ ...parsed.data, field_src: src })
+    .update({ ...parsed.data, ...extra, field_src: src })
     .eq("id", personId)
     .eq("user_id", user.id);
   if (error) return { error: "No se pudo guardar." };
@@ -540,9 +579,10 @@ export async function updateMilestone(milestoneId: string, patch: MilestonePatch
   const supabase = await createClient();
   const src = await marcaDelDueno(supabase, "tasks_milestones", milestoneId, user.id, Object.keys(parsed.data));
   if (!src) return { error: "No encontrado." };
+  const antes = await titulosDeAntesSiRenombra(supabase, "tasks_milestones", milestoneId, user.id, parsed.data.title);
   const { data, error } = await supabase
     .from("tasks_milestones")
-    .update({ ...parsed.data, field_src: src })
+    .update({ ...parsed.data, ...antes, field_src: src })
     .eq("id", milestoneId)
     .eq("user_id", user.id)
     .select("project_id")
@@ -645,9 +685,10 @@ export async function updateProjectTask(taskId: string, patch: ProjectTaskPatch)
   if (Object.keys(cambios).length === 0) return OK;
   const src = await marcaDelDueno(supabase, "tasks_items", taskId, user.id, Object.keys(cambios));
   if (!src) return { error: "Tarea no encontrada." };
+  const antes = await titulosDeAntesSiRenombra(supabase, "tasks_items", taskId, user.id, resto.title);
   const { data, error } = await supabase
     .from("tasks_items")
-    .update({ ...cambios, field_src: src, updated_at: new Date().toISOString() })
+    .update({ ...cambios, ...antes, field_src: src, updated_at: new Date().toISOString() })
     .eq("id", taskId)
     .eq("user_id", user.id)
     .select("project_id")
@@ -870,12 +911,12 @@ async function estadoParaImportar(
     supabase.from("tasks_streams").select("id, name, lead_person_id, field_src").eq("user_id", userId).eq("project_id", id),
     supabase
       .from("tasks_milestones")
-      .select("id, kind, stage_id, title, starts_on, due_on, due_precision, status, owner_person_id, detail, field_src")
+      .select("id, kind, stage_id, title, starts_on, due_on, due_precision, status, owner_person_id, detail, field_src, former_titles")
       .eq("user_id", userId)
       .eq("project_id", id),
     supabase
       .from("tasks_items")
-      .select("id, title, status, due_date, priority, assignee_id, stream_id, parent_id, notes, field_src")
+      .select("id, title, status, due_date, priority, assignee_id, stream_id, milestone_id, parent_id, notes, field_src, former_titles")
       .eq("user_id", userId)
       .eq("project_id", id)
       .order("created_at"),
@@ -1035,7 +1076,7 @@ export async function exportProjectForClaude(
       .order("sort_order"),
     supabase
       .from("tasks_items")
-      .select("id, title, status, priority, due_date, assignee_id, stream_id, parent_id, source_label, created_at")
+      .select("id, title, status, priority, due_date, assignee_id, stream_id, milestone_id, parent_id, source_label, created_at")
       .eq("user_id", user.id)
       .eq("project_id", projectId)
       .order("created_at"),
@@ -1079,6 +1120,7 @@ export async function exportProjectForClaude(
     responsable: nombreDe(t.assignee_id),
     fecha: t.due_date,
     frente: t.stream_id ? (frentePorId.get(t.stream_id) ?? null) : null,
+    hito: t.milestone_id ? (hitosRows.find((h) => h.id === t.milestone_id && h.kind === "HITO")?.title ?? null) : null,
     prioridad: t.priority,
     origen: t.source_label,
   });

@@ -13,9 +13,16 @@ import { describe, expect, it } from "vitest";
  * migración; las de antes no tienen esta red.
  */
 
-const MIGRACION = "supabase/migrations/20261006120000_proyectos_de_verdad.sql";
+const MIGRACIONES = [
+  "supabase/migrations/20261006120000_proyectos_de_verdad.sql",
+  "supabase/migrations/20261006130100_los_nombres_de_antes.sql",
+];
 
-const sql = readFileSync(join(process.cwd(), MIGRACION), "utf8").replace(/--[^\n]*/g, "");
+const sql = MIGRACIONES.map((m) =>
+  readFileSync(join(process.cwd(), m), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\n]*/g, ""),
+).join("\n");
 const tipos = readFileSync(join(process.cwd(), "src/types/database.ts"), "utf8");
 
 /** Las columnas que la migración declara, por tabla. */
@@ -76,7 +83,8 @@ describe("database.ts tiene las columnas de la migración de proyectos", () => {
 
   it("lee también las columnas que crecen en las tablas de antes", () => {
     expect(mapa.get("tasks_projects")).toEqual(expect.arrayContaining(["slug", "status", "how_md", "field_src", "updated_at"]));
-    expect(mapa.get("tasks_items")).toEqual(expect.arrayContaining(["assignee_id", "origin", "field_src", "version"]));
+    expect(mapa.get("tasks_items")).toEqual(expect.arrayContaining(["assignee_id", "origin", "field_src", "version", "former_titles"]));
+    expect(mapa.get("tasks_milestones")).toEqual(expect.arrayContaining(["former_titles"]));
   });
 
   it.each([...mapa.entries()])("%s", (tabla, columnas) => {

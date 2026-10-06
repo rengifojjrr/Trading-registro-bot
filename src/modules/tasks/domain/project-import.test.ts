@@ -494,3 +494,143 @@ describe("la huella", () => {
     expect(huellaDe([])).toHaveLength(16);
   });
 });
+
+describe("renombrar en la app y volver a importar el archivo de antes", () => {
+  const archivo = leer(ARCHIVO);
+  const base = aplicar(VACIO, planearImportacion(archivo, VACIO, { ahora: AHORA, hoy: HOY }));
+
+  /** Lo que hace la app al renombrar (domain/renames.ts). */
+  function renombrado(): EstadoParaImportar {
+    const e = structuredClone(base);
+    const lucia = e.personas.find((p) => p.name === "Lucía")!;
+    lucia.name = "Lucía Prado";
+    lucia.aliases = ["Lucía"];
+    lucia.field_src = { ...lucia.field_src, name: "owner", aliases: "owner" };
+    const tarea = e.tareas.find((t) => t.title === "Llamar a la abogada")!;
+    tarea.title = "Llamar a la abogada Marín";
+    tarea.former_titles = ["Llamar a la abogada"];
+    tarea.field_src = { ...tarea.field_src, title: "owner" };
+    const hito = e.hitos.find((h) => h.title === "Tejado nuevo")!;
+    hito.title = "Tejado nuevo y canalones";
+    hito.former_titles = ["Tejado nuevo"];
+    return e;
+  }
+
+  it("no crea otra persona, ni otra tarea, ni otro hito", () => {
+    const plan = planearImportacion(leer(ARCHIVO, "9"), renombrado(), { ahora: AHORA, hoy: HOY });
+    expect(plan.ops.filter((o) => o.accion === "crear")).toEqual([]);
+    expect(plan.lineas).toContain("Nuevo: nada");
+    expect(plan.revisar).toEqual([]);
+  });
+
+  it("y la tarea de Lucía sigue siendo de la Lucía de siempre", () => {
+    const e = renombrado();
+    const plan = planearImportacion(leer(ARCHIVO, "9"), e, { ahora: AHORA, hoy: HOY });
+    const lucia = e.personas.find((p) => p.name === "Lucía Prado")!;
+    const otraLucia = plan.ops.find((o) => o.tabla === "core_people" && o.accion === "crear");
+    expect(otraLucia).toBeUndefined();
+    expect(plan.ops.some((o) => o.accion === "cambiar" && o.cambios.assignee_id !== undefined && o.cambios.assignee_id !== lucia.id)).toBe(false);
+  });
+
+  it("sin el nombre de antes guardado, avisa arriba de que se parece en vez de callarse", () => {
+    const e = structuredClone(base);
+    e.personas.find((p) => p.name === "Lucía")!.name = "Lucía Prado";
+    const t = e.tareas.find((x) => x.title === "Llamar a la abogada")!;
+    t.title = "Llamar a la abogada Marín";
+    const plan = planearImportacion(leer(ARCHIVO, "9"), e, { ahora: AHORA, hoy: HOY });
+    expect(plan.revisar.join("\n")).toContain("«Lucía» se parece a «Lucía Prado»");
+    expect(plan.revisar.join("\n")).toContain("La tarea nueva «Llamar a la abogada» se parece a «Llamar a la abogada Marín»");
+    expect(plan.lineas.join("\n")).toContain("Tareas nuevas: «Llamar a la abogada»");
+    expect(plan.lineas.join("\n")).toContain("Nuevo: 1 persona (Lucía) · 1 tarea");
+  });
+});
+
+describe("el plan dice de quién a quién y de qué fecha a cuál", () => {
+  const base = aplicar(VACIO, planearImportacion(leer(ARCHIVO), VACIO, { ahora: AHORA, hoy: HOY }));
+
+  it("el responsable de una tarea, con los dos nombres", () => {
+    const plan = planearImportacion(
+      leer(ARCHIVO.replace("Mandar el presupuesto — @Tomás", "Mandar el presupuesto — @Lucía"), "9"),
+      base,
+      { ahora: AHORA, hoy: HOY },
+    );
+    expect(plan.cambios).toContain("«Mandar el presupuesto»: responsable de Tomás a Lucía.");
+  });
+
+  it("la fecha de un hito, con las dos fechas", () => {
+    const plan = planearImportacion(leer(ARCHIVO.replace("@Tomás — 2026-11-30", "@Tomás — 2026-12-10"), "9"), base, {
+      ahora: AHORA,
+      hoy: HOY,
+    });
+    expect(plan.cambios).toContain("Hito «Tejado nuevo»: fecha 30 nov → 10 dic.");
+  });
+
+  it("el responsable de un frente que cambia no se llama «nuevo»", () => {
+    const plan = planearImportacion(leer(ARCHIVO.replace("Obra (Tomás)", "Obra (Lucía)"), "9"), base, { ahora: AHORA, hoy: HOY });
+    expect(plan.cambios).toContain("Frente Obra: responsable de Tomás a Lucía.");
+  });
+
+  it("en un proyecto que ya existe sólo se cuentan las cosas nuevas", () => {
+    const plan = planearImportacion(
+      leer(ARCHIVO.replace("## Recordatorios", "- [ ] Comprar teja — @Tomás\n\n## Recordatorios"), "9"),
+      base,
+      { ahora: AHORA, hoy: HOY },
+    );
+    expect(plan.lineas).toContain("Nuevo: 1 tarea");
+    expect(plan.lineas).toContain("Tareas nuevas: «Comprar teja»");
+    expect(plan.lineas.join("\n")).not.toMatch(/Hitos: \d/);
+  });
+});
+
+describe("una tarea que cuelga de un hito", () => {
+  it("se engancha al hito del archivo por su título", () => {
+    const texto = ARCHIVO.replace("- [ ] Revisar el pozo — @Inés", "- [ ] Revisar el pozo — @Inés — hito: Tejado nuevo");
+    const plan = planearImportacion(leer(texto), VACIO, { ahora: AHORA, hoy: HOY });
+    const hito = plan.ops.find((o) => o.tabla === "tasks_milestones" && o.accion === "crear" && o.fila.title === "Tejado nuevo")!;
+    const tarea = plan.ops.find((o) => o.accion === "crear" && o.fila.title === "Revisar el pozo") as Extract<Op, { accion: "crear" }>;
+    expect(tarea.fila.milestone_id).toBe(hito.id);
+  });
+
+  it("un hito que no existe se avisa y la tarea queda sin hito", () => {
+    const texto = ARCHIVO.replace("- [ ] Revisar el pozo — @Inés", "- [ ] Revisar el pozo — @Inés — hito: No existe");
+    const plan = planearImportacion(leer(texto), VACIO, { ahora: AHORA, hoy: HOY });
+    const tarea = plan.ops.find((o) => o.accion === "crear" && o.fila.title === "Revisar el pozo") as Extract<Op, { accion: "crear" }>;
+    expect(tarea.fila.milestone_id).toBeUndefined();
+    expect(plan.avisos.join("\n")).toContain("no encuentro el hito «No existe»");
+  });
+});
+
+describe("un borrador suelto escrito a mano", () => {
+  const SUELTO = `# Huerto del patio
+## Gente
+- Marta: consigue las semillas
+- Julián (vecino del 3º): habla con el ayuntamiento
+- El que tiene la llave del cuarto de abajo y no contesta
+
+## Qué falta
+- pedir permiso a la comunidad
+- comprar tierra
+
+## Presupuesto
+- 200 euros
+`;
+
+  it("parte «Nombre: qué hace» y «Nombre (nota)»", () => {
+    const a = leer(SUELTO);
+    expect(a.personas.slice(0, 2).map((p) => [p.nombre, p.hace, p.nota])).toEqual([
+      ["Marta", "consigue las semillas", null],
+      ["Julián", "habla con el ayuntamiento", "vecino del 3º"],
+    ]);
+  });
+
+  it("«Qué falta» son las tareas", () => {
+    expect(leer(SUELTO).tareas.map((t) => t.titulo)).toEqual(["pedir permiso a la comunidad", "comprar tierra"]);
+  });
+
+  it("lo que hay que mirar antes de crear sale aparte: la sección que salta y el nombre que parece una frase", () => {
+    const plan = planearImportacion(leer(SUELTO), VACIO, { ahora: AHORA, hoy: HOY });
+    expect(plan.revisar.join("\n")).toContain("«Presupuesto»");
+    expect(plan.revisar.join("\n")).toContain("no parece un nombre");
+    expect(plan.avisos.join("\n")).not.toContain("«Presupuesto»");
+  });
+});

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   escribirArchivoProyecto,
   esArchivoPrivado,
+  nombreDeArchivoPrivado,
   leerArchivoProyecto,
   nombreDeArchivo,
   type ArchivoParaEscribir,
@@ -218,6 +219,41 @@ describe("lo privado no se lee nunca", () => {
     expect(esArchivoPrivado("<!-- PRIVADO: no subir -->\n# Finca\n")).toBe(true);
   });
 
+  it.each(["finca.privado.md", "finca-privado.md", "privado.md", "finca.privados.md", "finca_privada.txt", "Finca PRIVADO.md", "/Users/x/data/proyectos/finca.privado.md"])(
+    "por el nombre «%s»",
+    (nombre) => {
+      expect(nombreDeArchivoPrivado(nombre)).toBe(true);
+      expect(esArchivoPrivado("# Finca\n", nombre)).toBe(true);
+    },
+  );
+
+  it.each(["finca.md", "privacidad.md", "finca-privadamente.md", "proyecto-privilegios.md"])("pero no «%s»", (nombre) => {
+    expect(nombreDeArchivoPrivado(nombre)).toBe(false);
+  });
+
+  it.each(["sí (nunca sube)", "si", "Sí, nunca", "true", "yes", "1"])("por la cabecera «privado: %s»", (valor) => {
+    expect(esArchivoPrivado(`---\nproyecto: X\nprivado: ${valor}\n---\n`)).toBe(true);
+  });
+
+  it("la cabecera «privado: no» no lo es", () => {
+    expect(esArchivoPrivado("---\nproyecto: X\nprivado: no\n---\n")).toBe(false);
+    expect(esArchivoPrivado("---\nproyecto: X\nprivado: sin decidir\n---\n")).toBe(false);
+  });
+
+  it.each(["# Finca — privado", "#### PRIVADO", "## Lo privado de la finca", "<!-- privado: no subir -->"])(
+    "por un encabezado o comentario «%s», en mayúsculas o no",
+    (linea) => {
+      expect(esArchivoPrivado(`${linea}\n- Montos: …\n`)).toBe(true);
+    },
+  );
+
+  it("una sección de montos o contratos se avisa arriba aunque no tenga marca", () => {
+    const a = leer("# Finca\n## Montos\n- 3 millones\n## Tareas\n- [ ] Algo\n");
+    const aviso = a.avisos.find((x) => x.texto.includes("«Montos»"))!;
+    expect(aviso.importante).toBe(true);
+    expect(aviso.texto).toContain("archivo privado");
+  });
+
   it("pero un archivo normal que nombra al privado sí se lee", () => {
     const texto = "# Proyecto: Finca\n<!-- Lo sensible va en finca.privado.md, que es Privado. -->\n## Cómo va\nBien.\n";
     expect(esArchivoPrivado(texto, "finca.md")).toBe(false);
@@ -359,6 +395,7 @@ describe("exportar y volver a leer", () => {
         responsable: "Lucía",
         fecha: "2026-10-15",
         frente: "Obra",
+        hito: "Tejado",
         prioridad: "ALTA",
         origen: "llamada 5 oct",
         subtareas: [
@@ -406,7 +443,8 @@ describe("exportar y volver a leer", () => {
     expect(a.personas[0].esYo).toBe(true);
     expect(a.hitos[0]).toMatchObject({ titulo: "Contrato", fecha: "2027-02-28", precision: "MES", etapa: null });
     expect(a.hitos[1]).toMatchObject({ titulo: "Tejado", estado: "EN_CURSO", responsable: "Lucía", etapa: 0 });
-    expect(a.tareas[0]).toMatchObject({ titulo: "Pedir presupuesto", responsable: "Lucía", fecha: "2026-10-15", frente: "Obra", prioridad: "ALTA", origen: { tipo: "LLAMADA", texto: "llamada 5 oct" } });
+    expect(a.tareas[0]).toMatchObject({ titulo: "Pedir presupuesto", responsable: "Lucía", fecha: "2026-10-15", frente: "Obra", hito: "Tejado", prioridad: "ALTA", origen: { tipo: "LLAMADA", texto: "llamada 5 oct" } });
+    expect(a.tareas[1].hito).toBeNull();
     expect(a.tareas[1]).toMatchObject({ titulo: "Tres precios", estado: "HECHA", responsable: "yo", padre: 0 });
     expect(a.bitacora[0]).toMatchObject({ fecha: "2026-10-05", tipo: "DECISION", texto: "Sin permiso no hay obra." });
     expect(a.enlaces[1]).toMatchObject({ etiqueta: "Escritura", enMac: true });

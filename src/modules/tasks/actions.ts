@@ -11,6 +11,7 @@ import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { projectNameSchema } from "@/modules/tasks/domain/projects";
+import { titulosDeAntes } from "@/modules/tasks/domain/renames";
 import { PRIORITIES, STATUSES, countTasks } from "@/modules/tasks/domain/tasks";
 import type { ImportResult } from "@/lib/notion/read-database";
 import { importTasksFromNotion } from "@/modules/tasks/notion-import";
@@ -130,6 +131,7 @@ type ParcheTarea = Partial<{
   notes: string | null;
   description: string | null;
   icon: string | null;
+  former_titles: string[];
 }>;
 
 /**
@@ -206,6 +208,19 @@ export async function saveTaskAnswer(
   // Lo que contestas aquí queda como tuyo: importar un archivo de Claude
   // después ya no lo pisa (ver domain/project-import.ts).
   const marca = await marcarComoTuyo(supabase, parsed.data.task_id, user.id, Object.keys(parche));
+
+  // Renombrar: el título de antes se guarda (ver domain/renames.ts), para que
+  // el archivo de Claude que aún dice el viejo case con ésta y no la duplique.
+  if (parche.title !== undefined) {
+    const { data: antes } = await supabase
+      .from("tasks_items")
+      .select("title, former_titles")
+      .eq("id", parsed.data.task_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const lista = antes ? titulosDeAntes(antes.title, antes.former_titles ?? [], parche.title) : null;
+    if (lista) Object.assign(parche, { former_titles: lista });
+  }
 
   // Marcar «hecha» desde la ficha tiene que sellar el cierre igual que lo hace
   // el círculo de la lista, o la gráfica de «entra y sale» se quedaría sin la
