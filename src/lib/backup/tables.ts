@@ -74,6 +74,13 @@ export const BACKUP_TABLES = [
   "tasks_project_doc_versions",
   "tasks_project_sources",
 
+  // ------------------------------------------------------ Recordatorios
+  // Después de proyectos, tareas y personas: un recordatorio puede ir atado a
+  // cualquiera de los tres (sin clave foránea, pero así vuelven juntos). Los
+  // disparos van detrás de su recordatorio, que es a quien apuntan.
+  "core_reminders",
+  "core_reminder_fires",
+
   // ---------------------------------------- Piezas comunes y configuración
   "core_comments",
   "core_attachments",

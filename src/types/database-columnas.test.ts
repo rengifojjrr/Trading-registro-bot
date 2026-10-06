@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 const MIGRACIONES = [
   "supabase/migrations/20261006120000_proyectos_de_verdad.sql",
   "supabase/migrations/20261006130100_los_nombres_de_antes.sql",
+  "supabase/migrations/20261007120000_recordatorios_que_suenan.sql",
+  "supabase/migrations/20261007120100_las_claves_de_los_avisos_en_la_base.sql",
 ];
 
 const sql = MIGRACIONES.map((m) =>
@@ -61,13 +63,18 @@ function columnasDelTipo(tabla: string): string[] | null {
   return [...tipos.slice(abre, fin).matchAll(/^ {10}(\w+)\??:/gm)].map((m) => m[1]);
 }
 
-describe("database.ts tiene las columnas de la migración de proyectos", () => {
+describe("database.ts tiene las columnas de las migraciones de proyectos y recordatorios", () => {
   const mapa = columnasDeLaMigracion();
 
   it("encuentra las tablas", () => {
     expect([...mapa.keys()].sort()).toEqual(
       [
         "core_people",
+        "core_push_keys",
+        "core_reloj",
+        "core_reminder_fires",
+        "core_reminders",
+        "notifications",
         "tasks_items",
         "tasks_milestones",
         "tasks_project_doc_versions",
@@ -85,6 +92,8 @@ describe("database.ts tiene las columnas de la migración de proyectos", () => {
     expect(mapa.get("tasks_projects")).toEqual(expect.arrayContaining(["slug", "status", "how_md", "field_src", "updated_at"]));
     expect(mapa.get("tasks_items")).toEqual(expect.arrayContaining(["assignee_id", "origin", "field_src", "version", "former_titles"]));
     expect(mapa.get("tasks_milestones")).toEqual(expect.arrayContaining(["former_titles"]));
+    expect(mapa.get("notifications")).toEqual(["href"]);
+    expect(mapa.get("core_reminders")).toEqual(expect.arrayContaining(["text", "days", "next_fire_at", "tz"]));
   });
 
   it.each([...mapa.entries()])("%s", (tabla, columnas) => {

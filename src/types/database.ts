@@ -139,6 +139,18 @@ export type MilestoneKind = "ETAPA" | "HITO";
 export type MilestoneStatus = "PENDIENTE" | "EN_CURSO" | "HECHO" | "BLOQUEADO" | "SALTADO";
 export type DuePrecision = "DIA" | "SEMANA" | "MES" | "TRIMESTRE";
 
+// ------------------------------------------------ Recordatorios (E2)
+// Espejan los check de `20261007120000_recordatorios_que_suenan.sql`.
+
+/** «Vivos» (QUE_FALTA, COMO_VA, TU_DIA): el texto se arma al sonar. */
+export type ReminderKind = "TEXTO" | "QUE_FALTA" | "COMO_VA" | "TU_DIA";
+export type ReminderFreq = "UNA_VEZ" | "DIARIO" | "LABORABLES" | "SEMANAL" | "MENSUAL" | "CADA_N_DIAS";
+export type ReminderChannel = "PUSH" | "WHATSAPP";
+export type ReminderOrigin = "A_MANO" | "WHATSAPP" | "VOZ" | "CLAUDE" | "IMPORTAR" | "SISTEMA";
+export type ReminderDoneVia = "PUSH" | "APP" | "WHATSAPP" | "VOZ";
+/** A qué puede ir atado un recordatorio. */
+export type ReminderEntityKind = Extract<EntityKind, "PROYECTO" | "TAREA" | "PERSONA">;
+
 /** De dónde salió una tarea. Nulo en las de antes de que existiera. */
 export type TaskOrigin =
   | "A_MANO"
@@ -2264,6 +2276,134 @@ export interface Database {
         }
       >;
 
+      /**
+       * Recordatorios. `next_fire_at` lo calcula la base
+       * (`recordatorio_siguiente`): nunca lo escribe la aplicación.
+       */
+      core_reminders: Table<
+        {
+          id: string;
+          user_id: string;
+          text: string | null;
+          kind: ReminderKind;
+          entity_kind: ReminderEntityKind | null;
+          entity_id: string | null;
+          freq: ReminderFreq;
+          every_n: number | null;
+          /** «08:00:00». */
+          at_time: string;
+          /** 1 = lunes … 7 = domingo. */
+          days: number[];
+          /** -1 = el último día del mes. */
+          monthday: number | null;
+          on_date: string | null;
+          until_date: string | null;
+          tz: string;
+          channels: ReminderChannel[];
+          lock_private: boolean;
+          /** 22:00–07:00 no suena salvo que la hora la pusieras tú. */
+          quiet: boolean;
+          active: boolean;
+          snooze_until: string | null;
+          next_fire_at: string | null;
+          last_fired_at: string | null;
+          origin: ReminderOrigin;
+          field_src: FieldSrc;
+          ext_source: string | null;
+          ext_id: string | null;
+          version: number;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          user_id: string;
+          text?: string | null;
+          kind?: ReminderKind;
+          entity_kind?: ReminderEntityKind | null;
+          entity_id?: string | null;
+          freq: ReminderFreq;
+          every_n?: number | null;
+          at_time: string;
+          days?: number[];
+          monthday?: number | null;
+          on_date?: string | null;
+          until_date?: string | null;
+          tz?: string;
+          channels?: ReminderChannel[];
+          lock_private?: boolean;
+          quiet?: boolean;
+          active?: boolean;
+          snooze_until?: string | null;
+          origin?: ReminderOrigin;
+          field_src?: FieldSrc;
+          ext_source?: string | null;
+          ext_id?: string | null;
+        }
+      >;
+
+      /** Cada vez que sonó un recordatorio (o se dio por hecho antes). */
+      core_reminder_fires: Table<
+        {
+          reminder_id: string;
+          user_id: string;
+          fire_at: string;
+          /** El reloj llegó más de 2 h tarde: apuntado sin sonar. */
+          missed: boolean;
+          pushed_at: string | null;
+          wa_copied_at: string | null;
+          done_at: string | null;
+          done_via: ReminderDoneVia | null;
+          snoozed_to: string | null;
+          created_at: string;
+        },
+        {
+          reminder_id: string;
+          user_id: string;
+          fire_at: string;
+          missed?: boolean;
+          pushed_at?: string | null;
+          wa_copied_at?: string | null;
+          done_at?: string | null;
+          done_via?: ReminderDoneVia | null;
+          snoozed_to?: string | null;
+        }
+      >;
+
+      /** El secreto del reloj de recordatorios y a dónde llama. Sólo el rol de servicio. */
+      core_reloj: Table<
+        {
+          id: number;
+          secret: string;
+          base_url: string | null;
+          created_at: string;
+          rotated_at: string | null;
+        },
+        {
+          id?: number;
+          secret: string;
+          base_url?: string | null;
+          rotated_at?: string | null;
+        }
+      >;
+
+      /** El par VAPID cuando no está en las variables de entorno. Sólo el rol de servicio. */
+      core_push_keys: Table<
+        {
+          id: number;
+          public_key: string;
+          private_key: string;
+          subject: string;
+          created_at: string;
+        },
+        {
+          id?: number;
+          public_key: string;
+          private_key: string;
+          subject: string;
+        }
+      >;
+
       strategies: Table<
         {
           id: string;
@@ -2716,7 +2856,9 @@ export interface Database {
             | "JOURNAL_PENDING"
             // Coinbase cerró posición por su cuenta. Las cifras están bien y
             // no hay nada que arreglar: es un hecho que hay que saber.
-            | "LIQUIDATION";
+            | "LIQUIDATION"
+            // Sonó un recordatorio. Lo crea el reloj de la base (pg_cron).
+            | "RECORDATORIO";
           severity: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -2730,6 +2872,8 @@ export interface Database {
           created_at: string;
           emailed: boolean;
           emailed_at: string | null;
+          /** A dónde lleva el aviso: siempre una ruta de la aplicación. */
+          href: string | null;
         },
         {
           id?: string;
@@ -2747,7 +2891,8 @@ export interface Database {
             // Tampoco es un fallo: los números están bien, lo que falta es lo
             // que solo puedes escribir tú.
             | "JOURNAL_PENDING"
-            | "LIQUIDATION";
+            | "LIQUIDATION"
+            | "RECORDATORIO";
           severity?: "INFO" | "WARNING" | "CRITICAL";
           title: string;
           message: string;
@@ -2760,6 +2905,7 @@ export interface Database {
           resolved_at?: string | null;
           emailed?: boolean;
           emailed_at?: string | null;
+          href?: string | null;
         }
         // No restricted Update override here: the service-role client
         // (lib/notifications/create.ts) legitimately updates
@@ -2916,6 +3062,46 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      /**
+       * Las próximas veces (hasta 20) que sonaría una regla de recordatorio,
+       * con `recordatorio_siguiente` (la misma función que usa el reloj). Ver
+       * `20261007120000_recordatorios_que_suenan.sql`.
+       */
+      recordatorio_vista_previa: {
+        Args: {
+          p_freq: ReminderFreq;
+          p_at_time: string;
+          p_days: number[];
+          p_monthday: number | null;
+          p_every_n: number | null;
+          p_on_date: string | null;
+          p_until_date: string | null;
+          p_tz: string;
+          p_quiet: boolean;
+          p_n?: number;
+        };
+        Returns: string[];
+      };
+      /** Cuándo suenan tus recordatorios encendidos entre dos instantes (≤ 62 días). */
+      recordatorios_entre: {
+        Args: { p_desde: string; p_hasta: string };
+        Returns: { reminder_id: string; fire_at: string }[];
+      };
+      /** «Hecho»: cierra un disparo (o uno que no ha sonado) y apaga su aviso. */
+      recordatorio_hecho: {
+        Args: { p_reminder: string; p_fire_at: string; p_via: ReminderDoneVia };
+        Returns: boolean;
+      };
+      /** «En 1 h»: vuelve a sonar dentro de N minutos (07:00 si cae de noche). */
+      recordatorio_posponer: {
+        Args: { p_reminder: string; p_fire_at: string; p_minutos: number };
+        Returns: string | null;
+      };
+      /** Sólo el rol de servicio: marca y devuelve a quién mandar push. */
+      recordatorios_reclamar_push: {
+        Args: Record<string, never>;
+        Returns: { user_id: string; n: number }[];
+      };
       /**
        * Escribe una reconstrucción completa en una sola transacción.
        *
