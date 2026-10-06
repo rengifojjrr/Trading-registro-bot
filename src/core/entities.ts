@@ -56,6 +56,13 @@ export interface EntityMeta {
    * mismo commit. Nada lo comprueba automáticamente.
    */
   generatedColumns?: string[];
+  /**
+   * Lo que apunta a esta fila con `on delete set null` y no es su hijo: al
+   * borrarla se queda sin ella (una tarea «sin asignar»), y sin esto, deshacer
+   * devolvía a la persona pero no sus tareas. La papelera guarda qué filas
+   * apuntaban y, al restaurar, las vuelve a enlazar (sólo si siguen vacías).
+   */
+  relinks?: { table: string; column: string }[];
 }
 
 export const ENTITIES: Record<EntityKind, EntityMeta> = {
@@ -87,6 +94,8 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     iconColumn: "icon",
     detailBase: "/tareas",
     colorToken: "--mod-tasks",
+    // Borrar la madre suelta sus subtareas; deshacer las vuelve a colgar.
+    relinks: [{ table: "tasks_items", column: "parent_id" }],
   },
   /**
    * El proyecto, con todo lo que cuelga de él y no tiene sentido sin él.
@@ -131,6 +140,11 @@ export const ENTITIES: Record<EntityKind, EntityMeta> = {
     detailBase: "/personas",
     colorToken: "--mod-tasks",
     children: [{ table: "tasks_project_members", foreignKey: "person_id" }],
+    relinks: [
+      { table: "tasks_items", column: "assignee_id" },
+      { table: "tasks_milestones", column: "owner_person_id" },
+      { table: "tasks_streams", column: "lead_person_id" },
+    ],
   },
   COMIDA: {
     kind: "COMIDA",

@@ -375,6 +375,12 @@ export function computeHealth(input: HealthInput): Health {
   const quieto = daysBetween(desde, today);
   if (quieto > 14) return amarillo(`Nada nuevo en ${quieto} días`);
 
+  // Sin tareas ni hitos no hay nada que vaya bien ni mal: un verde aquí decía
+  // «Va bien» de un proyecto recién creado y vacío.
+  if (input.tasks.length === 0 && hitos.length === 0) {
+    return { level: null, why: "Aún sin plan", manual: false, review };
+  }
+
   return { level: "VERDE", why: "Va bien", manual: false, review };
 }
 

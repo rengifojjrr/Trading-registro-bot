@@ -29,6 +29,11 @@ import type { AuthorKind, LogKind } from "@/types/database";
 
 const QUIEN: Record<AuthorKind, string> = { OWNER: "tú", CLAUDE: "Claude", BOT: "el bot" };
 
+/** «lo escribiste tú», «lo escribió Claude»: el verbo concuerda con quien. */
+function escrito(by: AuthorKind, pronombre: "lo" | "la"): string {
+  return by === "OWNER" ? `${pronombre} escribiste tú` : `${pronombre} escribió ${QUIEN[by]}`;
+}
+
 // ------------------------------------------------------------------ cómo va
 
 /** «Cómo va»: tu frase, con cuándo y quién la escribió. Se edita aquí mismo. */
@@ -50,25 +55,46 @@ export function HowCard({
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState(how ?? "");
   const [pending, start] = useTransition();
+  // Lo guardado se enseña en el acto, como tuyo: esperar a la recarga dejaba
+  // unos segundos el texto viejo con «lo escribió Claude» después de «Guardado».
+  const [guardado, setGuardado] = useState<{ how: string | null; at: string } | null>(null);
+  const [visto, setVisto] = useState(how);
+  if (how !== visto) {
+    // Llegó lo de la base (la recarga, u otro cambio): manda eso.
+    setVisto(how);
+    setGuardado(null);
+    if (!editando) setTexto(how ?? "");
+  }
+
+  const mostrado = guardado
+    ? { how: guardado.how, at: guardado.at, by: "OWNER" as AuthorKind }
+    : { how, at: howAt, by: howBy };
 
   const guardar = () =>
     start(async () => {
       const r = await saveHow(projectId, texto);
       if (r.error) toast.error(r.error);
       else {
+        setGuardado({ how: texto.trim() === "" ? null : texto.trim(), at: new Date().toISOString() });
         toast.success("Guardado.");
         setEditando(false);
       }
     });
 
+  const cancelar = () => {
+    // Cancelar descarta lo escrito: la próxima vez se empieza por lo que hay.
+    setTexto(mostrado.how ?? "");
+    setEditando(false);
+  };
+
   return (
     <section aria-label="Cómo va" className="flex flex-col gap-2 rounded-[14px] border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-muted-foreground">Cómo va</h2>
-        {howAt ? (
+        {mostrado.at ? (
           <span className="text-xs text-muted-foreground">
-            {dayLabel(dateIn(howAt, timezone), today)}
-            {howBy ? ` · lo escribió ${QUIEN[howBy]}` : ""}
+            {dayLabel(dateIn(mostrado.at, timezone), today)}
+            {mostrado.by ? ` · ${escrito(mostrado.by, "lo")}` : ""}
           </span>
         ) : null}
       </div>
@@ -87,14 +113,16 @@ export function HowCard({
             <Button type="button" onClick={guardar} disabled={pending} className="min-h-11">
               Guardar
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setEditando(false)} className="min-h-11">
+            <Button type="button" variant="ghost" onClick={cancelar} className="min-h-11">
               Cancelar
             </Button>
           </div>
         </>
       ) : (
         <div className="flex items-start justify-between gap-2">
-          <p className={cn("text-sm", !how && "text-muted-foreground")}>{how ?? "Aún no has dicho cómo va."}</p>
+          <p className={cn("text-sm", !mostrado.how && "text-muted-foreground")}>
+            {mostrado.how ?? "Aún no has dicho cómo va."}
+          </p>
           <Button type="button" variant="ghost" size="icon" className="size-11 shrink-0" onClick={() => setEditando(true)} aria-label="Editar cómo va">
             <Pencil aria-hidden />
           </Button>
@@ -178,7 +206,7 @@ export function FichaPanel({
           <MarkdownView source={ficha.body_md} />
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>
-              Versión {ficha.version} · la escribió {QUIEN[ficha.made_by]} · {dayLabel(dateIn(ficha.updated_at, timezone), today)}
+              Versión {ficha.version} · {escrito(ficha.made_by, "la")} · {dayLabel(dateIn(ficha.updated_at, timezone), today)}
             </span>
             <Button type="button" variant="outline" size="sm" onClick={() => setEditando(true)}>
               <Pencil aria-hidden /> Editar
@@ -375,10 +403,26 @@ export function SourcesPanel({ projectId, sources }: { projectId: string; source
     });
   };
 
-  const quitar = (id: string) =>
+  // Quitar es de un toque y en el borde donde cae el pulgar: se puede
+  // deshacer durante unos segundos, como en el resto de la app.
+  const quitar = (s: SourceRow) =>
     start(async () => {
-      const r = await removeSource(id);
-      if (r.error) toast.error(r.error);
+      const r = await removeSource(s.id);
+      if (r.error) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Quitado.", {
+        duration: 5000,
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            void addSource(projectId, { label: s.label, url: s.kind === "ENLACE" ? s.ref : null }).then((v) => {
+              if (v.error) toast.error(v.error);
+            });
+          },
+        },
+      });
     });
 
   return (
@@ -399,7 +443,7 @@ export function SourcesPanel({ projectId, sources }: { projectId: string; source
                 <span className="shrink-0 text-xs text-muted-foreground">en tu Mac</span>
               </span>
             )}
-            <Button type="button" variant="ghost" size="icon" className="size-11" disabled={pending} onClick={() => quitar(s.id)} aria-label={`Quitar ${s.label}`}>
+            <Button type="button" variant="ghost" size="icon" className="size-11" disabled={pending} onClick={() => quitar(s)} aria-label={`Quitar ${s.label}`}>
               <X aria-hidden />
             </Button>
           </li>

@@ -17,12 +17,34 @@ Personas, Hoja de ruta, Ficha, Bitácora, Fuentes), `/tareas/hitos/[id]`, `/pers
 
 ## Base de datos
 
-Dos migraciones, **sólo aditivas** (ni un `drop` ni un `update` de filas que existen):
+Cinco migraciones, **sólo aditivas** (ni un `drop` ni un `update` de filas que existen):
 
 | Migración | Qué hace |
 |---|---|
 | `20261006120000_proyectos_de_verdad.sql` | Columnas nuevas en `tasks_projects` y `tasks_items`; tablas `core_people`, `tasks_project_members`, `tasks_streams`, `tasks_milestones`, `tasks_project_log`, `tasks_project_docs`, `tasks_project_doc_versions`, `tasks_project_sources`; RLS `(select auth.uid()) = user_id` en todas; disparadores de `version` y de versiones de la ficha |
 | `20261006120100_la_persona_tiene_ficha.sql` | `entity_kind` gana `PERSONA` (comentarios, ficheros, vínculos y papelera para personas) |
+| `20261006130000_el_segundo_factor_tambien_en_la_base.sql` | `sesion_cumple_mfa()` y una política **restrictiva** en cada tabla de `public` con RLS y en `storage.objects`: con un factor verificado, un token `aal1` no ve ni escribe nada por la API de Supabase (no sólo por la app). `assign_trades_to_bot` hace la misma comprobación |
+| `20261006130100_los_nombres_de_antes.sql` | `former_titles` en `tasks_items` y `tasks_milestones`: el título de antes al renombrar, para que el archivo de Claude no duplique |
+| `20261006130200_la_tarea_en_un_proyecto_suyo.sql` | Clave compuesta `(project_id, user_id)` en `tasks_items` (además de la de siempre, `not valid`): una tarea sólo cuelga de un proyecto de su dueño |
+
+### Orden para subir a producción
+
+La migración nueva es segura con la app vieja (sólo añade), pero **la app nueva no lo es sin las migraciones**: la
+lista de proyectos, la página del proyecto, Personas y los hitos leen columnas y tablas que no existen hasta
+aplicarlas. Por eso, en este orden:
+
+1. Copia de la base (`supabase db dump`, esquema y datos) en `data/backups/plataforma/` del agente.
+2. `20261006120000_proyectos_de_verdad.sql` con `apply_migration`.
+3. `20261006120100_la_persona_tiene_ficha.sql`.
+4. `20261006130000_el_segundo_factor_tambien_en_la_base.sql`.
+5. `20261006130100_los_nombres_de_antes.sql`.
+6. `20261006130200_la_tarea_en_un_proyecto_suyo.sql`.
+7. Comprobar: `select count(*) from pg_policies where policyname like '%_segundo_factor'` (una por tabla con RLS
+   más la de Storage) y que la app abre `/tareas/proyectos`.
+8. Sólo entonces, fusionar la rama a la de producción.
+
+Si el dueño ya tiene un factor verificado, desde el paso 4 una sesión `aal1` deja de ver datos: es lo que se busca, y
+la app ya le pide el código en `/verificar`.
 
 Detalles que importan:
 
@@ -69,7 +91,15 @@ El formato del archivo está en el repo del agente (`docs/proyectos-plantilla.md
 Reglas que prueban los tests: nunca borra; nunca pisa un campo del dueño; una tarea o un hito hechos no se reabren;
 repetir no duplica (los ids nacen en el navegador, UUIDv7, y las altas son `on conflict (id) do nothing`); al aplicar,
 el servidor recalcula el plan y sólo sigue si su huella es la que se enseñó; un archivo `.privado` se rechaza antes de
-mandar nada.
+mandar nada (por el nombre —`x.privado.md`, `x-privado.md`, `privado.md`—, por `privado: sí` en la cabecera o por un
+encabezado que diga «privado»); una sección «Montos», «Contrapartes» o «Contratos» se avisa.
+
+Renombrar en la app no duplica al volver a importar: el nombre de antes de una persona pasa a sus alias y el título de
+antes de una tarea o un hito a `former_titles`, y el importador casa también con ellos. Lo que se parece a algo que ya
+existe, las secciones que se saltan y los nombres que parecen frases salen en «Míralo antes de crear», encima del
+botón, que pide «Lo he mirado: crear igual».
+
+Una tarea puede colgar de un hito en el archivo: `- [ ] Título — @persona — 2026-10-15 — hito: Título del hito`.
 
 ## Segundo factor (TOTP)
 
@@ -79,5 +109,25 @@ toda ruta privada y mandan a `/verificar`. Sin factor no se pide nada (la lista 
 se queda fuera. El nivel se conserva al refrescar la sesión, así que se pide una vez por teléfono. Si se pierde el
 teléfono: entrar con el otro inscrito o quitar el factor en Supabase (Authentication → Users).
 
-Pruebas: `src/lib/auth/mfa.test.ts`, `src/lib/auth/require-user.test.ts` y `src/lib/supabase/middleware.test.ts`
-(sin `aal2`, ninguna ruta privada se ve una vez inscrito).
+Desde `20261006130000` la regla vive también en la base: cada tabla con RLS tiene una política restrictiva
+`*_segundo_factor`, así que con la contraseña sola no se lee nada ni por PostgREST, ni por Storage, ni por Realtime.
+Una tabla nueva tiene que traer la suya (lo vigila `supabase/tests/segundo-factor.prueba.sql`).
+
+En el teléfono, «Abrir en la app de códigos» usa el enlace `otpauth://` (el QR no se puede escanear con el mismo
+aparato) y «Cancelar» quita el factor a medio inscribir.
+
+Pruebas: `src/lib/auth/mfa.test.ts`, `src/lib/auth/require-user.test.ts`, `src/lib/supabase/middleware.test.ts`
+(sin `aal2`, ninguna ruta privada se ve una vez inscrito), `src/app/api/paper/tick/route.test.ts` (tampoco el ciclo
+del simulador) y `supabase/tests/segundo-factor.prueba.sql` (la base).
+
+## Copia de seguridad
+
+`src/lib/backup/tables.ts` dice qué tablas entran en la copia programada y cuáles no, con su porqué; las ocho de los
+proyectos entran, y en el orden en que habría que restaurarlas. `tables.test.ts` lee las migraciones: una tabla nueva
+con `user_id` que no esté en ninguna de las dos listas hace fallar la prueba.
+
+## Tus tareas y las de otros
+
+Hoy, `/tareas`, Todas y las cifras del día cuentan como tuyas sólo las tareas sin responsable y las de tu fila «Yo»;
+las subtareas van con su madre. Las de otros salen en «Esperando a otros» (portada y Hoy) y con el filtro «De otros»
+de Todas, con el nombre de quien la hace.

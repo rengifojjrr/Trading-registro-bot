@@ -12,20 +12,24 @@ export function HealthDot({
   why,
   manual = false,
   showWhy = true,
+  wrap = false,
   className,
 }: {
   level: ProjectHealth | null;
   why: string;
   manual?: boolean;
   showWhy?: boolean;
+  /** El porqué pasa a otra línea en vez de cortarse («…»). */
+  wrap?: boolean;
   className?: string;
 }) {
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-sm", className)}>
+    <span className={cn("inline-flex min-w-0 gap-1.5 text-sm", wrap ? "items-baseline" : "items-center", className)}>
       <span
         aria-hidden
         className={cn(
           "size-2.5 shrink-0 rounded-full",
+          wrap && "self-center",
           level === "VERDE" && "bg-positive",
           level === "AMARILLO" && "bg-warning",
           level === "ROJO" && "bg-negative",
@@ -44,7 +48,7 @@ export function HealthDot({
         {level ? HEALTH_LABELS[level] : why}
       </span>
       {showWhy && level ? (
-        <span className="truncate text-muted-foreground">
+        <span className={cn("text-muted-foreground", wrap ? "break-words" : "truncate")}>
           · {why}
           {manual ? " (fijado)" : ""}
         </span>

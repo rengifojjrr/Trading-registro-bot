@@ -9,7 +9,7 @@
   Lo que se comprueba:
   1. Cada uno ve sólo lo suyo, en todas las tablas nuevas.
   2. Nadie puede colgar algo suyo de algo ajeno (claves compuestas), aunque
-     conozca el id.
+     conozca el id: cada clave compuesta, una por una.
   3. El anónimo no ve ni escribe nada.
   4. La versión la sube la base; el disparador salta aunque la función esté
      cerrada a `authenticated`.
@@ -243,6 +243,74 @@ begin
     raise exception 'FALLO: B coló una versión en la ficha de A';
   exception when foreign_key_violation then null;
   end;
+
+  -- Cada clave compuesta, una por una: ninguna deja apuntar a lo de A.
+  begin
+    insert into public.tasks_streams (user_id, project_id, name)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-0000000000a1', 'Frente intruso');
+    raise exception 'FALLO: B creó un frente en un proyecto de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_streams (user_id, project_id, name, lead_person_id)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-0000000000a1', 'Frente de B',
+            'a0000000-0000-4000-8000-0000000000b1');
+    raise exception 'FALLO: B puso a una persona de A al frente de lo suyo';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_milestones (user_id, project_id, kind, title)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-0000000000a1', 'HITO', 'Hito intruso');
+    raise exception 'FALLO: B creó un hito en un proyecto de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_milestones (user_id, project_id, kind, stage_id, title)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-0000000000a1', 'HITO',
+            'a0000000-0000-4000-8000-0000000000d1', 'Hito colgado de una etapa de A');
+    raise exception 'FALLO: B colgó un hito de una etapa de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_milestones (user_id, project_id, kind, title, owner_person_id)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-0000000000a1', 'HITO',
+            'Hito de B', 'a0000000-0000-4000-8000-0000000000b1');
+    raise exception 'FALLO: B le dio un hito a una persona de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_project_docs (user_id, project_id, kind, title, body_md, made_by)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-0000000000a1', 'NOTA', 'Nota', 'x', 'OWNER');
+    raise exception 'FALLO: B escribió un documento en un proyecto de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_project_sources (user_id, project_id, kind, label, ref, lives)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-0000000000a1',
+            'ENLACE', 'Intruso', 'https://ejemplo.test/x', 'NUBE');
+    raise exception 'FALLO: B colgó un enlace de un proyecto de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_items (user_id, title, stream_id)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'Tarea de B', 'a0000000-0000-4000-8000-0000000000c1');
+    raise exception 'FALLO: B metió una tarea en un frente de A';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    insert into public.tasks_items (user_id, title, project_id)
+    values ('bbbbbbbb-0000-4000-8000-000000000002', 'Tarea de B', 'a0000000-0000-4000-8000-0000000000a1');
+    raise exception 'FALLO: B metió una tarea en un proyecto de A';
+  exception when foreign_key_violation then null;
+  end;
 end $$;
 
 -- --------------------------------------------- el anónimo, nada de nada
@@ -301,6 +369,18 @@ begin
   end if;
   if (select count(*) from public.tasks_project_members) <> 0 then
     raise exception 'FALLO: borrar la persona no la sacó del proyecto';
+  end if;
+
+  -- Borrar un proyecto deja sus tareas sin proyecto (las dos claves de
+  -- project_id hacen lo mismo y no chocan).
+  insert into public.tasks_projects (id, user_id, name)
+  values ('a0000000-0000-4000-8000-0000000000a9', 'aaaaaaaa-0000-4000-8000-000000000001', 'Proyecto efímero');
+  insert into public.tasks_items (id, user_id, project_id, title)
+  values ('a0000000-0000-4000-8000-0000000000e9', 'aaaaaaaa-0000-4000-8000-000000000001',
+          'a0000000-0000-4000-8000-0000000000a9', 'Tarea del efímero');
+  delete from public.tasks_projects where id = 'a0000000-0000-4000-8000-0000000000a9';
+  if (select project_id from public.tasks_items where id = 'a0000000-0000-4000-8000-0000000000e9') is not null then
+    raise exception 'FALLO: borrar el proyecto no soltó su tarea';
   end if;
 
   -- Borrar el hito deja la tarea sin hito; borrar la tarea madre suelta la

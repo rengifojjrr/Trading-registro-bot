@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  cancelTotpEnrollment,
   confirmTotpEnrollment,
   removeTotpFactor,
   startTotpEnrollment,
@@ -53,6 +54,17 @@ export function SecondFactor({
       setCodigo("");
       router.refresh();
     });
+  };
+
+  const cancelar = () => {
+    const id = inscripcion?.factorId ?? null;
+    setInscripcion(null);
+    setCodigo("");
+    if (id) {
+      start(async () => {
+        await cancelTotpEnrollment(id);
+      });
+    }
   };
 
   const quitar = (id: string, nombre: string) => {
@@ -110,14 +122,25 @@ export function SecondFactor({
 
       {inscripcion?.qr ? (
         <form onSubmit={confirmar} className="flex flex-col gap-3 rounded-[14px] border border-border p-4">
-          <p className="text-sm">1. Escanea esto con la app de códigos.</p>
+          <p className="text-sm">1. Llévalo a la app de códigos.</p>
+          {inscripcion.uri ? (
+            <div className="flex flex-col gap-1">
+              <Button asChild className="min-h-11 w-fit">
+                <a href={inscripcion.uri}>
+                  <Smartphone aria-hidden /> Abrir en la app de códigos
+                </a>
+              </Button>
+              <p className="text-xs text-muted-foreground">Si la app de códigos está en este mismo teléfono.</p>
+            </div>
+          ) : null}
+          <p className="text-xs text-muted-foreground">Si está en otro aparato, escanea esto con él:</p>
           {/* eslint-disable-next-line @next/next/no-img-element -- es un SVG en data: que no pasa por el optimizador */}
           <img src={inscripcion.qr} alt="Código QR para la app de códigos" width={176} height={176} className="rounded-md bg-white p-2" />
           {inscripcion.secreto ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               Si no puedes escanear, escribe esta clave:
               <code className="break-all rounded bg-secondary px-1.5 py-0.5 text-foreground">{inscripcion.secreto}</code>
-              <Button type="button" variant="ghost" size="sm" onClick={copiar}>
+              <Button type="button" variant="ghost" size="sm" onClick={copiar} className="min-h-11">
                 <Copy aria-hidden /> Copiar
               </Button>
             </div>
@@ -139,7 +162,7 @@ export function SecondFactor({
               {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
               Confirmar
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setInscripcion(null)} className="min-h-11">
+            <Button type="button" variant="ghost" onClick={cancelar} className="min-h-11">
               Cancelar
             </Button>
           </div>

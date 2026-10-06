@@ -141,7 +141,7 @@ export function ProjectHeader({ project, health, progress, people, today }: Head
               <button
                 type="button"
                 disabled={pending}
-                className="flex min-h-9 items-center gap-1 rounded-full border border-border px-3 text-sm font-medium transition-colors hover:border-foreground/30"
+                className="flex min-h-11 items-center gap-1 rounded-full border border-border px-3 text-sm font-medium transition-colors hover:border-foreground/30"
                 aria-label={`Estado: ${PROJECT_STATUS_LABELS[project.status]}. Cambiar`}
               >
                 {PROJECT_STATUS_LABELS[project.status]} <span aria-hidden>▾</span>
@@ -162,14 +162,19 @@ export function ProjectHeader({ project, health, progress, people, today }: Head
               <button
                 type="button"
                 disabled={pending}
-                className="flex min-h-9 min-w-0 items-center gap-1 rounded-full px-1 text-left"
-                aria-label="Semáforo. Cambiar"
+                className="flex min-h-11 min-w-0 items-center gap-1 rounded-full px-1 text-left"
+                aria-label={`Semáforo: ${health.why}. Cambiar`}
               >
-                <HealthDot level={health.level} why={health.why} manual={health.manual} />
+                <HealthDot level={health.level} why={health.why} manual={health.manual} wrap />
                 <span aria-hidden className="text-sm text-muted-foreground">▾</span>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent align="start" className="max-w-[min(20rem,calc(100vw-2rem))]">
+              {/* El porqué entero, que en la cabecera puede no caber. */}
+              <DropdownMenuLabel className="font-normal">
+                <HealthDot level={health.level} why={health.why} manual={health.manual} wrap />
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuLabel>Fijar el semáforo 14 días</DropdownMenuLabel>
               {(["VERDE", "AMARILLO", "ROJO"] as const).map((h) => (
                 <DropdownMenuItem key={h} onSelect={() => fijarSemaforo(h)}>

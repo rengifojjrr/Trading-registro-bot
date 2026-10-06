@@ -183,6 +183,8 @@ export type ProjectSourceKind =
 export interface TrashPayload {
   row: Record<string, Json>;
   children?: Record<string, Record<string, Json>[]>;
+  /** Filas que apuntaban a ésta (`tabla.columna` → ids) y se vuelven a enlazar al restaurar. */
+  relinks?: { table: string; column: string; ids: string[] }[];
 }
 
 export interface Database {

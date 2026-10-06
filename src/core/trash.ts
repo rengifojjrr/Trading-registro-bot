@@ -41,6 +41,21 @@ function untyped(builder: unknown): UntypedInsert {
   return builder as UntypedInsert;
 }
 
+/** Lo mismo para leer y volver a enlazar en tablas que se conocen al ejecutar. */
+interface UntypedFilter<T> {
+  eq: (column: string, value: string) => UntypedFilter<T> & PromiseLike<T>;
+  in: (column: string, values: string[]) => UntypedFilter<T> & PromiseLike<T>;
+  is: (column: string, value: null) => UntypedFilter<T> & PromiseLike<T>;
+}
+
+function untypedSelect(builder: unknown): { select: (cols: string) => UntypedFilter<{ data: unknown[] | null }> } {
+  return builder as { select: (cols: string) => UntypedFilter<{ data: unknown[] | null }> };
+}
+
+function untypedUpdate(builder: unknown): { update: (values: Record<string, string>) => UntypedFilter<{ error: unknown }> } {
+  return builder as { update: (values: Record<string, string>) => UntypedFilter<{ error: unknown }> };
+}
+
 export interface TrashRow {
   id: string;
   kind: EntityKind;
@@ -79,9 +94,20 @@ export async function moveToTrash(kind: EntityKind, id: string): Promise<string 
     if (data && data.length > 0) children[child.table] = data as Record<string, Json>[];
   }
 
+  const relinks: NonNullable<TrashPayload["relinks"]> = [];
+  for (const r of meta.relinks ?? []) {
+    const { data } = await untypedSelect(supabase.from(r.table))
+      .select("id")
+      .eq(r.column, id)
+      .eq("user_id", user.id);
+    const ids = ((data ?? []) as { id: string }[]).map((x) => x.id);
+    if (ids.length > 0) relinks.push({ table: r.table, column: r.column, ids });
+  }
+
   const payload: TrashPayload = {
     row: row as Record<string, Json>,
     ...(Object.keys(children).length > 0 ? { children } : {}),
+    ...(relinks.length > 0 ? { relinks } : {}),
   };
 
   const label = String((row as Record<string, unknown>)[meta.titleColumn] ?? "").trim();
@@ -131,6 +157,18 @@ export async function restoreFromTrash(trashId: string): Promise<boolean> {
 
   for (const [table, rows] of Object.entries(payload.children ?? {})) {
     await untyped(supabase.from(table)).insert(rows);
+  }
+
+  // Lo que apuntaba a ella vuelve a apuntar, si nadie lo ha cambiado entretanto
+  // (una tarea que ya pasaste a otra persona se queda con la otra).
+  for (const r of payload.relinks ?? []) {
+    const entry = (meta.relinks ?? []).find((x) => x.table === r.table && x.column === r.column);
+    if (!entry || r.ids.length === 0) continue;
+    await untypedUpdate(supabase.from(entry.table))
+      .update({ [entry.column]: (payload.row as { id: string }).id })
+      .in("id", r.ids.slice(0, 1000))
+      .eq("user_id", user.id)
+      .is(entry.column, null);
   }
 
   await supabase.from("core_trash").delete().eq("id", trashId).eq("user_id", user.id);

@@ -24,6 +24,11 @@ export interface Inscripcion {
   qr: string | null;
   /** El secreto en texto, por si la cámara no puede. */
   secreto: string | null;
+  /**
+   * El enlace `otpauth://` que abre la app de códigos en este mismo teléfono:
+   * el QR no se puede escanear con la cámara del aparato que lo enseña.
+   */
+  uri: string | null;
 }
 
 /** Nombre que verás en la lista: «Teléfono», «Teléfono 2»… (Supabase no deja repetirlo). */
@@ -37,7 +42,7 @@ function nombreLibre(usados: string[]): string {
 export async function startTotpEnrollment(): Promise<Inscripcion> {
   const supabase = await createClient();
   const { data: lista, error: errorLista } = await supabase.auth.mfa.listFactors();
-  if (errorLista) return { error: "No pude leer tu cuenta. Vuelve a entrar.", factorId: null, qr: null, secreto: null };
+  if (errorLista) return { error: "No pude leer tu cuenta. Vuelve a entrar.", factorId: null, qr: null, secreto: null, uri: null };
 
   // Una inscripción que se quedó a medias (se cerró la pestaña antes del
   // código) estorba a la siguiente: se quita. Las verificadas no se tocan.
@@ -58,9 +63,30 @@ export async function startTotpEnrollment(): Promise<Inscripcion> {
       factorId: null,
       qr: null,
       secreto: null,
+      uri: null,
     };
   }
-  return { error: null, factorId: data.id, qr: data.totp.qr_code, secreto: data.totp.secret };
+  return {
+    error: null,
+    factorId: data.id,
+    qr: data.totp.qr_code,
+    secreto: data.totp.secret,
+    uri: data.totp.uri.startsWith("otpauth://") ? data.totp.uri : null,
+  };
+}
+
+/**
+ * «Cancelar» a medio inscribir: quita el factor sin verificar, que si no se
+ * quedaba colgado en la cuenta («Teléfono 2» a medias). Uno verificado no se
+ * toca desde aquí: para eso está «Quitar».
+ */
+export async function cancelTotpEnrollment(factorId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: lista } = await supabase.auth.mfa.listFactors();
+  const factor = (lista?.all ?? []).find((f) => f.id === factorId);
+  if (!factor || factor.status === "verified") return { error: null };
+  const { error } = await supabase.auth.mfa.unenroll({ factorId });
+  return { error: error ? "No se pudo cancelar del todo; se limpiará la próxima vez." : null };
 }
 
 /** Confirma el teléfono con el primer código. Desde aquí, la cuenta pide código en los teléfonos nuevos. */

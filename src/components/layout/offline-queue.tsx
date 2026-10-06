@@ -13,6 +13,7 @@ import {
   writeQueue,
   type QueuedWrite,
 } from "@/lib/offline/queue";
+import { sinRed } from "@/lib/offline/online";
 
 /**
  * Manda lo que se apuntó sin conexión, en cuanto la hay.
@@ -38,16 +39,14 @@ export function OfflineQueue() {
     typeof window === "undefined" ? [] : readQueue(window.localStorage),
   );
   const [enviando, setEnviando] = useState(false);
-  const [sinConexion, setSinConexion] = useState(
-    () => typeof navigator !== "undefined" && !navigator.onLine,
-  );
+  const [sinConexion, setSinConexion] = useState(() => sinRed());
 
   const vaciar = useCallback(async () => {
     if (enviando) return;
     // `navigator.onLine` en falso es fiable: significa que no hay red. En
     // verdadero no promete nada -- puede haber wifi sin internet -- así que
     // sólo se usa para no intentarlo cuando se sabe seguro que no.
-    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    if (sinRed()) return;
 
     let actual = pending(readQueue(window.localStorage));
     if (actual.length === 0) return;

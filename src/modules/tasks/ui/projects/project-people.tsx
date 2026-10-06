@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { SIDES, SIDE_LABELS, displayName } from "@/core/people";
+import { SIDES, SIDE_LABELS, displayName, shortName } from "@/core/people";
 import { PersonAvatar } from "@/core/ui/person-avatar";
 import { PROJECT_LIMITS, waitingLabel } from "@/modules/tasks/domain/projects";
 import { addMember, setMemberActive, updateMember } from "@/modules/tasks/project-actions";
@@ -99,8 +99,21 @@ function Miembro({ member, projectId }: { member: MemberView; projectId: string 
   const sacar = () =>
     start(async () => {
       const r = await setMemberActive(member.id, false);
-      if (r.error) toast.error(r.error);
-      else toast.success(`${displayName(p)} ya no está en el proyecto.`);
+      if (r.error) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success(`${displayName(p)} ya no está en el proyecto.`, {
+        duration: 5000,
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            void setMemberActive(member.id, true).then((v) => {
+              if (v.error) toast.error(v.error);
+            });
+          },
+        },
+      });
     });
 
   return (
@@ -109,11 +122,11 @@ function Miembro({ member, projectId }: { member: MemberView; projectId: string 
         <PersonAvatar person={p} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={`/personas/${p.id}` as Route} className="font-medium hover:underline">
+            <Link href={`/personas/${p.id}` as Route} className="min-w-0 break-words font-medium hover:underline [overflow-wrap:anywhere]">
               {displayName(p)}
             </Link>
             {member.role ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-xs">{member.role}</span>
+              <span className="max-w-[12rem] truncate rounded-full border border-border px-2 py-0.5 text-xs">{member.role}</span>
             ) : null}
             {sinWhatsapp ? <span className="text-xs text-muted-foreground">sin WhatsApp</span> : null}
           </div>
@@ -145,7 +158,7 @@ function Miembro({ member, projectId }: { member: MemberView; projectId: string 
           href={`/tareas/proyectos/${projectId}?tab=tareas&para=${p.is_owner ? "YO" : p.id}` as Route}
           className="flex min-h-11 items-center gap-1 text-muted-foreground hover:text-foreground"
         >
-          <Plus className="size-4" aria-hidden /> tarea para {p.is_owner ? "ti" : p.name}
+          <Plus className="size-4 shrink-0" aria-hidden /> tarea para {p.is_owner ? "ti" : shortName(p.name)}
         </Link>
         <Link href={`/personas/${p.id}` as Route} className="flex min-h-11 items-center text-muted-foreground hover:text-foreground">
           Ficha

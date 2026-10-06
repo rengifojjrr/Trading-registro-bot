@@ -39,7 +39,7 @@ const TABS = [
   { id: "resumen", label: "Resumen" },
   { id: "tareas", label: "Tareas" },
   { id: "personas", label: "Personas" },
-  { id: "ruta", label: "Hoja de ruta" },
+  { id: "ruta", label: "Hoja de ruta", corta: "Ruta" },
   { id: "ficha", label: "Ficha" },
   { id: "bitacora", label: "Bitácora" },
   { id: "fuentes", label: "Fuentes" },
@@ -104,7 +104,14 @@ export default async function ProjectDetailPage({
         </div>
       }
     >
-      <nav aria-label="Secciones del proyecto" className="-mx-4 flex gap-1.5 overflow-x-auto border-b border-border px-4 pb-2 md:mx-0 md:px-0">
+      {/* En el teléfono las siete pestañas pasan a dos filas en vez de
+          desplazarse de lado: a 375 px sólo se veían cuatro y nada decía que
+          había más (Ficha, Bitácora y Fuentes no existían para quien no lo
+          supiera). */}
+      <nav
+        aria-label="Secciones del proyecto"
+        className="flex flex-wrap gap-1 border-b border-border pb-2 md:flex-nowrap md:gap-1.5 md:overflow-x-auto"
+      >
         {TABS.map((t) => (
           <Link
             key={t.id}
@@ -116,7 +123,14 @@ export default async function ProjectDetailPage({
               tab === t.id ? "bg-accent font-medium text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {t.label}
+            {"corta" in t ? (
+              <>
+                <span className="md:hidden">{t.corta}</span>
+                <span className="hidden md:inline">{t.label}</span>
+              </>
+            ) : (
+              t.label
+            )}
           </Link>
         ))}
       </nav>

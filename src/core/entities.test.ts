@@ -78,3 +78,30 @@ describe("registro de entidades", () => {
     }
   });
 });
+
+describe("lo que apunta a una persona vuelve con ella", () => {
+  /**
+   * Cada clave hacia core_people con `on delete set null` es algo que se
+   * pierde al borrar a la persona y que deshacer tiene que volver a enlazar.
+   * Se lee de las migraciones: una clave nueva sin su entrada aquí falla.
+   */
+  it("cada «set null» hacia core_people está en los relinks de PERSONA", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const dir = join(process.cwd(), "supabase/migrations");
+    const sql = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .map((f) => readFileSync(join(dir, f), "utf8"))
+      .join("\n");
+    const columnas = [
+      ...sql.matchAll(/foreign key \((\w+), user_id\) references public\.core_people \(id, user_id\)\s+on delete set null/gi),
+    ].map((m) => m[1]);
+    expect(columnas.length).toBeGreaterThanOrEqual(3);
+    const relinks = (ENTITIES.PERSONA.relinks ?? []).map((r) => r.column);
+    for (const c of columnas) expect(relinks, c).toContain(c);
+  });
+
+  it("y las subtareas vuelven a colgar de su tarea madre", () => {
+    expect(ENTITIES.TAREA.relinks).toEqual([{ table: "tasks_items", column: "parent_id" }]);
+  });
+});

@@ -129,7 +129,12 @@ function salud(extra: Partial<HealthInput> = {}) {
 
 describe("el semáforo", () => {
   it("verde cuando no hay nada que decir", () => {
-    expect(salud()).toMatchObject({ level: "VERDE", why: "Va bien", manual: false });
+    expect(salud({ tasks: [tarea()] })).toMatchObject({ level: "VERDE", why: "Va bien", manual: false });
+  });
+
+  it("un proyecto vacío no va «bien»: aún no tiene plan", () => {
+    expect(salud()).toMatchObject({ level: null, why: "Aún sin plan" });
+    expect(salud({ milestones: [hito()] })).toMatchObject({ level: "VERDE" });
   });
 
   it("rojo: atascado", () => {
@@ -181,13 +186,13 @@ describe("el semáforo", () => {
   });
 
   it("un proyecto recién creado no está «sin novedades»", () => {
-    expect(salud({ log: [], createdOn: "2026-10-01" }).level).toBe("VERDE");
+    expect(salud({ log: [], createdOn: "2026-10-01", tasks: [tarea()] }).level).toBe("VERDE");
   });
 
   it("puesto a mano manda catorce días; después se calcula y sugiere revisarlo", () => {
     const tuyo = salud({ health: "ROJO", healthUntil: "2026-10-15T00:00:00Z" });
     expect(tuyo).toMatchObject({ level: "ROJO", manual: true, why: "Lo pusiste tú" });
-    const vencido = salud({ health: "ROJO", healthUntil: "2026-10-01T00:00:00Z" });
+    const vencido = salud({ health: "ROJO", healthUntil: "2026-10-01T00:00:00Z", tasks: [tarea()] });
     expect(vencido).toMatchObject({ level: "VERDE", manual: false, review: true });
   });
 
