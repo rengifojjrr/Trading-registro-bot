@@ -56,3 +56,7 @@ android-firma.*
 
 # Salida de `next start` de sesiones anteriores. No es del proyecto.
 *.log
+
+# Lo que deja `supabase link` (referencia del proyecto y dirección del pooler).
+# Es de cada máquina, no del proyecto.
+/supabase/.temp/

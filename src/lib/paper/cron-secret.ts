@@ -1,7 +1,5 @@
 import "server-only";
 
-import { timingSafeEqual } from "node:crypto";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -35,15 +33,8 @@ export async function secretoDelReloj(): Promise<string | null> {
 }
 
 /**
- * Comparación en tiempo constante, para no revelar por el reloj cuántos
- * caracteres del secreto acertó quien lo prueba. Con longitudes distintas
- * devuelve falso sin comparar, que es lo que haría `timingSafeEqual` pero
- * lanzando en vez de contestar.
+ * Comparación en tiempo constante. Vive en `lib/auth/secreto.ts` desde que la
+ * usan también los crons de `/api/cron/*`: una sola forma de comparar secretos
+ * en todo el repositorio, no una por ruta.
  */
-export function coincideSecreto(recibido: string | null, esperado: string | null): boolean {
-  if (!recibido || !esperado) return false;
-  const a = Buffer.from(recibido);
-  const b = Buffer.from(esperado);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+export { coincideSecreto } from "@/lib/auth/secreto";

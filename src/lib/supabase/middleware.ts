@@ -32,6 +32,16 @@ const PUBLIC_PATH_PREFIXES = [
   // secreto, y un cron que recibe un 307 cree que todo fue bien. La ruta
   // sigue exigiendo el secreto o una sesión: aquí sólo se le deja llegar.
   "/api/paper/tick",
+  // Los crons, por lo mismo. Vercel Cron llama sin sesión, con
+  // `Authorization: Bearer $CRON_SECRET`, y el guardián le contestaba con el
+  // 307 a /login antes de que la ruta mirara nada: ni la conciliación de cada
+  // noche ni la purga de la papelera ni el respaldo programado llegaron a
+  // ejecutarse. Cada ruta de aquí abajo empieza por `verifyCronRequest`, que
+  // exige ese secreto en tiempo constante (lo vigila middleware.test.ts).
+  //
+  // `/api/export/backup` NO va aquí: es la descarga del botón de Ajustes, con
+  // la sesión de quien la pulsa. El respaldo programado es `/api/cron/backup`.
+  "/api/cron",
   "/auth/confirm",
   "/auth/auth-code-error",
   "/sw.js",
@@ -41,7 +51,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/icons",
 ];
 
-function isPublicPath(pathname: string) {
+export function isPublicPath(pathname: string) {
   return PUBLIC_PATH_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );

@@ -56,7 +56,10 @@ jobs:
             "${APP_URL%/}/api/cron/sync")
           curl_exit=$?
           set -e
-          cat /tmp/sync.log || true
+          # Sólo el código, nunca el cuerpo: el repositorio es público y sus
+          # registros de Actions también, y la respuesta lleva ids de cuentas,
+          # rutas de respaldo y mensajes de error de los proveedores.
+          echo "/api/cron/sync: HTTP $status"
           if [ "$curl_exit" -ne 0 ]; then
             echo "::error::No se pudo contactar ${APP_URL%/}/api/cron/sync (curl salió con $curl_exit)."
             exit 1
@@ -82,7 +85,10 @@ jobs:
             "${APP_URL%/}/api/cron/backup")
           curl_exit=$?
           set -e
-          cat /tmp/backup.log || true
+          # Sólo el código, nunca el cuerpo: el repositorio es público y sus
+          # registros de Actions también, y la respuesta lleva ids de cuentas,
+          # rutas de respaldo y mensajes de error de los proveedores.
+          echo "/api/cron/backup: HTTP $status"
           if [ "$curl_exit" -ne 0 ] || [ "$status" -ge 300 ]; then
             echo "::error::El respaldo automático falló (curl $curl_exit, HTTP $status)."
             exit 1
@@ -102,7 +108,10 @@ jobs:
             "${APP_URL%/}/api/cron/notion-sync")
           curl_exit=$?
           set -e
-          cat /tmp/notion.log || true
+          # Sólo el código, nunca el cuerpo: el repositorio es público y sus
+          # registros de Actions también, y la respuesta lleva ids de cuentas,
+          # rutas de respaldo y mensajes de error de los proveedores.
+          echo "/api/cron/notion-sync: HTTP $status"
           if [ "$curl_exit" -ne 0 ]; then
             echo "::error::No se pudo contactar ${APP_URL%/}/api/cron/notion-sync (curl salió con $curl_exit)."
             exit 1
