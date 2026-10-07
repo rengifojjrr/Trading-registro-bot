@@ -17,7 +17,8 @@ import {
 import { llavesVivas } from "./llaves";
 
 /**
- * La puerta de cada ruta del puente: firma, hora, nonce y límite por cliente.
+ * La puerta de cada ruta del puente: límite por dirección, firma, hora, nonce
+ * y límite por cliente (éste, sólo con la firma buena).
  *
  * Las rutas están en `PUBLIC_PATH_PREFIXES` (si no, el guardián de sesión les
  * contestaba con un 307 a /login, como a los crons). Por eso cada `route.ts`
@@ -28,8 +29,20 @@ import { llavesVivas } from "./llaves";
  * público.
  */
 
-/** Por cliente: un bot que se vuelve loco no tumba la aplicación. */
+/**
+ * Por cliente: un bot que se vuelve loco no tumba la aplicación. Sólo cuenta
+ * lo que viene firmado: el repo es público y el nombre del cliente («mac-1»)
+ * no es secreto, así que si contara antes de la firma cualquiera dejaría al
+ * bot con 429 mandando 120 peticiones sin firmar con su nombre.
+ */
 export const LIMITE_POR_MINUTO = 120;
+
+/**
+ * Por dirección, antes de mirar la firma (que lee las llaves en la base): lo
+ * que llega sin firmar se frena aquí. El doble que por cliente, para que el
+ * bot nunca lo toque antes que su propio límite.
+ */
+export const LIMITE_POR_IP_MINUTO = 2 * LIMITE_POR_MINUTO;
 
 /** Lo más grande que acepta una ruta (un archivo de proyecto cabe de sobra). */
 export const CUERPO_MAX_BYTES = 400_000;
@@ -51,6 +64,22 @@ function rechazo(motivo: Motivo, extra: Record<string, unknown> = {}, status = 4
   );
 }
 
+function despacio(reintentarEn: number): NextResponse {
+  return NextResponse.json(
+    { error: "despacio", motivo: "limite", reintentar_en: reintentarEn },
+    { status: 429, headers: { "retry-after": String(reintentarEn), "cache-control": "no-store" } },
+  );
+}
+
+/**
+ * De dónde viene: la primera de `x-forwarded-for` (en Vercel la pone su borde,
+ * no el que llama), o `x-real-ip`. Sin ninguna, todas comparten un cupo.
+ */
+function direccionDe(headers: Headers): string {
+  const primera = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return (primera || headers.get("x-real-ip")?.trim() || "sin-ip").slice(0, 64);
+}
+
 /**
  * Comprueba la petición. Devuelve lo que la ruta necesita o la respuesta de
  * rechazo, ya hecha. El cuerpo se lee aquí (una sola vez) porque entra en la
@@ -63,13 +92,11 @@ export async function abrirPeticion(
   const cab = leerCabeceras(request.headers);
   if (!cab) return rechazo("cabeceras");
 
-  const limite = checkRateLimit(`puente:${cab.cliente}`, { capacity: LIMITE_POR_MINUTO, windowSeconds: 60 });
-  if (!limite.allowed) {
-    return NextResponse.json(
-      { error: "despacio", motivo: "limite", reintentar_en: limite.retryAfter },
-      { status: 429, headers: { "retry-after": String(limite.retryAfter), "cache-control": "no-store" } },
-    );
-  }
+  const porIp = checkRateLimit(`puente:ip:${direccionDe(request.headers)}`, {
+    capacity: LIMITE_POR_IP_MINUTO,
+    windowSeconds: 60,
+  });
+  if (!porIp.allowed) return despacio(porIp.retryAfter);
 
   const ahoraS = Math.floor(ahoraMs / 1000);
   // La hora del servidor va en la respuesta: el bot la usa para saber cuánto
@@ -92,6 +119,9 @@ export async function abrirPeticion(
     }
   }
   if (!elegida) return rechazo("firma");
+
+  const porCliente = checkRateLimit(`puente:${cab.cliente}`, { capacity: LIMITE_POR_MINUTO, windowSeconds: 60 });
+  if (!porCliente.allowed) return despacio(porCliente.retryAfter);
 
   const admin = createAdminClient();
   const { data: nueva, error } = await admin.rpc("puente_usar_nonce", { p_llave: elegida.id, p_nonce: cab.nonce });

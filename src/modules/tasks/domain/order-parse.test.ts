@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { quietFor } from "@/core/reminders/rule";
+
 import { findProjects, parseOrder, type ContextoOrden, type Orden } from "./order-parse";
 
 /**
@@ -22,6 +24,8 @@ interface Banco {
     espera?: Record<string, unknown>;
     falla?: string;
     candidatos?: string[];
+    /** Si respeta la noche (22:00–07:00): con la hora dicha de noche, no. */
+    respeta_noche?: boolean;
   }[];
 }
 
@@ -102,6 +106,12 @@ describe("la orden rápida, contra su banco", () => {
     if (r.ok) {
       expect(enBanco(r.orden)).toEqual(caso.espera);
       expect(r.entendido.length).toBeGreaterThan(0);
+      if (caso.respeta_noche !== undefined) {
+        expect(r.orden.tipo).toBe("RECORDATORIO");
+        if (r.orden.tipo === "RECORDATORIO") {
+          expect(quietFor(r.orden.reminder.rule.atTime, r.orden.reminder.timeSaid)).toBe(caso.respeta_noche);
+        }
+      }
     }
   });
 });

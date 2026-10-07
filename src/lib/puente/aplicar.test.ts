@@ -221,6 +221,27 @@ describe("lo que aún no existe espera", () => {
     expect(base.tablas.core_reminders[0]).toMatchObject({ text: "Revisar el presupuesto", freq: "DIARIO", tz: "America/New_York" });
   });
 
+  it("la hora la dijo él: a las 23:00 suena a las 23:00, de día respeta la noche, y cambiar la hora lo decide de nuevo", async () => {
+    const noche = "0192f000-0000-7000-8000-000000000107";
+    const dia = "0192f000-0000-7000-8000-000000000108";
+    const semana = "0192f000-0000-7000-8000-000000000109";
+    await aplicarUna(ctx(), op("recordatorio_crear", { id: noche, texto: "Sacar la basura", frecuencia: "UNA_VEZ", hora: "23:00", el_dia: "2026-10-06" }));
+    await aplicarUna(ctx(), op("recordatorio_crear", { id: dia, texto: "Revisar el crudo", frecuencia: "DIARIO", hora: "08:00" }));
+    await aplicarUna(ctx(), op("recordatorio_crear", { id: semana, texto: "Cerrar la caja", frecuencia: "LABORABLES", hora: "06:30" }));
+    const fila = (id: string) => base.tablas.core_reminders.find((f) => f.id === id);
+    expect(fila(noche)).toMatchObject({ at_time: "23:00", quiet: false });
+    expect(fila(dia)).toMatchObject({ at_time: "08:00", quiet: true });
+    expect(fila(semana)).toMatchObject({ at_time: "06:30", quiet: false });
+
+    await aplicarUna(ctx(), op("recordatorio_cambiar", { id: dia, campos: { hora: "22:15" } }));
+    expect(fila(dia)).toMatchObject({ at_time: "22:15", quiet: false });
+    await aplicarUna(ctx(), op("recordatorio_cambiar", { id: noche, campos: { hora: "09:00" } }));
+    expect(fila(noche)).toMatchObject({ at_time: "09:00", quiet: true });
+    // Cambiar sólo el texto no toca la noche.
+    await aplicarUna(ctx(), op("recordatorio_cambiar", { id: semana, campos: { texto: "Cerrar la caja y contar" } }));
+    expect(fila(semana)).toMatchObject({ text: "Cerrar la caja y contar", quiet: false });
+  });
+
   it("«hecho» y «en 1 h» desde WhatsApp hacen lo que los botones del push", async () => {
     const id = "0192f000-0000-7000-8000-000000000105";
     await aplicarUna(ctx(), op("recordatorio_crear", { id, texto: "Revisar el crudo", frecuencia: "DIARIO", hora: "08:00" }));

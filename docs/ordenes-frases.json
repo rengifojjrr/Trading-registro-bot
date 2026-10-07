@@ -88,7 +88,7 @@
     { "frase": "hito de canal: estreno el 20 de octubre", "espera": { "tipo": "HITO", "proyecto": "Canal", "titulo": "Estreno", "fecha": "2026-10-20", "precision": "DIA" } },
 
     { "frase": "recuérdame todos los días a las 8 revisar el precio del crudo", "espera": { "tipo": "RECORDATORIO", "proyecto": "Petróleo VZ", "recordatorio": "TEXTO", "freq": "DIARIO", "hora": "08:00", "texto": "Revisar el precio del crudo" }, "nota": "Atado al proyecto porque el texto nombra uno de sus otros nombres." },
-    { "frase": "en petróleo vz recuérdame el lunes llamar a Andrés", "espera": { "tipo": "RECORDATORIO", "proyecto": "Petróleo VZ", "recordatorio": "TEXTO", "freq": "UNA_VEZ", "hora": "09:00", "texto": "Llamar a Andrés" } },
+    { "frase": "en petróleo vz recuérdame el lunes llamar a Andrés", "espera": { "tipo": "RECORDATORIO", "proyecto": "Petróleo VZ", "recordatorio": "TEXTO", "freq": "UNA_VEZ", "hora": "09:00", "texto": "Llamar a Andrés" }, "respeta_noche": true },
     { "frase": "cada lunes a las 9 dime qué falta en petróleo vz", "espera": { "tipo": "RECORDATORIO", "proyecto": "Petróleo VZ", "recordatorio": "QUE_FALTA", "freq": "SEMANAL", "hora": "09:00", "texto": "" } },
     { "frase": "cada lunes a las 9 dime qué falta en petróleo", "falla": "¿Cuál?", "candidatos": ["Petróleo VZ", "Petróleo Colombia"] },
     { "frase": "en casa recuérdame cada viernes qué falta", "espera": { "tipo": "RECORDATORIO", "proyecto": "Casa", "recordatorio": "QUE_FALTA", "freq": "SEMANAL", "hora": "09:00", "texto": "" } },
@@ -99,6 +99,8 @@
     { "frase": "todos los viernes a las 5 dime cómo va casa", "espera": { "tipo": "RECORDATORIO", "proyecto": "Casa", "recordatorio": "COMO_VA", "freq": "SEMANAL", "hora": "17:00", "texto": "" } },
     { "frase": "recuérdame el 1 de cada mes pagar la obra", "espera": { "tipo": "RECORDATORIO", "proyecto": "Casa", "recordatorio": "TEXTO", "freq": "MENSUAL", "hora": "09:00", "texto": "Pagar la obra" } },
     { "frase": "mándame el resumen del día todos los días a las 7", "espera": { "tipo": "RECORDATORIO", "proyecto": null, "recordatorio": "TU_DIA", "freq": "DIARIO", "hora": "07:00", "texto": "" } },
+    { "frase": "recuérdame hoy a las 23:00 sacar la basura", "espera": { "tipo": "RECORDATORIO", "proyecto": null, "recordatorio": "TEXTO", "freq": "UNA_VEZ", "hora": "23:00", "texto": "Sacar la basura" }, "respeta_noche": false, "nota": "La hora la dijo él: suena a las 23:00, no a las 07:00 del día siguiente." },
+    { "frase": "entre semana a las 23:00 recuérdame cerrar la caja", "espera": { "tipo": "RECORDATORIO", "proyecto": null, "recordatorio": "TEXTO", "freq": "LABORABLES", "hora": "23:00", "texto": "Cerrar la caja" }, "respeta_noche": false, "nota": "De lunes a viernes a las 23:00 (respetando la noche sonaría de martes a sábado a las 07:00)." },
 
     { "frase": "", "falla": "Escribe qué hago" },
     { "frase": "hola", "falla": "No lo entendí" },

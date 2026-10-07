@@ -22,8 +22,9 @@ Todas en `PUBLIC_PATH_PREFIXES` (`/api/puente`), y cada `route.ts` empieza por `
 
 Cabeceras `X-Puente-Id` (`mac-1`, `vps-1`, `claude-1`), `X-Puente-Ts` (segundos), `X-Puente-Nonce` (16–64 caracteres
 base64url) y `X-Puente-Firma` = base64url(HMAC-SHA256(llave, `v1\nMÉTODO\nruta?consulta\nts\nnonce\nsha256(cuerpo)`)).
-Ventana de ±300 s, comparación en tiempo constante, nonce de un solo uso (`puente_usar_nonce`, 15 min), límite de 120
-peticiones por minuto por cliente y cuerpos de 400 KB como mucho. `src/lib/puente/firma.ts` y su prueba llevan un
+Ventana de ±300 s, comparación en tiempo constante, nonce de un solo uso (`puente_usar_nonce`, 15 min), límite de 240
+peticiones por minuto por dirección antes de mirar la firma y de 120 por cliente solo con la firma buena (lo que llega
+sin firmar con el nombre del bot no le gasta el cupo) y cuerpos de 400 KB como mucho. `src/lib/puente/firma.ts` y su prueba llevan un
 vector que el bot prueba igual.
 
 ## Llaves (sin variables nuevas en Vercel)
@@ -57,6 +58,8 @@ data}`. Reglas en `aplicar.ts` y `campos.ts`:
   `recordatorio_hecho` y `recordatorio_posponer` hacen lo mismo que los botones del push (cierran o posponen el disparo,
   el recordatorio vuelve a sonar a esa hora y se apaga la campana) con `recordatorio_hecho_puente` /
   `recordatorio_posponer_puente`, sólo del rol de servicio; sin esas funciones, también `no_disponible`.
+  `recordatorio_crear` / `recordatorio_cambiar` (con hora) guardan `quiet` como la aplicación con la hora dicha
+  (`quietFor(hora, true)`): «a las 23:00» suena a las 23:00; una hora de día respeta la noche.
 - `metricas_del_dia` (sólo números, módulo `whatsapp`) y `agente_estado` (latido, panel, WhatsApp, `bootId`; detecta
   dos procesos con la misma llave) no se apuntan en `puente_ops`.
 

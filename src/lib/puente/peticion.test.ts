@@ -16,9 +16,11 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => estado.base })
 
 import { NextResponse } from "next/server";
 
+import { resetRateLimits } from "@/lib/rate-limit";
+
 import { baseFalsa, type BaseFalsa } from "./__pruebas__/base-falsa";
 import { CABECERAS, firmar, textoAFirmar, VECTOR_DE_PRUEBA } from "./firma";
-import { abrirPeticion, CUERPO_MAX_BYTES, LIMITE_POR_MINUTO } from "./peticion";
+import { abrirPeticion, CUERPO_MAX_BYTES, LIMITE_POR_IP_MINUTO, LIMITE_POR_MINUTO } from "./peticion";
 
 const LLAVE = VECTOR_DE_PRUEBA.llave;
 const YO = "aaaaaaaa-0000-4000-8000-0000000000e4";
@@ -35,16 +37,24 @@ function pide({
   llave = LLAVE,
   firma,
   n = `nonce-de-prueba-${String((nonce += 1)).padStart(4, "0")}`,
-}: Partial<{ cliente: string; metodo: string; ruta: string; cuerpo: string; ts: number; llave: string; firma: string; n: string }> = {}) {
+  ip,
+}: Partial<{ cliente: string; metodo: string; ruta: string; cuerpo: string; ts: number; llave: string; firma: string; n: string; ip: string }> = {}) {
   const f = firma ?? firmar(llave, textoAFirmar(metodo, ruta, ts, n, metodo === "GET" ? "" : cuerpo));
   return new Request(`https://app.test${ruta}`, {
     method: metodo,
-    headers: { [CABECERAS.id]: cliente, [CABECERAS.ts]: String(ts), [CABECERAS.nonce]: n, [CABECERAS.firma]: f },
+    headers: {
+      [CABECERAS.id]: cliente,
+      [CABECERAS.ts]: String(ts),
+      [CABECERAS.nonce]: n,
+      [CABECERAS.firma]: f,
+      ...(ip ? { "x-forwarded-for": ip } : {}),
+    },
     ...(metodo === "GET" ? {} : { body: cuerpo }),
   });
 }
 
 beforeEach(() => {
+  resetRateLimits();
   base = baseFalsa();
   estado.base = base;
   estado.llaves = [{ id: "a0000000-0000-4000-8000-0000000e4010", userId: YO, llave: LLAVE }];
@@ -104,11 +114,31 @@ describe("abrirPeticion", () => {
     expect(r.status).toBe(413);
   });
 
-  it(`más de ${LIMITE_POR_MINUTO} por minuto del mismo cliente: 429`, async () => {
-    let ultimo: unknown = null;
-    for (let i = 0; i <= LIMITE_POR_MINUTO + 1; i += 1) {
-      ultimo = await abrirPeticion(pide({ cliente: "vps-1", firma: "A".repeat(43) }), { ahoraMs: AHORA });
+  it(`más de ${LIMITE_POR_MINUTO} por minuto del mismo cliente, firmadas: 429`, async () => {
+    for (let i = 0; i < LIMITE_POR_MINUTO; i += 1) {
+      expect(await abrirPeticion(pide({ ip: "198.51.100.7" }), { ahoraMs: AHORA })).not.toBeInstanceOf(NextResponse);
     }
-    expect((ultimo as NextResponse).status).toBe(429);
+    const r = await motivo(await abrirPeticion(pide({ ip: "198.51.100.7" }), { ahoraMs: AHORA }));
+    expect(r.status).toBe(429);
+    expect(r.cuerpo.motivo).toBe("limite");
+  });
+
+  it(`sin firmar no gastan el cupo del cliente: ${LIMITE_POR_MINUTO + 1} con su nombre desde otra dirección no frenan al bot`, async () => {
+    for (let i = 0; i <= LIMITE_POR_MINUTO; i += 1) {
+      const r = await motivo(await abrirPeticion(pide({ firma: "A".repeat(43), ip: "203.0.113.9" }), { ahoraMs: AHORA }));
+      expect(r.cuerpo.motivo).toBe("firma");
+    }
+    const bot = await abrirPeticion(pide({ ip: "198.51.100.7" }), { ahoraMs: AHORA });
+    expect(bot).not.toBeInstanceOf(NextResponse);
+  });
+
+  it(`más de ${LIMITE_POR_IP_MINUTO} por minuto desde la misma dirección, aunque sin firma: 429 antes de mirar las llaves`, async () => {
+    for (let i = 0; i < LIMITE_POR_IP_MINUTO; i += 1) {
+      await abrirPeticion(pide({ cliente: "vps-1", firma: "A".repeat(43), ip: "203.0.113.9, 10.0.0.1" }), { ahoraMs: AHORA });
+    }
+    const r = await motivo(await abrirPeticion(pide({ cliente: "vps-1", firma: "A".repeat(43), ip: "203.0.113.9" }), { ahoraMs: AHORA }));
+    expect(r.status).toBe(429);
+    // Otra dirección sigue entrando.
+    expect(await abrirPeticion(pide({ ip: "198.51.100.7" }), { ahoraMs: AHORA })).not.toBeInstanceOf(NextResponse);
   });
 });

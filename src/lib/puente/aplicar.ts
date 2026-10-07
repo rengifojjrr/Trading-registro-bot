@@ -1,6 +1,7 @@
 import "server-only";
 
 import { colorForName } from "@/core/notion-colors";
+import { quietFor } from "@/core/reminders/rule";
 import { todayIn } from "@/core/today";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { freeSlug, PROJECT_LIMITS, PROJECT_STATUS_LABELS } from "@/modules/tasks/domain/projects";
@@ -835,6 +836,16 @@ function sinTipo(admin: Admin): SinTipo {
   return admin as unknown as SinTipo;
 }
 
+/**
+ * ¿Respeta la noche? Por WhatsApp la hora siempre va dicha (la que el bot pone
+ * cuando no se dice es de día), así que es la misma regla que la aplicación con
+ * «la hora la pusiste tú»: «recuérdame hoy a las 23:00…» suena a las 23:00, no
+ * a las 07:00 del día siguiente.
+ */
+function noche(hora: string): boolean {
+  return quietFor(hora, true);
+}
+
 const recordatorioCrear: Hacer<"recordatorio_crear"> = async (ctx, op) => {
   const d = op.data;
   const { error } = await sinTipo(ctx.admin).from("core_reminders").insert({
@@ -852,6 +863,7 @@ const recordatorioCrear: Hacer<"recordatorio_crear"> = async (ctx, op) => {
     on_date: d.el_dia ?? null,
     until_date: d.hasta ?? null,
     tz: ctx.zona,
+    quiet: noche(d.hora),
     origin: origenEnLaBase(op.origin),
     ext_source: d.ext_source ?? null,
     ext_id: d.ext_id ?? null,
@@ -863,7 +875,13 @@ const recordatorioCrear: Hacer<"recordatorio_crear"> = async (ctx, op) => {
 const recordatorioCambiar: Hacer<"recordatorio_cambiar"> = async (ctx, op) => {
   const { id, campos } = op.data;
   const cambios = Object.fromEntries(
-    Object.entries({ text: campos.texto, at_time: campos.hora, active: campos.activo }).filter(([, v]) => v !== undefined),
+    Object.entries({
+      text: campos.texto,
+      at_time: campos.hora,
+      // Una hora nueva decide de nuevo si respeta la noche.
+      quiet: campos.hora === undefined ? undefined : noche(campos.hora),
+      active: campos.activo,
+    }).filter(([, v]) => v !== undefined),
   );
   const { error } = await sinTipo(ctx.admin).from("core_reminders").update(cambios).eq("id", id).eq("user_id", ctx.userId);
   return error ? no(op, motivoDe(error)) : ok(op, { id });
