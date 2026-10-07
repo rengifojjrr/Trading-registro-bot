@@ -1,3 +1,6 @@
+import { BellPlus } from "lucide-react";
+import Link from "next/link";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LifeCalendar } from "@/components/vida/life-calendar";
 import { ModuleCard } from "@/components/vida/module-card";
@@ -9,11 +12,17 @@ import { formatModuleValue } from "@/core/format-metrics";
 import { readDayMetrics } from "@/core/metrics";
 import { MODULES } from "@/core/registry";
 import { longDateLabel, todayIn } from "@/core/today";
+import { fetchNowReminders } from "@/core/reminders/queries";
 import { userTimezone } from "@/core/user-settings";
 import { requireUser } from "@/lib/auth/require-user";
 import { gatherPending } from "@/lib/pending/gather";
 import { readSystemHealth } from "@/lib/pending/setup";
 import { SetupPanel } from "@/components/vida/setup-panel";
+import { fetchOrderContext, fetchProjectsOverview } from "@/modules/tasks/project-queries";
+import { fetchTasks } from "@/modules/tasks/queries";
+import { NowPanel, type NowTask } from "@/modules/tasks/ui/now-panel";
+import { ProjectsCarousel } from "@/modules/tasks/ui/projects/projects-carousel";
+import { QuickOrder } from "@/modules/tasks/ui/quick-order";
 
 import { quickLogReading, quickLogSleep } from "./quick-log-actions";
 
@@ -29,11 +38,11 @@ import { quickLogReading, quickLogSleep } from "./quick-log-actions";
  * es una pregunta de repaso, no de registro. Ponerlo arriba convertiría la
  * pantalla de hacer en una de mirar.
  *
- * Esta página no importa ningún módulo -- lee `core_daily_metrics` para las
- * tarjetas y las marcas del calendario desde `core/day`, que consulta las
- * tablas por su nombre. Si importara uno, esta pantalla sería el punto por el
- * que los siete se acoplan y la promesa de poder arrancar uno dejaría de ser
- * cierta.
+ * Lee `core_daily_metrics` para las tarjetas y las marcas del calendario desde
+ * `core/day`, que consulta las tablas por su nombre. La única excepción es
+ * Tareas, a propósito: desde E2 los proyectos son la portada (la orden rápida,
+ * «Ahora» y el carrusel), que es la prioridad del dueño. Lo demás de los
+ * módulos sigue sin entrar aquí.
  */
 export default async function TodayPage({
   searchParams,
@@ -52,7 +61,7 @@ export default async function TodayPage({
   // días de relleno del mes anterior y el siguiente: si no, esos días
   // saldrían siempre vacíos aunque tuvieran cosas.
   const grid = monthGrid(month).flat();
-  const [metrics, markers, pending, health] = await Promise.all([
+  const [metrics, markers, pending, health, ahora, tareas, proyectos, orden] = await Promise.all([
     readDayMetrics(today),
     grid.length > 0
       ? fetchMarkers(grid[0].date, grid[grid.length - 1].date)
@@ -64,7 +73,25 @@ export default async function TodayPage({
     // Lo que falta por configurar el primer día, y si sigue funcionando
     // cualquier otro. Es la misma lista mirada en dos momentos.
     readSystemHealth(),
+    // «Ahora»: lo que suena hoy y lo que vence hoy. Cada fuente por su lado:
+    // si una falla, la portada sale igual.
+    fetchNowReminders().catch(() => ({ items: [], timezone })),
+    fetchTasks().catch(() => []),
+    fetchProjectsOverview().catch(() => null),
+    fetchOrderContext().catch(() => ({ projects: [], people: [], members: [] })),
   ]);
+
+  const deHoy: NowTask[] = tareas
+    .filter((t) => t.mine && t.parent_id === null && t.status !== "HECHA" && t.due_date === today)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      projectName: t.projectName,
+      projectColor: t.projectColor,
+      time: t.due_time ? t.due_time.slice(0, 5) : null,
+      status: t.status === "EN_CURSO" ? ("EN_CURSO" as const) : ("NO_INICIADA" as const),
+    }))
+    .sort((a, b) => (a.time ?? "99").localeCompare(b.time ?? "99"));
 
   const firstName = (user.email ?? "").split("@")[0];
   const greeting = firstName ? `Hola, ${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}` : "Hola";
@@ -76,15 +103,33 @@ export default async function TodayPage({
         <p className="text-sm text-muted-foreground">{longDateLabel(today)}</p>
       </header>
 
+      {/* La orden rápida, sin IA: «en petróleo agrega…», «recuérdame…». */}
+      <QuickOrder ctx={{ tz: timezone, projects: orden.projects, people: orden.people, members: orden.members }} />
+
       {/* Va después de registrar y antes de las cifras: lo que hay que hacer
           pesa más que lo que hay que mirar, pero registrar en cinco segundos
           sigue siendo lo primero. */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Registrar</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Registrar</h2>
+          <Link
+            href="/tareas/recordatorios?nuevo=1"
+            className="flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <BellPlus className="size-4" aria-hidden /> Recordatorio
+          </Link>
+        </div>
         {/* Los dos que caben en un número se apuntan aquí mismo; los demás
             siguen llevando a su pantalla, que es donde tienen sentido. */}
         <QuickLogSheet acciones={{ sueno: quickLogSleep, lectura: quickLogReading }} />
       </section>
+
+      {ahora.items.length > 0 || deHoy.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">Ahora</h2>
+          <NowPanel reminders={ahora.items} tasks={deHoy} tz={timezone} />
+        </section>
+      ) : null}
 
       <SetupPanel health={health} />
 
@@ -92,6 +137,18 @@ export default async function TodayPage({
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">Te está esperando</h2>
           <PendingPanel items={pending} />
+        </section>
+      ) : null}
+
+      {proyectos ? (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-muted-foreground">Proyectos</h2>
+            <Link href="/tareas/proyectos" className="flex min-h-11 items-center text-sm text-muted-foreground hover:text-foreground">
+              Ver todos
+            </Link>
+          </div>
+          <ProjectsCarousel cards={proyectos.cards} today={proyectos.today} />
         </section>
       ) : null}
 

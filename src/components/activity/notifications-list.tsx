@@ -1,6 +1,8 @@
 "use client";
 
 import { Check, X } from "lucide-react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useTransition } from "react";
 
 import { dismissNotification, markAllNotificationsRead, markNotificationRead } from "@/app/(dashboard)/activity/actions";
@@ -17,6 +19,8 @@ export interface NotificationRow {
   message: string;
   is_read: boolean;
   created_at: string;
+  /** A dónde lleva (un recordatorio, su lista). Siempre una ruta de la aplicación. */
+  href?: string | null;
 }
 
 const SEVERITY_LABELS: Record<NotificationRow["severity"], string> = {
@@ -79,7 +83,13 @@ export function NotificationsList({
             <div className="flex min-w-0 flex-col gap-0.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={SEVERITY_VARIANTS[n.severity]}>{SEVERITY_LABELS[n.severity]}</Badge>
-                <span className="font-medium text-foreground">{n.title}</span>
+                {n.href && /^\/(?!\/)/.test(n.href) ? (
+                  <Link href={n.href as Route} className="font-medium text-foreground hover:underline">
+                    {n.title}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-foreground">{n.title}</span>
+                )}
               </div>
               <p className="text-muted-foreground">{n.message}</p>
               <span className="text-xs text-muted-foreground">{formatDateTime(n.created_at, timezone)}</span>

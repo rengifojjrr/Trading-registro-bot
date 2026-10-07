@@ -195,3 +195,11 @@ export function ruleOf(row: {
     untilDate: row.until_date,
   };
 }
+
+/** El texto de un recordatorio en una lista: el suyo o, si es vivo, qué es. */
+export function reminderTitle(r: { kind: ReminderKind; text: string | null; entityLabel: string | null }): string {
+  if (r.kind === "QUE_FALTA") return `Qué falta en ${r.entityLabel ?? "el proyecto"}`;
+  if (r.kind === "COMO_VA") return `Cómo va ${r.entityLabel ?? "el proyecto"}`;
+  if (r.kind === "TU_DIA") return "Tu día";
+  return r.text ?? "Recordatorio";
+}

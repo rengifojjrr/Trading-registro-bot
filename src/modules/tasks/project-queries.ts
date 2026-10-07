@@ -640,3 +640,71 @@ export async function fetchMilestone(id: string): Promise<{
     today: todayIn(timezone),
   };
 }
+
+// ------------------------------------------------------------ orden rápida
+
+/**
+ * Lo que necesita la orden rápida para entender «en petróleo, Andrés tiene
+ * que…»: los proyectos con sus otros nombres, las personas y quién está en
+ * cada proyecto. Sólo nombres e ids: el lector corre en el navegador.
+ */
+export async function fetchOrderContext(): Promise<{
+  projects: { id: string; name: string; slug: string | null; aliases: string[] }[];
+  people: { id: string; name: string; aliases: string[]; is_owner: boolean }[];
+  members: { projectId: string; personId: string }[];
+}> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const [projects, people, members] = await Promise.all([
+    supabase
+      .from("tasks_projects")
+      .select("id, name, slug, aliases, is_active, status")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase.from("core_people").select("id, name, aliases, is_owner, archived_at").eq("user_id", user.id).is("archived_at", null),
+    supabase.from("tasks_project_members").select("project_id, person_id").eq("user_id", user.id).eq("active", true),
+  ]);
+  return {
+    projects: (projects.data ?? [])
+      .filter((p) => p.status !== "TERMINADO" && p.status !== "DESCARTADO")
+      .map((p) => ({ id: p.id, name: p.name, slug: p.slug ?? null, aliases: p.aliases ?? [] })),
+    people: (people.data ?? []).map((p) => ({ id: p.id, name: p.name, aliases: p.aliases ?? [], is_owner: p.is_owner })),
+    members: (members.data ?? []).map((m) => ({ projectId: m.project_id, personId: m.person_id })),
+  };
+}
+
+// ------------------------------------------------------------- calendario
+
+/** Los hitos con fecha entre dos días, con el color de su proyecto (para el calendario). */
+export async function fetchMilestonesBetween(
+  fromDate: string,
+  toDate: string,
+): Promise<{ id: string; title: string; due_on: string; status: MilestoneStatus; projectName: string; projectColor: ProjectColor }[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const [{ data: hitos }, { data: proyectos }] = await Promise.all([
+    supabase
+      .from("tasks_milestones")
+      .select("id, title, due_on, status, project_id, kind")
+      .eq("user_id", user.id)
+      .eq("kind", "HITO")
+      .gte("due_on", fromDate)
+      .lte("due_on", toDate),
+    supabase.from("tasks_projects").select("id, name, color").eq("user_id", user.id),
+  ]);
+  const porId = new Map((proyectos ?? []).map((p) => [p.id, p]));
+  return (hitos ?? [])
+    .filter((h): h is typeof h & { due_on: string } => h.due_on !== null)
+    .map((h) => {
+      const p = porId.get(h.project_id);
+      return {
+        id: h.id,
+        title: h.title,
+        due_on: h.due_on,
+        status: h.status,
+        projectName: p?.name ?? "",
+        projectColor: p?.color ?? colorForName(p?.name ?? ""),
+      };
+    });
+}

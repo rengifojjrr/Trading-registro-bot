@@ -183,6 +183,8 @@ export const MODULES: ModuleManifest[] = [
       { href: "/personas", label: "Personas" },
       { href: "/tareas/todas", label: "Todas" },
       { href: "/tareas/calendario", label: "Calendario" },
+      // Lo que suena en el teléfono: de cada día, no de repasar.
+      { href: "/tareas/recordatorios", label: "Recordatorios" },
       { href: "/tareas/analisis", label: "Análisis" },
     ],
   },

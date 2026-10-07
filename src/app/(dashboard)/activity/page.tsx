@@ -62,7 +62,7 @@ export default async function ActivityPage() {
       .limit(5),
     supabase
       .from("notifications")
-      .select("id, type, severity, title, message, is_read, created_at")
+      .select("id, type, severity, title, message, is_read, created_at, href")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(10),

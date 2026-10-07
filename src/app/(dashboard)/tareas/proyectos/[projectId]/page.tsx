@@ -16,7 +16,8 @@ import {
   originOf,
   progressLabel,
 } from "@/modules/tasks/domain/projects";
-import { fetchProjectFull } from "@/modules/tasks/project-queries";
+import { fetchOrderContext, fetchProjectFull } from "@/modules/tasks/project-queries";
+import { QuickOrder } from "@/modules/tasks/ui/quick-order";
 import { FichaPanel, HowCard, LogPanel, SourcesPanel } from "@/modules/tasks/ui/projects/project-panels";
 import { ProjectHeader } from "@/modules/tasks/ui/projects/project-header";
 import { ProjectPeople } from "@/modules/tasks/ui/projects/project-people";
@@ -66,7 +67,10 @@ export default async function ProjectDetailPage({
   const para = typeof query.para === "string" ? query.para : null;
 
   const { project, computed, members, today, timezone } = datos;
-  const extras = await fetchEntityExtras("PROYECTO", project.id);
+  const [extras, orden] = await Promise.all([
+    fetchEntityExtras("PROYECTO", project.id),
+    fetchOrderContext().catch(() => ({ projects: [], people: [], members: [] })),
+  ]);
   const nombres = new Map(datos.allPeople.map((p) => [p.id, displayName(p)]));
   const gente = members.filter((m) => m.active).map((m) => m.person);
   const base = `/tareas/proyectos/${project.id}`;
@@ -101,6 +105,12 @@ export default async function ProjectDetailPage({
             howBy={project.how_by}
             today={today}
             timezone={timezone}
+          />
+          {/* La orden rápida, con este proyecto sobreentendido: «Marta tiene
+              que…», «decisión: …», «recuérdame el lunes…», «está atascado». */}
+          <QuickOrder
+            ctx={{ tz: timezone, ...orden, defaultProjectId: project.id }}
+            placeholder="agrega llamar al abogado el jueves · decisión: … · recuérdame…"
           />
         </div>
       }
