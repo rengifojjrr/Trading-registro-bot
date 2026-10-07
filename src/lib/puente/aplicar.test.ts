@@ -221,6 +221,27 @@ describe("lo que aún no existe espera", () => {
     expect(base.tablas.core_reminders[0]).toMatchObject({ text: "Revisar el presupuesto", freq: "DIARIO", tz: "America/New_York" });
   });
 
+  it("«hecho» y «en 1 h» desde WhatsApp hacen lo que los botones del push", async () => {
+    const id = "0192f000-0000-7000-8000-000000000105";
+    await aplicarUna(ctx(), op("recordatorio_crear", { id, texto: "Revisar el crudo", frecuencia: "DIARIO", hora: "08:00" }));
+    const disparo = "2026-10-06T12:00:00.000Z";
+    const hasta = "2026-10-06T13:00:00.000Z";
+    expect((await aplicarUna(ctx(), op("recordatorio_posponer", { id, disparo, hasta }))).estado).toBe("applied");
+    // Vuelve a sonar a esa hora: lo que mira el reloj es el recordatorio, no sólo el disparo.
+    expect(base.tablas.core_reminders[0]).toMatchObject({ snooze_until: hasta });
+    expect((await aplicarUna(ctx(), op("recordatorio_hecho", { id, disparo }))).estado).toBe("applied");
+    expect(base.tablas.core_reminder_fires[0]).toMatchObject({ done_via: "WHATSAPP" });
+    expect(base.tablas.core_reminders[0].snooze_until).toBeNull();
+  });
+
+  it("«hecho» de un recordatorio que no es suyo no existe; sin la función, espera", async () => {
+    const ajeno = op("recordatorio_hecho", { id: "0192f000-0000-7000-8000-000000000106", disparo: "2026-10-06T12:00:00.000Z" });
+    expect(await aplicarUna(ctx(), ajeno)).toMatchObject({ estado: "rejected", motivo: "no_existe" });
+    base.ausentes.add("recordatorio_hecho_puente");
+    const otra = op("recordatorio_hecho", { id: "0192f000-0000-7000-8000-000000000106", disparo: "2026-10-06T12:00:00.000Z" });
+    expect(await aplicarUna(ctx(), otra)).toMatchObject({ estado: "rejected", motivo: "no_disponible" });
+  });
+
   it("unir personas espera a las órdenes", async () => {
     const r = await aplicarUna(ctx(), op("personas_unir", { queda: MARTA, se_va: "0192f000-0000-7000-8000-0000000000b2" }));
     expect(r).toMatchObject({ estado: "rejected", motivo: "no_disponible" });

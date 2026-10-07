@@ -40,7 +40,12 @@ export const TABLAS_DEL_PUENTE = [
 export type TablaDelPuente = (typeof TABLAS_DEL_PUENTE)[number];
 
 /** Las funciones de la base que el puente puede llamar. Ninguna más. */
-export const FUNCIONES_DEL_PUENTE = ["puente_usar_nonce"] as const;
+export const FUNCIONES_DEL_PUENTE = [
+  "puente_usar_nonce",
+  // «hecho» y «en 1 h» desde WhatsApp: las gemelas de los botones del push.
+  "recordatorio_hecho_puente",
+  "recordatorio_posponer_puente",
+] as const;
 
 /** Entidad del feed → su tabla y las columnas que salen hacia el bot. */
 export const ENTIDADES = {

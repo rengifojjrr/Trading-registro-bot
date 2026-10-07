@@ -18,6 +18,10 @@
   5. Las propuestas: cada uno las suyas, y no se cuelgan de un proyecto ajeno.
   6. Vigilar las tablas otra vez no duplica disparadores; resembrar apunta
      cada fila que hay.
+  7. Los recordatorios (que llegan después): su disparador del feed está
+     puesto, y «hecho» / «en 1 h» desde WhatsApp (las gemelas del rol de
+     servicio) cierran o posponen el disparo y el recordatorio, sólo los
+     suyos y sólo con el rol de servicio.
 */
 
 \set ON_ERROR_STOP 1
@@ -317,10 +321,86 @@ begin
        + (select count(*) from public.tasks_streams) + (select count(*) from public.tasks_milestones)
        + (select count(*) from public.tasks_project_log) + (select count(*) from public.tasks_project_docs)
        + (select count(*) from public.tasks_project_sources) + (select count(*) from public.core_inbox)
+       + (select count(*) from public.core_reminders)
     into filas;
   if despues - antes <> filas then
     raise exception 'FALLO: resembrar apuntó % filas y hay %', despues - antes, filas;
   end if;
 end $$;
+
+-- ------------------------------------------------ 7. los recordatorios y el puente
+
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'core_reminders_puente'
+                  and tgrelid = 'public.core_reminders'::regclass) then
+    raise exception 'FALLO: core_reminders no tiene el disparador del feed';
+  end if;
+  if not has_function_privilege('service_role', 'public.recordatorio_hecho_puente(uuid, uuid, timestamptz)', 'execute')
+     or not has_function_privilege('service_role', 'public.recordatorio_posponer_puente(uuid, uuid, timestamptz, timestamptz)', 'execute') then
+    raise exception 'FALLO: el rol de servicio no puede dar por hecho ni posponer';
+  end if;
+  if has_function_privilege('authenticated', 'public.recordatorio_hecho_puente(uuid, uuid, timestamptz)', 'execute')
+     or has_function_privilege('anon', 'public.recordatorio_posponer_puente(uuid, uuid, timestamptz, timestamptz)', 'execute') then
+    raise exception 'FALLO: una sesión puede usar las gemelas del puente';
+  end if;
+end $$;
+
+insert into public.core_reminders (id, user_id, text, freq, at_time, tz, quiet)
+values ('a0000000-0000-4000-8000-0000000e4030', 'aaaaaaaa-0000-4000-8000-0000000000e4',
+        'Revisar algo inventado', 'DIARIO', '08:00', 'America/New_York', false);
+
+do $$
+begin
+  if not exists (select 1 from public.puente_cambios where entidad = 'recordatorio'
+                  and entidad_id = 'a0000000-0000-4000-8000-0000000e4030') then
+    raise exception 'FALLO: los recordatorios no llegan al feed';
+  end if;
+end $$;
+
+set local role service_role;
+do $$
+declare
+  v_to timestamptz;
+  disparo constant timestamptz := date_trunc('minute', now());
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  -- De otro: no existe.
+  if public.recordatorio_posponer_puente('bbbbbbbb-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', disparo, now() + interval '1 hour') is not null
+     or public.recordatorio_hecho_puente('bbbbbbbb-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', disparo) then
+    raise exception 'FALLO: el puente tocó el recordatorio de otro';
+  end if;
+  -- «en 1 h»: vuelve a sonar a esa hora (lo que mira el reloj).
+  v_to := public.recordatorio_posponer_puente('aaaaaaaa-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', disparo, now() + interval '1 hour');
+  if v_to is null or (select snooze_until from public.core_reminders where id = 'a0000000-0000-4000-8000-0000000e4030') is distinct from v_to then
+    raise exception 'FALLO: posponer desde WhatsApp no deja el recordatorio para esa hora';
+  end if;
+  -- Una hora pasada no suena «antes»: como pronto, dentro de un minuto.
+  if public.recordatorio_posponer_puente('aaaaaaaa-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', disparo, now() - interval '1 day') < now() then
+    raise exception 'FALLO: posponer a una hora pasada';
+  end if;
+  -- «hecho»: cierra el disparo y ya no vuelve a sonar por ese aplazamiento.
+  if not public.recordatorio_hecho_puente('aaaaaaaa-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', disparo) then
+    raise exception 'FALLO: hecho desde WhatsApp no se aplicó';
+  end if;
+  if (select done_via from public.core_reminder_fires where reminder_id = 'a0000000-0000-4000-8000-0000000e4030' and fire_at = disparo) <> 'WHATSAPP'
+     or (select snooze_until from public.core_reminders where id = 'a0000000-0000-4000-8000-0000000e4030') is not null then
+    raise exception 'FALLO: hecho desde WhatsApp no cerró el disparo ni el aplazamiento';
+  end if;
+end $$;
+reset role;
+
+set local role authenticated;
+do $$ begin perform set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-4000-8000-0000000000e4","role":"authenticated"}', true); end $$;
+do $$
+begin
+  begin
+    perform public.recordatorio_hecho_puente('aaaaaaaa-0000-4000-8000-0000000000e4', 'a0000000-0000-4000-8000-0000000e4030', now());
+    raise exception 'FALLO: una sesión normal usó la gemela del puente';
+  exception
+    when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
 
 rollback;

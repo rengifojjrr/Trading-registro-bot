@@ -54,6 +54,9 @@ data}`. Reglas en `aplicar.ts` y `campos.ts`:
 - Terminar es definitivo (`tarea_hecha` dos veces es una); reabrir sólo `owner`.
 - `fuente_borrada` se lleva la fuente, las propuestas abiertas y la bitácora de esa referencia.
 - Recordatorios: si `core_reminders` aún no existe (E2), `no_disponible` y el bot la guarda para más tarde.
+  `recordatorio_hecho` y `recordatorio_posponer` hacen lo mismo que los botones del push (cierran o posponen el disparo,
+  el recordatorio vuelve a sonar a esa hora y se apaga la campana) con `recordatorio_hecho_puente` /
+  `recordatorio_posponer_puente`, sólo del rol de servicio; sin esas funciones, también `no_disponible`.
 - `metricas_del_dia` (sólo números, módulo `whatsapp`) y `agente_estado` (latido, panel, WhatsApp, `bootId`; detecta
   dos procesos con la misma llave) no se apuntan en `puente_ops`.
 
@@ -65,12 +68,13 @@ data}`. Reglas en `aplicar.ts` y `campos.ts`:
 `puente_vigilar_tablas`, y la política restrictiva del segundo factor en cada tabla nueva.
 
 `puente_vigilar_tablas()` pone el disparador del feed en cada tabla de la lista que exista y apunta lo que ya había (así
-el bot recibe también lo de antes). **Si `core_reminders` se crea después de esta migración**, llamar otra vez
-`select public.puente_vigilar_tablas();`. Tras restaurar una copia (el feed no va en las copias),
+el bot recibe también lo de antes). `core_reminders` llega después (E2): lo vigila
+`20261007130000_el_puente_y_los_recordatorios.sql`, que además trae las dos gemelas de arriba. Si se crea a mano en
+otro orden, llamar otra vez `select public.puente_vigilar_tablas();`. Tras restaurar una copia (el feed no va en las copias),
 `select public.puente_vigilar_tablas(true);`: el bot ve que su cursor va por delante y empieza de cero.
 
 Pruebas: `supabase/tests/puente.prueba.sql` (dos cerraduras, disparadores, `por` sólo con el rol de servicio, nonces,
-propuestas, resembrar), con `scripts/probar-migraciones-local.sh`.
+propuestas, resembrar, recordatorios), con `scripts/probar-migraciones-local.sh`.
 
 ## En la aplicación
 

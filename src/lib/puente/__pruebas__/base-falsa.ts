@@ -100,6 +100,9 @@ export function baseFalsa(inicial: Record<string, Fila[]> = {}): BaseFalsa {
     seq: 0,
     from: (tabla) => new Consulta(base, tabla),
     rpc: async (nombre, args) => {
+      if (nombre === "recordatorio_hecho_puente" || nombre === "recordatorio_posponer_puente") {
+        return recordatorioPorElPuente(base, nombre, args);
+      }
       if (nombre !== "puente_usar_nonce") return { data: null, error: { code: "42883", message: "no existe" } };
       const clave = `${args.p_llave}:${args.p_nonce}`;
       if (base.nonces.has(clave)) return { data: false, error: null };
@@ -108,6 +111,34 @@ export function baseFalsa(inicial: Record<string, Fila[]> = {}): BaseFalsa {
     },
   };
   return base;
+}
+
+/**
+ * Las gemelas de «hecho» / «en 1 h» para el puente, en pequeño: el disparo se
+ * cierra o se pospone y el recordatorio vuelve a sonar a esa hora (sin la
+ * noche ni los topes, que prueba la base). Si su función «no existe» (está en
+ * `ausentes`), lo que diría PostgREST.
+ */
+function recordatorioPorElPuente(base: BaseFalsa, nombre: string, args: Record<string, unknown>) {
+  if (base.ausentes.has(nombre)) return { data: null, error: { code: "PGRST202", message: "no existe" } };
+  const posponer = nombre === "recordatorio_posponer_puente";
+  const r = (base.tablas.core_reminders ?? []).find((f) => f.id === args.p_reminder && f.user_id === args.p_user);
+  if (!r) return { data: posponer ? null : false, error: null };
+  const disparos = (base.tablas.core_reminder_fires ??= []);
+  let disparo = disparos.find((f) => f.reminder_id === args.p_reminder && f.fire_at === args.p_fire_at);
+  if (!disparo) {
+    disparo = { reminder_id: args.p_reminder, user_id: args.p_user, fire_at: args.p_fire_at, done_at: null, snoozed_to: null };
+    disparos.push(disparo);
+  }
+  if (posponer) {
+    if (!disparo.done_at) disparo.snoozed_to = args.p_hasta;
+    r.snooze_until = args.p_hasta;
+    return { data: args.p_hasta, error: null };
+  }
+  disparo.done_at ??= "ahora";
+  disparo.done_via ??= "WHATSAPP";
+  if (r.snooze_until && disparo.snoozed_to === r.snooze_until) r.snooze_until = null;
+  return { data: true, error: null };
 }
 
 /** El feed, como lo llenarían los disparadores. */

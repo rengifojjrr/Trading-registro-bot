@@ -3307,6 +3307,16 @@ export interface Database {
         Args: { p_llave: string; p_nonce: string };
         Returns: boolean;
       };
+      /** «hecho» desde WhatsApp (el puente, rol de servicio). Ver `20261007130000_el_puente_y_los_recordatorios.sql`. */
+      recordatorio_hecho_puente: {
+        Args: { p_user: string; p_reminder: string; p_fire_at: string };
+        Returns: boolean;
+      };
+      /** «en 1 h» / «mañana» desde WhatsApp: hasta cuándo (o null si no es suyo). */
+      recordatorio_posponer_puente: {
+        Args: { p_user: string; p_reminder: string; p_fire_at: string; p_hasta: string };
+        Returns: string | null;
+      };
       /**
        * Escribe una reconstrucción completa en una sola transacción.
        *

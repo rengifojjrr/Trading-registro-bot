@@ -114,7 +114,8 @@ function motivoDe(error: { code?: string } | null): MotivoRechazo {
   if (!error) return "error";
   if (error.code === "23503") return "referencia";
   if (error.code === "23514" || error.code === "22P02" || error.code === "22001") return "datos";
-  if (error.code === "42P01" || error.code === "PGRST205" || error.code === "42703") return "no_disponible";
+  // 42883 / PGRST202: la función todavía no existe (su migración no está aplicada).
+  if (["42P01", "PGRST205", "42703", "42883", "PGRST202"].includes(error.code ?? "")) return "no_disponible";
   return "error";
 }
 
@@ -303,7 +304,7 @@ const proyectoCambiar: Hacer<"proyecto_cambiar"> = async (ctx, op) => {
   }
   const cambiaEstado = "status" in parche && parche.status !== actual.status;
   if (cambiaEstado) {
-    extra.closed_on = parche.status === "TERMINADO" || parche.status === "DESCARTADO" ? todayIn(ctx.zona) : null;
+    extra.closed_on = parche.status === "TERMINADO" || parche.status === "DESCARTADO" ? todayIn(ctx.zona, ctx.ahora) : null;
   }
 
   const { data: nueva, error } = await ctx.admin
@@ -815,8 +816,9 @@ const fuenteBorrada: Hacer<"fuente_borrada"> = async (ctx, op) => {
 /**
  * Los recordatorios llegan con su propia migración (E2). Hasta que exista la
  * tabla, cualquier operación de recordatorio vuelve `no_disponible` y el bot
- * la guarda. La tabla no está en los tipos de esta rama: se habla con ella sin
- * tipo, en una sola función, con el motivo escrito.
+ * la guarda. Crear y cambiar hablan con la tabla sin tipo, en una sola función
+ * (así el puente no depende de los tipos de E2); «hecho» y «en 1 h» van por las
+ * funciones de la base.
  */
 interface SinTipo {
   from: (tabla: string) => {
@@ -867,22 +869,31 @@ const recordatorioCambiar: Hacer<"recordatorio_cambiar"> = async (ctx, op) => {
   return error ? no(op, motivoDe(error)) : ok(op, { id });
 };
 
+/**
+ * «hecho» y «en 1 h» hacen lo mismo que los botones del push (cerrar o
+ * posponer el disparo, que vuelva a sonar a esa hora y apagar la campana): lo
+ * hace la base, con las gemelas para el rol de servicio
+ * (`20261007130000_el_puente_y_los_recordatorios.sql`).
+ */
 const recordatorioHecho: Hacer<"recordatorio_hecho"> = async (ctx, op) => {
-  const { error } = await sinTipo(ctx.admin)
-    .from("core_reminder_fires")
-    .update({ done_at: ctx.ahora.toISOString(), done_via: "WHATSAPP" })
-    .eq("reminder_id", op.data.id)
-    .eq("fire_at", op.data.disparo);
-  return error ? no(op, motivoDe(error)) : ok(op, { id: op.data.id });
+  const { data, error } = await ctx.admin.rpc("recordatorio_hecho_puente", {
+    p_user: ctx.userId,
+    p_reminder: op.data.id,
+    p_fire_at: op.data.disparo,
+  });
+  if (error) return no(op, motivoDe(error));
+  return data ? ok(op, { id: op.data.id }) : no(op, "no_existe");
 };
 
 const recordatorioPosponer: Hacer<"recordatorio_posponer"> = async (ctx, op) => {
-  const { error } = await sinTipo(ctx.admin)
-    .from("core_reminder_fires")
-    .update({ snoozed_to: op.data.hasta })
-    .eq("reminder_id", op.data.id)
-    .eq("fire_at", op.data.disparo);
-  return error ? no(op, motivoDe(error)) : ok(op, { id: op.data.id });
+  const { data, error } = await ctx.admin.rpc("recordatorio_posponer_puente", {
+    p_user: ctx.userId,
+    p_reminder: op.data.id,
+    p_fire_at: op.data.disparo,
+    p_hasta: op.data.hasta,
+  });
+  if (error) return no(op, motivoDe(error));
+  return data ? ok(op, { id: op.data.id }) : no(op, "no_existe");
 };
 
 const recordatorioCopiado: Hacer<"recordatorio_copiado"> = async (ctx, op) => {
