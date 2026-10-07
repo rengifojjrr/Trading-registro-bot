@@ -73,6 +73,9 @@ export const BACKUP_TABLES = [
   "tasks_project_docs",
   "tasks_project_doc_versions",
   "tasks_project_sources",
+  // Lo que propone el bot y lo que decidiste: lo descartado no vuelve gracias
+  // a esta tabla.
+  "core_inbox",
 
   // ------------------------------------------------------ Recordatorios
   // Después de proyectos, tareas y personas: un recordatorio puede ir atado a
@@ -124,4 +127,8 @@ export const NOT_IN_BACKUP: Readonly<Record<string, string>> = {
   paper_equity_points: "Lo genera el simulador.",
   strategy_measurements: "Medidas del simulador sobre la biblioteca: se vuelven a medir.",
   shopping_checked: "Lo ya marcado en la compra de esta semana.",
+  puente_llaves: "Llaves del puente con el bot: sin secreto, y tras restaurar se crean otras en Ajustes.",
+  puente_clientes: "El latido del bot: se vuelve a escribir en el siguiente contacto.",
+  puente_ops: "Registro de operaciones del puente ya aplicadas; el bot guarda las suyas.",
+  puente_cambios: "El feed del puente: se rehace con los cambios que vengan (el bot pide desde el principio).",
 };

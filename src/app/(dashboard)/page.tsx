@@ -23,6 +23,7 @@ import { fetchTasks } from "@/modules/tasks/queries";
 import { NowPanel, type NowTask } from "@/modules/tasks/ui/now-panel";
 import { ProjectsCarousel } from "@/modules/tasks/ui/projects/projects-carousel";
 import { QuickOrder } from "@/modules/tasks/ui/quick-order";
+import { WhatsAppTile } from "@/components/vida/whatsapp-tile";
 
 import { quickLogReading, quickLogSleep } from "./quick-log-actions";
 
@@ -158,6 +159,8 @@ export default async function TodayPage({
           {MODULES.map((module) => (
             <ModuleCard key={module.id} module={module} value={formatModuleValue(module.id, metrics)} />
           ))}
+          {/* El bot de WhatsApp: sólo cifras y si da señales (el puente, E4). */}
+          <WhatsAppTile />
         </div>
       </section>
 

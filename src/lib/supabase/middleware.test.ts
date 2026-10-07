@@ -140,6 +140,54 @@ describe("cada ruta de /api/cron exige su secreto antes de nada", () => {
   );
 });
 
+describe("el puente con el bot", () => {
+  it("llega a sus rutas sin sesión: la firma la mira la ruta", async () => {
+    for (const ruta of ["/api/puente", "/api/puente/v1/ops", "/api/puente/v1/cambios", "/api/puente/v1/proyecto/importar"]) {
+      expect(isPublicPath(ruta), ruta).toBe(true);
+    }
+    const respuesta = await pide("/api/puente/v1/cambios?after=0");
+    expect(respuesta.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("no lo que sólo empieza parecido", () => {
+    expect(isPublicPath("/api/puentes")).toBe(false);
+    expect(isPublicPath("/api/puente-falso/ops")).toBe(false);
+  });
+
+  const DIRECTORIO = join(process.cwd(), "src/app/api/puente");
+
+  function rutas(dir: string): string[] {
+    return readdirSync(dir).flatMap((nombre) => {
+      const camino = join(dir, nombre);
+      if (statSync(camino).isDirectory()) return rutas(camino);
+      return nombre === "route.ts" ? [camino] : [];
+    });
+  }
+
+  const ficheros = rutas(DIRECTORIO);
+
+  it("hay rutas que vigilar", () => {
+    expect(ficheros.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(ficheros.map((f) => [f.slice(DIRECTORIO.length + 1), f]))(
+    "%s comprueba la firma al principio de cada método",
+    (_nombre, fichero) => {
+      const codigo = readFileSync(fichero, "utf8");
+      const metodos = [
+        ...codigo.matchAll(/export\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)\s*\([^)]*\)\s*{([\s\S]*?)\n}/g),
+      ];
+      expect(metodos.length).toBeGreaterThan(0);
+      for (const [, metodo, cuerpo] of metodos) {
+        const primeras = cuerpo.trim().split("\n").slice(0, 2).join("\n");
+        expect(primeras, metodo).toMatch(
+          /^const peticion = await abrirPeticion\(request\);\s*if \(esRechazo\(peticion\)\) return peticion;/,
+        );
+      }
+    },
+  );
+});
+
 describe("el segundo factor, una vez inscrito", () => {
   /** Un JWT de mentira: el guardián sólo lee `aal` de uno que getUser ya validó. */
   function token(aal: "aal1" | "aal2") {
